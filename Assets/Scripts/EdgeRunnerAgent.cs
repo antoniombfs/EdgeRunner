@@ -24,27 +24,28 @@ public class EdgeRunnerAgent : Agent
     [SerializeField] private float forwardRayDistance = 0.7f;
 
     [Header("Rewards")]
-    [SerializeField] private float progressRewardMultiplier = 0.03f;   // Aumentado: sinal mais forte para avançar
-    [SerializeField] private float stepPenalty = -0.001f;              // Aumentado: pressiona mais para ser eficiente
-    [SerializeField] private float unnecessaryJumpPenalty = -0.02f;    // Aumentado: mais dor por saltar à toa
+    [SerializeField] private float progressRewardMultiplier = 0.02f;
+    [SerializeField] private float stepPenalty = -0.0005f;
+    [SerializeField] private float unnecessaryJumpPenalty = -0.01f;
     [SerializeField] private float necessaryJumpPenalty = -0.001f;
-    [SerializeField] private float goalReward = 1.0f;                  // Normalizado para escala ML-Agents
-    [SerializeField] private float deathPenalty = -1.0f;
+    [SerializeField] private float goalReward = 1.5f;
+    [SerializeField] private float deathPenalty = -1f;
 
-    // FIX 1: Contador de saltos desnecessários consecutivos para penalização progressiva
+    [Header("Episode Control")]
+    [SerializeField] private float stuckTimeLimit = 3.5f;
+    [SerializeField] private float bestXProgressThreshold = 0.25f;
+    [SerializeField] private float stuckPenalty = -0.3f;
+    [SerializeField] private float maxEpisodeTime = 25f;
+
     private int consecutiveUnnecessaryJumps = 0;
 
-    // FIX 2: Rastrear se está a fazer progresso ou está parado
-    private float timeSinceLastProgress = 0f;
-    private float lastRecordedX = 0f;
-    [SerializeField] private float stuckTimeLimit = 3f;               // segundos sem avançar → termina episódio
-    [SerializeField] private float stuckDistanceThreshold = 0.3f;     // distância mínima para considerar "progresso"
+    private float bestXReached = 0f;
+    private float timeSinceBestXProgress = 0f;
 
     private Vector3 startPosition;
     private Quaternion startRotation;
     private float previousDistanceToGoal;
     private float episodeTime = 0f;
-    [SerializeField] private float maxEpisodeTime = 20f;              // timeout para forçar fim de episódio
 
     public override void Initialize()
     {
@@ -74,10 +75,11 @@ public class EdgeRunnerAgent : Agent
         else
             previousDistanceToGoal = 0f;
 
-        // Reset de estado
         consecutiveUnnecessaryJumps = 0;
-        timeSinceLastProgress = 0f;
-        lastRecordedX = transform.position.x;
+
+        bestXReached = transform.position.x;
+        timeSinceBestXProgress = 0f;
+
         episodeTime = 0f;
     }
 
@@ -88,7 +90,7 @@ public class EdgeRunnerAgent : Agent
 
         if (rb != null)
         {
-            velX = rb.linearVelocity.x / moveSpeed;    // FIX 3: normalizar pela moveSpeed, não por constante
+            velX = rb.linearVelocity.x / moveSpeed;
             velY = rb.linearVelocity.y / 15f;
         }
 
@@ -113,7 +115,7 @@ public class EdgeRunnerAgent : Agent
         sensor.AddObservation(velX);
         sensor.AddObservation(velY);
         sensor.AddObservation(grounded ? 1f : 0f);
-        sensor.AddObservation(Mathf.Clamp(toGoal.x / 20f, -1f, 1f));  // FIX 4: clamp para evitar valores fora do esperado
+        sensor.AddObservation(Mathf.Clamp(toGoal.x / 20f, -1f, 1f));
         sensor.AddObservation(Mathf.Clamp(toGoal.y / 10f, -1f, 1f));
         sensor.AddObservation(groundAhead ? 1f : 0f);
         sensor.AddObservation(wallAhead ? 1f : 0f);
@@ -141,9 +143,15 @@ public class EdgeRunnerAgent : Agent
 
         switch (moveAction)
         {
-            case 0: moveX = 0f; break;
-            case 1: moveX = -1f; break;
-            case 2: moveX = 1f; break;
+            case 0:
+                moveX = 0f;
+                break;
+            case 1:
+                moveX = -1f;
+                break;
+            case 2:
+                moveX = 1f;
+                break;
         }
 
         rb.linearVelocity = new Vector2(moveX * moveSpeed, rb.linearVelocity.y);
@@ -160,10 +168,15 @@ public class EdgeRunnerAgent : Agent
 
             if (groundAhead && !wallAhead)
             {
-                // FIX 5: penalização progressiva — quanto mais saltos desnecessários consecutivos, maior a punição
                 consecutiveUnnecessaryJumps++;
-                float penalty = unnecessaryJumpPenalty * Mathf.Min(consecutiveUnnecessaryJumps, 3);
-                AddReward(penalty);
+
+                float penaltyMultiplier = 1f;
+                if (consecutiveUnnecessaryJumps == 2)
+                    penaltyMultiplier = 1.5f;
+                else if (consecutiveUnnecessaryJumps >= 3)
+                    penaltyMultiplier = 2f;
+
+                AddReward(unnecessaryJumpPenalty * penaltyMultiplier);
             }
             else
             {
@@ -173,11 +186,10 @@ public class EdgeRunnerAgent : Agent
         }
         else if (grounded)
         {
-            // FIX 6: reset do contador quando não salta (comportamento correto)
             consecutiveUnnecessaryJumps = 0;
         }
 
-        // --- Reward de progresso ---
+        // --- Reward de progresso para a goal ---
         if (goal != null)
         {
             float currentDistanceToGoal = Vector2.Distance(transform.position, goal.position);
@@ -190,25 +202,25 @@ public class EdgeRunnerAgent : Agent
         // --- Step penalty ---
         AddReward(stepPenalty);
 
-        // --- FIX 7: Deteção de "stuck" — terminar episódio se não há progresso ---
-        float movedDistance = Mathf.Abs(transform.position.x - lastRecordedX);
-        if (movedDistance > stuckDistanceThreshold)
+        // --- Stuck detector baseado no melhor X atingido ---
+        if (transform.position.x > bestXReached + bestXProgressThreshold)
         {
-            timeSinceLastProgress = 0f;
-            lastRecordedX = transform.position.x;
+            bestXReached = transform.position.x;
+            timeSinceBestXProgress = 0f;
         }
         else
         {
-            timeSinceLastProgress += Time.fixedDeltaTime;
+            timeSinceBestXProgress += Time.fixedDeltaTime;
         }
 
-        if (timeSinceLastProgress >= stuckTimeLimit)
+        if (timeSinceBestXProgress >= stuckTimeLimit)
         {
-            AddReward(-0.3f);  // penalizar por ficar preso
+            AddReward(stuckPenalty);
             EndEpisode();
+            return;
         }
 
-        // --- FIX 8: Timeout global do episódio ---
+        // --- Timeout global do episódio ---
         if (episodeTime >= maxEpisodeTime)
         {
             EndEpisode();
