@@ -1,0 +1,25 @@
+EdgeRunner Reorganization Notes
+Date: 2026-04-01
+
+Scope
+- Conservative asset reorganization into Assets/EdgeRunner.
+- No files deleted.
+- Minimal code changes applied only to formalize V2 as a distinct class and let training triggers accept both V1 and V2 agents.
+- .meta files were moved together with their assets to preserve GUIDs.
+
+Pending items requiring manual validation
+- TrainingScene_Flat exists in two locations with different .meta GUIDs:
+  - Assets/TrainingScene_Flat.unity
+  - Assets/Scenes/TrainingScene_Flat.unity
+- Player.prefab was moved to Assets/EdgeRunner/Prefabs/Agent as the shared base player/agent shell, but it is not yet version-specific.
+- EdgeRunnerAgentV2.cs is now a distinct class, but any future scene/prefab adoption of V2 should be done and validated from the Unity editor.
+
+Manual checks in Unity
+- Open all reorganized scenes and confirm there are no missing script or prefab references.
+- Confirm Behavior Parameters still point to the intended models.
+- Confirm goal, groundCheck, Rigidbody2D, and other serialized fields are still assigned.
+- Confirm EdgeRunnerAgent.cs and the intended V2 implementation are still both present and clearly distinguishable.
+- Decide whether TrainingScene_Flat should remain duplicated or be consolidated later.
+
+Recommended next step
+- Create or validate explicit agent prefabs/variants for V1 and V2 from the Unity editor before attempting any further prefab/version cleanup.

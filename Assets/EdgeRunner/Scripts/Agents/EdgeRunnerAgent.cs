@@ -23,11 +23,17 @@ public class EdgeRunnerAgent : Agent
     [SerializeField] private float downRayDistance = 1.2f;
     [SerializeField] private float forwardRayDistance = 0.7f;
 
+    [Header("Safe Drop Detection")]
+    [SerializeField] private float safeDropForwardOffset = 0.6f;
+    [SerializeField] private float safeDropDownDistance = 3.0f;
+    [SerializeField] private float minSafeDropHeight = 0.4f;
+
     [Header("Rewards")]
     [SerializeField] private float progressRewardMultiplier = 0.02f;
     [SerializeField] private float stepPenalty = -0.0005f;
     [SerializeField] private float unnecessaryJumpPenalty = -0.01f;
-    [SerializeField] private float necessaryJumpPenalty = -0.001f;
+    [SerializeField] private float gapJumpReward = 0.003f;
+    [SerializeField] private float dropJumpPenalty = -0.02f;
     [SerializeField] private float goalReward = 1.5f;
     [SerializeField] private float deathPenalty = -1f;
 
@@ -44,7 +50,7 @@ public class EdgeRunnerAgent : Agent
 
     private Vector3 startPosition;
     private Quaternion startRotation;
-    private float previousDistanceToGoal;
+    private float previousHorizontalDistanceToGoal;
     private float episodeTime = 0f;
 
     public override void Initialize()
@@ -71,9 +77,9 @@ public class EdgeRunnerAgent : Agent
         }
 
         if (goal != null)
-            previousDistanceToGoal = Vector2.Distance(transform.position, goal.position);
+            previousHorizontalDistanceToGoal = Mathf.Abs(goal.position.x - transform.position.x);
         else
-            previousDistanceToGoal = 0f;
+            previousHorizontalDistanceToGoal = 0f;
 
         consecutiveUnnecessaryJumps = 0;
 
@@ -97,6 +103,7 @@ public class EdgeRunnerAgent : Agent
         bool grounded = IsGrounded();
         bool groundAhead = IsGroundAhead();
         bool wallAhead = IsWallAhead();
+        bool safeDropAhead = IsSafeDropAhead();
 
         if (goal == null)
         {
@@ -107,6 +114,7 @@ public class EdgeRunnerAgent : Agent
             sensor.AddObservation(0f);
             sensor.AddObservation(groundAhead ? 1f : 0f);
             sensor.AddObservation(wallAhead ? 1f : 0f);
+            sensor.AddObservation(safeDropAhead ? 1f : 0f);
             return;
         }
 
@@ -119,14 +127,13 @@ public class EdgeRunnerAgent : Agent
         sensor.AddObservation(Mathf.Clamp(toGoal.y / 10f, -1f, 1f));
         sensor.AddObservation(groundAhead ? 1f : 0f);
         sensor.AddObservation(wallAhead ? 1f : 0f);
+        sensor.AddObservation(safeDropAhead ? 1f : 0f);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
         if (!IsGrounded())
-        {
             actionMask.SetActionEnabled(1, 1, false);
-        }
     }
 
     public override void OnActionReceived(ActionBuffers actions)
@@ -158,11 +165,11 @@ public class EdgeRunnerAgent : Agent
 
         bool grounded = IsGrounded();
 
-        // --- Lógica de salto ---
         if (jumpAction == 1 && grounded)
         {
             bool groundAhead = IsGroundAhead();
             bool wallAhead = IsWallAhead();
+            bool safeDropAhead = IsSafeDropAhead();
 
             rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce);
 
@@ -178,10 +185,19 @@ public class EdgeRunnerAgent : Agent
 
                 AddReward(unnecessaryJumpPenalty * penaltyMultiplier);
             }
+            else if (!groundAhead && safeDropAhead && !wallAhead)
+            {
+                consecutiveUnnecessaryJumps = 0;
+                AddReward(dropJumpPenalty);
+            }
+            else if (!groundAhead && !safeDropAhead)
+            {
+                consecutiveUnnecessaryJumps = 0;
+                AddReward(gapJumpReward);
+            }
             else
             {
                 consecutiveUnnecessaryJumps = 0;
-                AddReward(necessaryJumpPenalty);
             }
         }
         else if (grounded)
@@ -189,20 +205,17 @@ public class EdgeRunnerAgent : Agent
             consecutiveUnnecessaryJumps = 0;
         }
 
-        // --- Reward de progresso para a goal ---
         if (goal != null)
         {
-            float currentDistanceToGoal = Vector2.Distance(transform.position, goal.position);
-            float distanceImprovement = previousDistanceToGoal - currentDistanceToGoal;
+            float currentHorizontalDistanceToGoal = Mathf.Abs(goal.position.x - transform.position.x);
+            float horizontalImprovement = previousHorizontalDistanceToGoal - currentHorizontalDistanceToGoal;
 
-            AddReward(distanceImprovement * progressRewardMultiplier);
-            previousDistanceToGoal = currentDistanceToGoal;
+            AddReward(horizontalImprovement * progressRewardMultiplier);
+            previousHorizontalDistanceToGoal = currentHorizontalDistanceToGoal;
         }
 
-        // --- Step penalty ---
         AddReward(stepPenalty);
 
-        // --- Stuck detector baseado no melhor X atingido ---
         if (transform.position.x > bestXReached + bestXProgressThreshold)
         {
             bestXReached = transform.position.x;
@@ -220,7 +233,6 @@ public class EdgeRunnerAgent : Agent
             return;
         }
 
-        // --- Timeout global do episódio ---
         if (episodeTime >= maxEpisodeTime)
         {
             EndEpisode();
@@ -285,6 +297,24 @@ public class EdgeRunnerAgent : Agent
         return hit.collider != null;
     }
 
+    private bool IsSafeDropAhead()
+    {
+        if (IsGroundAhead())
+            return false;
+
+        float direction = GetForwardDirection();
+
+        Vector2 origin = (Vector2)transform.position + new Vector2(direction * safeDropForwardOffset, 0f);
+        RaycastHit2D hit = Physics2D.Raycast(origin, Vector2.down, safeDropDownDistance, groundLayer);
+
+        if (hit.collider == null)
+            return false;
+
+        float verticalDrop = transform.position.y - hit.point.y;
+
+        return verticalDrop >= minSafeDropHeight;
+    }
+
     private float GetForwardDirection()
     {
         if (goal == null)
@@ -307,11 +337,15 @@ public class EdgeRunnerAgent : Agent
 
         Vector2 groundAheadOrigin = (Vector2)transform.position + new Vector2(direction * frontOffset, 0f);
         Vector2 wallAheadOrigin = (Vector2)transform.position + new Vector2(0f, 0.1f);
+        Vector2 safeDropOrigin = (Vector2)transform.position + new Vector2(direction * safeDropForwardOffset, 0f);
 
         Gizmos.color = Color.yellow;
         Gizmos.DrawLine(groundAheadOrigin, groundAheadOrigin + Vector2.down * downRayDistance);
 
         Gizmos.color = Color.cyan;
         Gizmos.DrawLine(wallAheadOrigin, wallAheadOrigin + new Vector2(direction, 0f) * forwardRayDistance);
+
+        Gizmos.color = Color.magenta;
+        Gizmos.DrawLine(safeDropOrigin, safeDropOrigin + Vector2.down * safeDropDownDistance);
     }
 }
