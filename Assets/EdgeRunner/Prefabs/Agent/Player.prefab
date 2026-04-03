@@ -12,7 +12,10 @@ GameObject:
   - component: {fileID: 5666326587801674891}
   - component: {fileID: 7418488451696873122}
   - component: {fileID: 9074787135423188120}
-  - component: {fileID: 4304230987623544140}
+  - component: {fileID: 2447396281889591426}
+  - component: {fileID: 1575673469488940555}
+  - component: {fileID: 7268644918320892071}
+  - component: {fileID: 3009452862235119410}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -32,7 +35,8 @@ Transform:
   m_LocalPosition: {x: 0, y: -1.5, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 1025847572973012655}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &5666326587801674891
@@ -167,7 +171,7 @@ BoxCollider2D:
   m_AutoTiling: 0
   m_Size: {x: 1, y: 1}
   m_EdgeRadius: 0
---- !u!114 &4304230987623544140
+--- !u!114 &2447396281889591426
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -176,14 +180,135 @@ MonoBehaviour:
   m_GameObject: {fileID: 1004922658004010392}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 59b672f8fbc01c947839fa389167f9c8, type: 3}
+  m_Script: {fileID: 11500000, guid: 5d1c4e0b1822b495aa52bc52839ecb30, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PlayerController
-  baseMoveSpeed: 6
-  baseJumpForce: 12
-  speedMoveSpeed: 10
-  speedJumpForce: 13.5
+  m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
+  m_BrainParameters:
+    VectorObservationSize: 14
+    NumStackedVectorObservations: 1
+    m_ActionSpec:
+      m_NumContinuousActions: 0
+      BranchSizes: 0300000002000000
+    VectorActionSize: 0300000002000000
+    VectorActionDescriptions: []
+    VectorActionSpaceType: 0
+    hasUpgradedBrainParametersWithActionSpec: 1
+  m_Model: {fileID: 0}
+  m_InferenceDevice: 0
+  m_BehaviorType: 0
+  m_BehaviorName: EdgeRunnerBasic
+  TeamId: 0
+  m_UseChildSensors: 1
+  m_UseChildActuators: 1
+  m_DeterministicInference: 0
+  m_ObservableAttributeHandling: 0
+--- !u!114 &1575673469488940555
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1004922658004010392}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a99abddef8f17b040b8bfe8d8b5e4231, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EdgeRunnerAgentV2
+  agentParameters:
+    maxStep: 0
+  hasUpgradedFromAgentParameters: 1
+  MaxStep: 0
+  rb: {fileID: 7418488451696873122}
+  goal: {fileID: 0}
+  groundCheck: {fileID: 1025847572973012655}
+  moveSpeed: 6
+  jumpForce: 10
+  allowJump: 1
   groundLayer:
     serializedVersion: 2
     m_Bits: 8
-  transformCooldown: 1
+  groundCheckRadius: 0.15
+  scanRayCount: 5
+  scanStartOffset: 0.5
+  scanStepSize: 0.5
+  scanDownDistance: 1.5
+  safeDropThreshold: 0.25
+  forwardRayDistance: 0.7
+  velocityRewardScale: 0.0015
+  goalReward: 5
+  deathPenalty: -2
+  stepPenalty: -0.0003
+  idleJumpPenalty: -0.01
+  jumpPenalty: -0.0002
+  flatGroundJumpPenalty: -0.015
+  gapJumpReward: 0.06
+  stuckPenalty: -0.3
+  milestoneReward: 0.004
+  minJumpMomentum: 0.35
+  backtrackPenalty: -0.002
+  backtrackMargin: 0.35
+  stuckTimeLimit: 8
+  bestXProgressThreshold: 0.25
+  maxEpisodeTime: 45
+--- !u!114 &7268644918320892071
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1004922658004010392}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3a5c9d521e5ef4759a8246a07d52221e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.DecisionRequester
+  DecisionPeriod: 1
+  DecisionStep: 0
+  TakeActionsBetweenDecisions: 1
+--- !u!114 &3009452862235119410
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1004922658004010392}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f2902496c0120472b90269f94a0aec7e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Demonstrations.DemonstrationRecorder
+  Record: 0
+  NumStepsToRecord: 0
+  DemonstrationName: GapJump
+  DemonstrationDirectory: Assets/Demonstrations
+--- !u!1 &4159958794828441136
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1025847572973012655}
+  m_Layer: 0
+  m_Name: GroundCheck
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1025847572973012655
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4159958794828441136}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: -0.55, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 6940665639897017110}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}

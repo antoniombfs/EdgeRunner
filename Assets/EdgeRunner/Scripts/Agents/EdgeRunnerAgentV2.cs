@@ -3,37 +3,6 @@ using Unity.MLAgents;
 using Unity.MLAgents.Actuators;
 using Unity.MLAgents.Sensors;
 
-/// <summary>
-/// EdgeRunner Agent — versão "Mario-like"
-///
-/// Mudanças principais em relação à versão anterior:
-///
-/// 1. RAYCAST ARRAY (antecipação do terreno)
-///    O agente agora "vê" o terreno à frente em 5 pontos diferentes,
-///    a distâncias crescentes. Em vez de saber apenas "há chão aqui",
-///    sabe "há chão a 0.5u, a 1u, a 1.5u, a 2u e a 2.5u".
-///    Isto permite generalizar para qualquer layout sem precisar de
-///    uma scene específica por cada situação nova.
-///    Space Size: 8 → 14 (5 raios de chão + velocidade a que se move)
-///
-/// 2. SALTO COM MOMENTUM
-///    O agente não é penalizado por saltar — é recompensado por saltar
-///    ENQUANTO se move. Saltar parado é penalizado levemente.
-///    Isto incentiva o comportamento natural de Mario: correr e saltar.
-///
-/// 3. REWARD ORIENTADA A FLUXO
-///    Substituída a progressReward baseada em distância euclidiana
-///    por uma baseada em velocidade horizontal real (velX).
-///    O agente aprende que andar rápido para a frente é bom,
-///    em vez de aprender só "estou mais perto do goal".
-///
-/// 4. ELIMINADAS PENALIZAÇÕES COMPORTAMENTAIS GRANULARES
-///    Removido: unnecessaryJumpPenalty com multiplicador, dropJumpPenalty granular.
-///    O agente aprende a não saltar desnecessariamente porque isso
-///    o atrasa (velocidade = 0 no ar sem ganho de X), não porque é punido.
-///
-/// ATENÇÃO: Space Size deve ser atualizado para 14 no Behavior Parameters.
-/// </summary>
 public class EdgeRunnerAgentV2 : Agent
 {
     [Header("References")]
@@ -43,62 +12,60 @@ public class EdgeRunnerAgentV2 : Agent
 
     [Header("Movement")]
     [SerializeField] private float moveSpeed = 6f;
-    [SerializeField] private float jumpForce = 8f;
+    [SerializeField] private float jumpForce = 10f;
+
+    [Header("Scene Options")]
+    [SerializeField] private bool allowJump = true;
 
     [Header("Ground Check")]
     [SerializeField] private LayerMask groundLayer;
     [SerializeField] private float groundCheckRadius = 0.15f;
 
     [Header("Terrain Scan (Raycast Array)")]
-    // Número de raios para a frente — cada um deteta solo, safe drop ou void
     [SerializeField] private int scanRayCount = 5;
-    // Primeiro raio começa a esta distância horizontal
     [SerializeField] private float scanStartOffset = 0.5f;
-    // Cada raio seguinte avança este passo
     [SerializeField] private float scanStepSize = 0.5f;
-    // Até onde cada raio desce à procura de solo
-    [SerializeField] private float scanDownDistance = 4.0f;
-    // Acima deste valor de queda vertical, conta como safe drop
-    [SerializeField] private float safeDropThreshold = 0.5f;
+    [SerializeField] private float scanDownDistance = 1.5f;
+    [SerializeField] private float safeDropThreshold = 0.25f;
 
     [Header("Wall Detection")]
     [SerializeField] private float forwardRayDistance = 0.7f;
 
     [Header("Rewards")]
-    // Recompensa por velocidade horizontal (fluxo Mario-like)
-    [SerializeField] private float velocityRewardScale = 0.003f;
-    // Recompensa extra por chegar ao goal
-    [SerializeField] private float goalReward = 2.0f;
-    // Penalização por morrer
-    [SerializeField] private float deathPenalty = -1f;
-    // Penalização passiva por step (pressão de tempo)
+    [SerializeField] private float velocityRewardScale = 0.0015f;
+    [SerializeField] private float goalReward = 5.0f;
+    [SerializeField] private float deathPenalty = -2.0f;
     [SerializeField] private float stepPenalty = -0.0003f;
-    // Penalização leve por saltar completamente parado
-    [SerializeField] private float idleJumpPenalty = -0.005f;
-    // Penalização por ficar preso
+    [SerializeField] private float idleJumpPenalty = -0.01f;
+    [SerializeField] private float jumpPenalty = -0.0002f;
+    [SerializeField] private float flatGroundJumpPenalty = -0.015f;
+    [SerializeField] private float gapJumpReward = 0.06f;
     [SerializeField] private float stuckPenalty = -0.3f;
-    // Recompensa por atingir novo melhor X (milestone)
-    [SerializeField] private float milestoneReward = 0.05f;
+    [SerializeField] private float milestoneReward = 0.004f;
+    [SerializeField] private float minJumpMomentum = 0.35f;
+
+    [SerializeField] private float backtrackPenalty = -0.002f;
+    [SerializeField] private float backtrackMargin = 0.35f;
 
     [Header("Episode Control")]
-    [SerializeField] private float stuckTimeLimit = 4f;
-    [SerializeField] private float bestXProgressThreshold = 0.3f;
-    [SerializeField] private float maxEpisodeTime = 30f;
+    [SerializeField] private float stuckTimeLimit = 8f;
+    [SerializeField] private float bestXProgressThreshold = 0.25f;
+    [SerializeField] private float maxEpisodeTime = 45f;
 
-    // --- estado interno ---
     private Vector3 startPosition;
     private Quaternion startRotation;
     private float bestXReached;
     private float timeSinceBestXProgress;
     private float episodeTime;
 
-    // ──────────────────────────────────────────────────────────────────────
-    // INICIALIZAÇÃO
-    // ──────────────────────────────────────────────────────────────────────
+    private bool wasGroundedLastStep;
+    private bool crossedGapInAir;
 
     public override void Initialize()
     {
-        if (rb == null) rb = GetComponent<Rigidbody2D>();
+        if (rb == null)
+            rb = GetComponent<Rigidbody2D>();
+
         startPosition = transform.position;
         startRotation = transform.rotation;
     }
@@ -108,7 +75,9 @@ public class EdgeRunnerAgentV2 : Agent
         transform.position = startPosition;
         transform.rotation = startRotation;
 
-        if (rb == null) rb = GetComponent<Rigidbody2D>();
+        if (rb == null)
+            rb = GetComponent<Rigidbody2D>();
+
         if (rb != null)
         {
             rb.linearVelocity = Vector2.zero;
@@ -118,28 +87,10 @@ public class EdgeRunnerAgentV2 : Agent
         bestXReached = transform.position.x;
         timeSinceBestXProgress = 0f;
         episodeTime = 0f;
-    }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // OBSERVAÇÕES  (Space Size = 14)
-    //
-    //  0      velX normalizado
-    //  1      velY normalizado
-    //  2      grounded (0/1)
-    //  3      toGoal.x normalizado
-    //  4      toGoal.y normalizado
-    //  5      wallAhead (0/1)
-    //  6-10   terrainScan[0..4]  (-1 = void, 0 = safe drop, 1 = solo imediato)
-    //  11-12  (reservado para futuras obs — podes ignorar por agora)
-    //         na prática são velX²  e  isAirborne, úteis para momentum
-    //  13     speedRatio (velX / moveSpeed, outra vez mas como obs de contexto)
-    //
-    //  NOTA: O array de scan é o coração desta versão.
-    //  Cada elemento codifica o que o agente "vê" naquele ponto à frente:
-    //    +1  → há solo logo abaixo (pode andar / aterrar)
-    //     0  → há solo mais abaixo (safe drop, pode cair)
-    //    -1  → não há nada (void / gap obrigatório)
-    // ──────────────────────────────────────────────────────────────────────
+        wasGroundedLastStep = IsGrounded();
+        crossedGapInAir = false;
+    }
 
     public override void CollectObservations(VectorSensor sensor)
     {
@@ -152,7 +103,6 @@ public class EdgeRunnerAgentV2 : Agent
             ? (Vector2)(goal.position - transform.position)
             : Vector2.zero;
 
-        // obs 0-5
         sensor.AddObservation(velX);
         sensor.AddObservation(velY);
         sensor.AddObservation(grounded ? 1f : 0f);
@@ -160,7 +110,6 @@ public class EdgeRunnerAgentV2 : Agent
         sensor.AddObservation(Mathf.Clamp(toGoal.y / 10f, -1f, 1f));
         sensor.AddObservation(wallAhead ? 1f : 0f);
 
-        // obs 6-10: terrain scan array
         float direction = GetForwardDirection();
         for (int i = 0; i < scanRayCount; i++)
         {
@@ -169,20 +118,10 @@ public class EdgeRunnerAgentV2 : Agent
             sensor.AddObservation(scanValue);
         }
 
-        // obs 11-13: contexto de momentum
-        sensor.AddObservation(velX * velX);                         // rapidez² (sempre positivo)
-        sensor.AddObservation(grounded ? 0f : 1f);                  // airborne flag
-        sensor.AddObservation(Mathf.Abs(velX));                     // rapidez absoluta
+        sensor.AddObservation(velX * velX);
+        sensor.AddObservation(grounded ? 0f : 1f);
+        sensor.AddObservation(Mathf.Abs(velX));
     }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // SCAN DE TERRENO
-    //
-    // Retorna:
-    //   +1  solo imediato (dentro de downRayDistance/2)
-    //    0  safe drop (solo mais abaixo mas existe)
-    //   -1  void / gap
-    // ──────────────────────────────────────────────────────────────────────
 
     private float ScanTerrain(float direction, float forwardOffset)
     {
@@ -190,76 +129,111 @@ public class EdgeRunnerAgentV2 : Agent
         RaycastHit2D hit = Physics2D.Raycast(origin, Vector2.down, scanDownDistance, groundLayer);
 
         if (hit.collider == null)
-            return -1f; // void
+            return -1f;
 
-        float drop = transform.position.y - hit.point.y;
+        float referenceY = groundCheck != null ? groundCheck.position.y : transform.position.y;
+        float drop = referenceY - hit.point.y;
 
         if (drop < safeDropThreshold)
-            return 1f; // solo imediato (pode andar)
-        else
-            return 0f; // safe drop
-    }
+            return 1f;
 
-    // ──────────────────────────────────────────────────────────────────────
-    // MÁSCARA DE AÇÕES
-    // Impede salto no ar (igual à versão anterior)
-    // ──────────────────────────────────────────────────────────────────────
+        return 0f;
+    }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
-        if (!IsGrounded())
+        if (!allowJump || !IsGrounded())
             actionMask.SetActionEnabled(1, 1, false);
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // LÓGICA PRINCIPAL
-    // ──────────────────────────────────────────────────────────────────────
-
     public override void OnActionReceived(ActionBuffers actions)
     {
-        if (rb == null) return;
+        if (rb == null)
+            return;
 
         episodeTime += Time.fixedDeltaTime;
 
         int moveAction = actions.DiscreteActions[0];
         int jumpAction = actions.DiscreteActions[1];
 
-        // --- movimento horizontal ---
         float moveX = moveAction switch
         {
             1 => -1f,
             2 => 1f,
             _ => 0f
         };
+
         rb.linearVelocity = new Vector2(moveX * moveSpeed, rb.linearVelocity.y);
 
         bool grounded = IsGrounded();
 
-        // --- salto ---
-        if (jumpAction == 1 && grounded)
-        {
-            rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce);
+        float direction = GetForwardDirection();
+        float scan0Now = ScanTerrain(direction, scanStartOffset);
+        float scan1Now = ScanTerrain(direction, scanStartOffset + scanStepSize);
 
-            // Penaliza saltar completamente parado (sem momentum)
-            // Mario nunca salta parado sem razão
-            if (Mathf.Abs(moveX) < 0.1f)
-                AddReward(idleJumpPenalty);
+        if (!grounded && (scan0Now < 0f || scan1Now < 0f))
+        {
+            crossedGapInAir = true;
         }
 
-        // --- reward de velocidade (fluxo Mario-like) ---
-        // Recompensa por avançar em direção ao goal a boa velocidade.
-        // O agente aprende que manter momentum é bom, parar é mau.
+        if (!wasGroundedLastStep && grounded && crossedGapInAir)
+        {
+            AddReward(0.25f);
+            crossedGapInAir = false;
+        }
+
+        wasGroundedLastStep = grounded;
+
+        if (moveX < 0f && transform.position.x < bestXReached - backtrackMargin)
+            AddReward(backtrackPenalty);
+
+        if (allowJump && jumpAction == 1 && grounded)
+        {
+            float currentForwardSpeed = rb.linearVelocity.x * direction / moveSpeed;
+
+            rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce);
+
+            AddReward(jumpPenalty);
+
+            if (Mathf.Abs(moveX) < 0.1f)
+                AddReward(idleJumpPenalty);
+
+            if (!IsWallAhead())
+            {
+                float scan0 = ScanTerrain(direction, scanStartOffset);
+                float scan1 = ScanTerrain(direction, scanStartOffset + scanStepSize);
+                float scan2 = ScanTerrain(direction, scanStartOffset + scanStepSize * 2f);
+
+                bool terrainIsFlat = scan0 > 0.5f && scan1 > 0.5f && scan2 > 0.5f;
+                bool gapAhead = scan0 < 0f || scan1 < 0f || scan2 < 0f;
+
+                if (terrainIsFlat)
+                {
+                    AddReward(flatGroundJumpPenalty);
+                }
+                else if (gapAhead)
+                {
+                    if (currentForwardSpeed >= minJumpMomentum)
+                    {
+                        AddReward(0.05f + currentForwardSpeed * gapJumpReward);
+                    }
+                    else
+                    {
+                        AddReward(-0.01f);
+                    }
+                }
+            }
+        }
+
         if (goal != null)
         {
-            float forwardVel = rb.linearVelocity.x * GetForwardDirection();
+            float forwardVel = rb.linearVelocity.x * direction;
             if (forwardVel > 0f)
                 AddReward(forwardVel / moveSpeed * velocityRewardScale);
         }
 
-        // --- penalização de step ---
         AddReward(stepPenalty);
 
-        // --- stuck detector por melhor X ---
         if (transform.position.x > bestXReached + bestXProgressThreshold)
         {
             AddReward(milestoneReward);
@@ -282,10 +256,6 @@ public class EdgeRunnerAgentV2 : Agent
             EndEpisode();
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // HEURISTIC (controlo manual para teste)
-    // ──────────────────────────────────────────────────────────────────────
-
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var d = actionsOut.DiscreteActions;
@@ -293,15 +263,13 @@ public class EdgeRunnerAgentV2 : Agent
         d[1] = 0;
 
         float h = Input.GetAxisRaw("Horizontal");
+
         if (h < -0.1f) d[0] = 1;
         else if (h > 0.1f) d[0] = 2;
 
-        if (Input.GetKey(KeyCode.Space)) d[1] = 1;
+        if (allowJump && Input.GetKey(KeyCode.Space))
+            d[1] = 1;
     }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // EVENTOS EXTERNOS
-    // ──────────────────────────────────────────────────────────────────────
 
     public void GoalReached()
     {
@@ -315,13 +283,11 @@ public class EdgeRunnerAgentV2 : Agent
         EndEpisode();
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // HELPERS DE DETEÇÃO
-    // ──────────────────────────────────────────────────────────────────────
-
     private bool IsGrounded()
     {
-        if (groundCheck == null) return false;
+        if (groundCheck == null)
+            return false;
+
         return Physics2D.OverlapCircle(groundCheck.position, groundCheckRadius, groundLayer);
     }
 
@@ -335,15 +301,13 @@ public class EdgeRunnerAgentV2 : Agent
 
     private float GetForwardDirection()
     {
-        if (goal == null) return 1f;
+        if (goal == null)
+            return 1f;
+
         return goal.position.x >= transform.position.x ? 1f : -1f;
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // GIZMOS (visualização no editor)
-    // ──────────────────────────────────────────────────────────────────────
-
-    private void OnDrawGizmosSelected()
+    private void OnDrawGizmos()
     {
         if (groundCheck != null)
         {
@@ -355,21 +319,19 @@ public class EdgeRunnerAgentV2 : Agent
             ? (goal.position.x >= transform.position.x ? 1f : -1f)
             : 1f;
 
-        // Wall ray
         Gizmos.color = Color.cyan;
         Vector2 wallOrigin = (Vector2)transform.position + new Vector2(0f, 0.1f);
         Gizmos.DrawLine(wallOrigin, wallOrigin + new Vector2(dir, 0f) * forwardRayDistance);
 
-        // Terrain scan rays
         for (int i = 0; i < scanRayCount; i++)
         {
             float offset = scanStartOffset + i * scanStepSize;
             Vector2 origin = (Vector2)transform.position + new Vector2(dir * offset, 0.1f);
             float scanVal = ScanTerrain(dir, offset);
 
-            Gizmos.color = scanVal > 0.5f ? Color.yellow   // solo imediato
-                         : scanVal > -0.5f ? Color.magenta   // safe drop
-                         : Color.red;      // void
+            Gizmos.color = scanVal > 0.5f ? Color.yellow
+                         : scanVal > -0.5f ? Color.magenta
+                         : Color.red;
 
             Gizmos.DrawLine(origin, origin + Vector2.down * scanDownDistance);
             Gizmos.DrawSphere(origin, 0.05f);
