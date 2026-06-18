@@ -2,11 +2,25 @@ using UnityEngine;
 
 public class GoalTrigger : MonoBehaviour
 {
-    private void OnTriggerEnter2D(Collider2D collision)
+    private void OnTriggerEnter2D(Collider2D other)
     {
-        if (collision.CompareTag("Player"))
+        EdgeRunnerAgentV3 agentV3 = other.GetComponentInParent<EdgeRunnerAgentV3>();
+
+        if (agentV3 != null)
         {
-            Debug.Log("Nível concluído!");
+            Debug.Log("AGENT V3 CHEGOU AO GOAL");
+
+            agentV3.GoalReached();
+            return;
+        }
+
+        EdgeRunnerAgentV2 agent = other.GetComponentInParent<EdgeRunnerAgentV2>();
+
+        if (agent != null)
+        {
+            Debug.Log("AGENT CHEGOU AO GOAL");
+
+            agent.GoalReached();
         }
     }
 }

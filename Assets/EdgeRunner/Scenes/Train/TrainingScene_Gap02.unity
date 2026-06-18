@@ -135,6 +135,14 @@ PrefabInstance:
       propertyPath: goal
       value: 
       objectReference: {fileID: 1295033044}
+    - target: {fileID: 2447396281889591426, guid: e259d6230aef70f40ab0fe9fb3b44fcf, type: 3}
+      propertyPath: m_Model
+      value: 
+      objectReference: {fileID: 5022602860645237092, guid: 7dbd614d98c9f4f4aae29a99d031a088, type: 3}
+    - target: {fileID: 2447396281889591426, guid: e259d6230aef70f40ab0fe9fb3b44fcf, type: 3}
+      propertyPath: m_BehaviorType
+      value: 2
+      objectReference: {fileID: 0}
     - target: {fileID: 6940665639897017110, guid: e259d6230aef70f40ab0fe9fb3b44fcf, type: 3}
       propertyPath: m_LocalPosition.x
       value: -10
@@ -329,7 +337,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 3065219084555406379, guid: c64ae56bc305c98478719b98a84fb36d, type: 3}
       propertyPath: m_LocalScale.x
-      value: 65
+      value: 200
       objectReference: {fileID: 0}
     - target: {fileID: 3065219084555406379, guid: c64ae56bc305c98478719b98a84fb36d, type: 3}
       propertyPath: m_LocalPosition.x
