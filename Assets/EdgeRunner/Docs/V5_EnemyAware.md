@@ -34,6 +34,13 @@ Comando esperado:
 mlagents-learn Assets\EdgeRunner\ML\Config\V5\edgerunner_v5_enemies.yaml --run-id=ER_V5_EnemyAware_EnemyIntro01 --force
 ```
 
+## Velocidade de treino
+
+- Para treino no Editor, usar `time_scale: 10` como valor seguro inicial.
+- Se a fisica continuar estavel, pode-se testar `time_scale: 15`.
+- Evitar valores muito altos sem validacao, porque podem afetar colisoes e saltos.
+- Quando uma fase ja atinge sucesso consistente, nao e necessario treinar ate ao `max_steps`; guardar o modelo e avancar para a fase seguinte.
+
 ## Nota sobre modelos V5 existentes
 
 `EdgeRunnerV5Enemies` usa observation space `63`. Nao inicializar diretamente a partir de modelos V5 antigos com observation space `55`.

@@ -7,24 +7,37 @@ using UnityEngine.SceneManagement;
 public static class BuildER_V5_EnemiesTrainScene
 {
     private const string ScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_Enemies_Train.unity";
+    private const string NavWarmupScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_Enemies_NavWarmup.unity";
     private const string PlayerPrefabPath = "Assets/EdgeRunner/Prefabs/Agent/Player_V5_Enemies.prefab";
     private const string GroundPrefabPath = "Assets/EdgeRunner/Prefabs/Environment/GroundSegment.prefab";
     private const string GoalPrefabPath = "Assets/EdgeRunner/Prefabs/Environment/Goal.prefab";
     private const string DeathZonePrefabPath = "Assets/EdgeRunner/Prefabs/Environment/DeathZone.prefab";
     private const string AndroidEnemyPrefabPath = "Assets/EdgeRunner/Prefabs/Demo/DemoAndroidEnemy.prefab";
+    private static readonly bool showSprintVisualInTraining = false;
 
     [MenuItem("EdgeRunner/Training/Build ER_V5_Enemies_Train")]
     public static void BuildFromMenu()
     {
-        BuildScene();
+        BuildEnemyIntroScene();
     }
 
     public static void BuildSceneFromCommandLine()
     {
-        BuildScene();
+        BuildEnemyIntroScene();
     }
 
-    private static void BuildScene()
+    [MenuItem("EdgeRunner/Training/EnemyAware/Build NavWarmup")]
+    public static void BuildNavWarmupFromMenu()
+    {
+        BuildNavWarmupScene();
+    }
+
+    public static void BuildNavWarmupSceneFromCommandLine()
+    {
+        BuildNavWarmupScene();
+    }
+
+    private static void BuildEnemyIntroScene()
     {
         EnsureFolders();
 
@@ -49,6 +62,32 @@ public static class BuildER_V5_EnemiesTrainScene
         AssetDatabase.Refresh();
 
         Debug.Log($"Built EdgeRunner V5 enemy-aware training scene: {ScenePath}");
+    }
+
+    private static void BuildNavWarmupScene()
+    {
+        EnsureFolders();
+
+        Sprite sharedSprite = GetSharedSprite();
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+        GameObject root = new GameObject("ER_V5_Enemies_NavWarmup");
+        GameObject player = CreatePlayer(new Vector3(-10f, 1.15f, 0f));
+        GameObject goal = CreateGoal(new Vector3(34f, 1.1f, 0f));
+
+        ConfigurePlayer(player, goal.transform, configureNavWarmup: true);
+        CreateCamera(player.transform);
+        CreateNavWarmupLevel(root.transform, sharedSprite);
+        CreateDeathZone(12f, 80f);
+
+        Selection.activeObject = player;
+
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene, NavWarmupScenePath);
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+
+        Debug.Log($"Built EdgeRunner V5 enemy-aware NavWarmup scene: {NavWarmupScenePath}");
     }
 
     private static void EnsureFolders()
@@ -87,6 +126,11 @@ public static class BuildER_V5_EnemiesTrainScene
 
     private static GameObject CreatePlayer()
     {
+        return CreatePlayer(new Vector3(-10f, 1.15f, 0f));
+    }
+
+    private static GameObject CreatePlayer(Vector3 position)
+    {
         GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
 
         if (playerPrefab == null)
@@ -102,11 +146,16 @@ public static class BuildER_V5_EnemiesTrainScene
         }
 
         player.name = "Player_V5_Enemies";
-        player.transform.position = new Vector3(-10f, 1.15f, 0f);
+        player.transform.position = position;
         return player;
     }
 
     private static void ConfigurePlayer(GameObject player, Transform goal)
+    {
+        ConfigurePlayer(player, goal, configureNavWarmup: false);
+    }
+
+    private static void ConfigurePlayer(GameObject player, Transform goal, bool configureNavWarmup)
     {
         EdgeRunnerAgentV5EnemyAware agent = player.GetComponent<EdgeRunnerAgentV5EnemyAware>();
 
@@ -123,6 +172,11 @@ public static class BuildER_V5_EnemiesTrainScene
         SetObjectReference(agent, "mixedLevelGenerator", null);
         SetObjectReference(agent, "evaluationManager", null);
 
+        if (configureNavWarmup)
+        {
+            ConfigureNavWarmupAgent(agent);
+        }
+
         BehaviorParameters behavior = player.GetComponent<BehaviorParameters>();
 
         if (behavior != null)
@@ -131,6 +185,22 @@ public static class BuildER_V5_EnemiesTrainScene
             behavior.BehaviorType = BehaviorType.Default;
             ConfigureBehaviorBrain(behavior);
         }
+
+        ConfigureSprintVisual(player, rb);
+    }
+
+    private static void ConfigureNavWarmupAgent(EdgeRunnerAgentV5EnemyAware agent)
+    {
+        SetFloat(agent, "noProgressTimeLimit", 12f);
+        SetFloat(agent, "stuckTimeLimit", 12f);
+        SetFloat(agent, "maxEpisodeTime", 60f);
+        SetFloat(agent, "distanceProgressRewardScale", 0.10f);
+        SetFloat(agent, "maxDistanceProgressReward", 0.10f);
+        SetFloat(agent, "progressRewardScale", 0.08f);
+        SetFloat(agent, "maxProgressRewardPerStep", 0.08f);
+        SetFloat(agent, "stepPenalty", -0.0002f);
+        SetFloat(agent, "minDistanceProgressForReset", 0.03f);
+        SetBool(agent, "rewardPassedEnemies", false);
     }
 
     private static void ConfigureBehaviorBrain(BehaviorParameters behavior)
@@ -157,6 +227,63 @@ public static class BuildER_V5_EnemiesTrainScene
         }
 
         serializedObject.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static void ConfigureSprintVisual(GameObject player, Rigidbody2D rb)
+    {
+        if (!showSprintVisualInTraining)
+        {
+            return;
+        }
+
+        DemoSprintVisual sprintVisual = player.GetComponent<DemoSprintVisual>();
+
+        if (sprintVisual == null)
+        {
+            sprintVisual = player.AddComponent<DemoSprintVisual>();
+        }
+
+        SpriteRenderer spriteRenderer = player.GetComponentInChildren<SpriteRenderer>();
+        TrailRenderer trail = player.GetComponent<TrailRenderer>();
+
+        if (trail == null)
+        {
+            trail = player.AddComponent<TrailRenderer>();
+        }
+
+        trail.time = 0.2f;
+        trail.startWidth = 0.22f;
+        trail.endWidth = 0f;
+        trail.minVertexDistance = 0.05f;
+        trail.numCornerVertices = 2;
+        trail.numCapVertices = 2;
+        trail.autodestruct = false;
+        trail.emitting = false;
+        trail.enabled = false;
+        trail.startColor = new Color(0.35f, 0.95f, 1f, 0.55f);
+        trail.endColor = new Color(0.35f, 0.95f, 1f, 0f);
+
+        Material trailMaterial = GetTrailMaterial();
+
+        if (trailMaterial != null)
+        {
+            trail.sharedMaterial = trailMaterial;
+        }
+
+        sprintVisual.Configure(rb, spriteRenderer, trail);
+    }
+
+    private static Material GetTrailMaterial()
+    {
+        Material material = AssetDatabase.GetBuiltinExtraResource<Material>("Sprites-Default.mat");
+
+        if (material != null)
+        {
+            return material;
+        }
+
+        Shader shader = Shader.Find("Sprites/Default");
+        return shader != null ? new Material(shader) : null;
     }
 
     private static void CreateCamera(Transform target)
@@ -186,6 +313,17 @@ public static class BuildER_V5_EnemiesTrainScene
         CreatePlatformWithTop(platformRoot.transform, "Landing_01_Wide", 15.5f, 0f, new Vector2(16f, 0.4f), sprite);
         CreatePlatformWithTop(platformRoot.transform, "EnemyIntro_Platform_Main", 38f, 0f, new Vector2(22f, 0.4f), sprite);
         CreatePlatformWithTop(platformRoot.transform, "GoalApproach_Wide", 64.5f, 0f, new Vector2(24f, 0.4f), sprite);
+    }
+
+    private static void CreateNavWarmupLevel(Transform root, Sprite sprite)
+    {
+        GameObject platformRoot = new GameObject("NavWarmup_Platforms");
+        platformRoot.transform.SetParent(root, false);
+
+        CreatePlatformWithTop(platformRoot.transform, "NavWarmup_StartPlatform_Wide", -3f, 0f, new Vector2(18f, 0.4f), sprite);
+        CreatePlatformWithTop(platformRoot.transform, "NavWarmup_SecondPlatform_Close", 13.4f, 0f, new Vector2(13.6f, 0.4f), sprite);
+        CreatePlatformWithTop(platformRoot.transform, "NavWarmup_SmallGap_Landing", 25.8f, 0f, new Vector2(10.8f, 0.4f), sprite);
+        CreatePlatformWithTop(platformRoot.transform, "NavWarmup_GoalPad_Wide", 34f, 0f, new Vector2(8f, 0.4f), sprite);
     }
 
     private static GameObject CreatePlatformWithTop(
@@ -365,6 +503,11 @@ public static class BuildER_V5_EnemiesTrainScene
 
     private static GameObject CreateGoal()
     {
+        return CreateGoal(new Vector3(72f, 1.1f, 0f));
+    }
+
+    private static GameObject CreateGoal(Vector3 position)
+    {
         GameObject goalPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(GoalPrefabPath);
         GameObject goal = goalPrefab != null
             ? PrefabUtility.InstantiatePrefab(goalPrefab) as GameObject
@@ -376,7 +519,7 @@ public static class BuildER_V5_EnemiesTrainScene
         }
 
         goal.name = "Goal";
-        goal.transform.position = new Vector3(72f, 1.1f, 0f);
+        goal.transform.position = position;
         goal.transform.localScale = new Vector3(1.2f, 2.4f, 1f);
 
         BoxCollider2D collider = goal.GetComponent<BoxCollider2D>();
@@ -398,6 +541,11 @@ public static class BuildER_V5_EnemiesTrainScene
 
     private static void CreateDeathZone()
     {
+        CreateDeathZone(32f, 110f);
+    }
+
+    private static void CreateDeathZone(float centerX, float width)
+    {
         GameObject deathZonePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(DeathZonePrefabPath);
         GameObject deathZone = deathZonePrefab != null
             ? PrefabUtility.InstantiatePrefab(deathZonePrefab) as GameObject
@@ -409,8 +557,8 @@ public static class BuildER_V5_EnemiesTrainScene
         }
 
         deathZone.name = "DeathZone_EnemyAware";
-        deathZone.transform.position = new Vector3(32f, -7f, 0f);
-        deathZone.transform.localScale = new Vector3(110f, 1f, 1f);
+        deathZone.transform.position = new Vector3(centerX, -7f, 0f);
+        deathZone.transform.localScale = new Vector3(width, 1f, 1f);
 
         BoxCollider2D collider = deathZone.GetComponent<BoxCollider2D>();
 
@@ -461,6 +609,21 @@ public static class BuildER_V5_EnemiesTrainScene
         }
 
         property.boolValue = value;
+        serializedObject.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static void SetFloat(Object target, string propertyName, float value)
+    {
+        SerializedObject serializedObject = new SerializedObject(target);
+        SerializedProperty property = serializedObject.FindProperty(propertyName);
+
+        if (property == null)
+        {
+            Debug.LogWarning($"Serialized property '{propertyName}' not found on {target.name}.");
+            return;
+        }
+
+        property.floatValue = value;
         serializedObject.ApplyModifiedPropertiesWithoutUndo();
     }
 }

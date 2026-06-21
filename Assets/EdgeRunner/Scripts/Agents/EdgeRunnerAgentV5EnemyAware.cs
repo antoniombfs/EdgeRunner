@@ -167,6 +167,8 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
 
     [Header("Debug")]
     [SerializeField] private bool debugV5Actions = false;
+    [SerializeField] private bool debugEnemyAwareActions = false;
+    [SerializeField] private bool debugEnemyAwareProgress = false;
     [SerializeField] private float debugActionLogInterval = 1.0f;
     [SerializeField] private bool debugEnemyObservations = false;
 
@@ -199,6 +201,7 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
     private int lastEpisodeEndFrame = -999;
     private float episodeStartRealtime;
     private float nextDebugActionLogTime;
+    private float nextDebugProgressLogTime;
     private readonly HashSet<Transform> rewardedEnemyTransforms = new HashSet<Transform>();
     private readonly List<EnemyCandidate> enemyObservationCandidates = new List<EnemyCandidate>(2);
 
@@ -287,6 +290,7 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         lastMaskStopBlocked = false;
         episodeStartRealtime = Time.realtimeSinceStartup;
         nextDebugActionLogTime = 0f;
+        nextDebugProgressLogTime = 0f;
         rewardedEnemyTransforms.Clear();
 
         NotifyEvaluationEpisodeStarted();
@@ -555,27 +559,37 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         d[1] = NoJumpAction;
         d[2] = NoSprintAction;
 
-        float h = Input.GetAxisRaw("Horizontal");
+        bool moveLeft = Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow);
+        bool moveRight = Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow);
 
-        if (h < -0.1f)
+        if (moveLeft && !moveRight)
         {
             d[0] = MoveLeftAction;
         }
-        else if (h > 0.1f)
+        else if (moveRight && !moveLeft)
         {
             d[0] = MoveRightAction;
         }
 
-        heuristicJumpPressedThisStep = allowJump && Input.GetKeyDown(KeyCode.Space);
+        bool jumpHeld =
+            Input.GetKey(KeyCode.Space) ||
+            Input.GetKey(KeyCode.W) ||
+            Input.GetKey(KeyCode.UpArrow);
 
-        if (heuristicJumpPressedThisStep)
+        heuristicJumpPressedThisStep =
+            allowJump &&
+            (Input.GetKeyDown(KeyCode.Space) ||
+             Input.GetKeyDown(KeyCode.W) ||
+             Input.GetKeyDown(KeyCode.UpArrow));
+
+        if (allowJump && jumpHeld)
         {
             d[1] = JumpAction;
         }
 
         bool sprintHeld = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 
-        if (allowSprint && sprintHeld && Mathf.Abs(h) > 0.1f)
+        if (sprintHeld)
         {
             d[2] = SprintAction;
         }
@@ -651,7 +665,7 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         float goalDirectionX,
         bool grounded)
     {
-        if (!debugV5Actions || Time.time < nextDebugActionLogTime)
+        if ((!debugV5Actions && !debugEnemyAwareActions) || Time.time < nextDebugActionLogTime)
         {
             return;
         }
@@ -661,7 +675,7 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         Vector2 currentVelocity = rb != null ? rb.linearVelocity : Vector2.zero;
 
         Debug.Log(
-            "EdgeRunnerAgentV5EnemyAware actions: " +
+            "[ENEMY AWARE ACTION] " +
             $"move={moveAction}, jump={jumpAction}, sprint={sprintAction}, " +
             $"horizontalInput={horizontalInput:F1}, speed={activeMoveSpeed:F2}, " +
             $"linearVelocity=({currentVelocity.x:F2}, {currentVelocity.y:F2}), " +
@@ -981,18 +995,19 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         float currentDistance = GetDistanceToGoal();
         float delta = previousDistanceToGoal - currentDistance;
         lastDistanceImprovement = delta;
+        float progressReward = 0f;
 
         if (delta > 0f)
         {
             float rewardScale = Mathf.Max(distanceProgressRewardScale, progressRewardScale);
             float rewardCap = Mathf.Max(maxDistanceProgressReward, maxProgressRewardPerStep);
-            float reward = Mathf.Clamp(delta * rewardScale, 0f, rewardCap);
-            AddReward(reward);
+            progressReward = Mathf.Clamp(delta * rewardScale, 0f, rewardCap);
+            AddReward(progressReward);
         }
         else if (delta < 0f)
         {
-            float penalty = Mathf.Clamp(delta * distanceRegressionPenaltyScale, maxDistanceRegressionPenalty, 0f);
-            AddReward(penalty);
+            progressReward = Mathf.Clamp(delta * distanceRegressionPenaltyScale, maxDistanceRegressionPenalty, 0f);
+            AddReward(progressReward);
         }
 
         if (currentDistance < bestDistanceToGoal - minDistanceProgressForReset)
@@ -1007,6 +1022,26 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         }
 
         previousDistanceToGoal = currentDistance;
+        LogEnemyAwareProgress(currentDistance, delta, progressReward);
+    }
+
+    private void LogEnemyAwareProgress(float distanceToGoal, float progressDelta, float progressReward)
+    {
+        if (!debugEnemyAwareProgress || Time.time < nextDebugProgressLogTime)
+        {
+            return;
+        }
+
+        nextDebugProgressLogTime = Time.time + Mathf.Max(0.05f, debugActionLogInterval);
+        Debug.Log(
+            "[ENEMY AWARE PROGRESS] " +
+            $"distanceToGoal={distanceToGoal:F3}, " +
+            $"delta={progressDelta:F3}, " +
+            $"progressReward={progressReward:F4}, " +
+            $"position=({transform.position.x:F2}, {transform.position.y:F2}, {transform.position.z:F2}), " +
+            $"bestDistanceToGoal={bestDistanceToGoal:F3}",
+            this
+        );
     }
 
     private void TrackGapLandingReward(float direction, bool grounded)
