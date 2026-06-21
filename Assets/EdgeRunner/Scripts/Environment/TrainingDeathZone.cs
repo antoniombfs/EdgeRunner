@@ -2,6 +2,8 @@ using UnityEngine;
 
 public class TrainingDeathZone : MonoBehaviour
 {
+    [SerializeField] private bool debugDeathZone = false;
+
     private void Awake()
     {
         DeathZone gameplayDeathZone = GetComponent<DeathZone>();
@@ -9,12 +11,21 @@ public class TrainingDeathZone : MonoBehaviour
         if (gameplayDeathZone != null)
         {
             gameplayDeathZone.enabled = false;
-            Debug.Log("TrainingDeathZone disabled gameplay DeathZone scene reload on this object.");
+
+            if (debugDeathZone)
+            {
+                Debug.Log("TrainingDeathZone disabled gameplay DeathZone scene reload on this object.");
+            }
         }
     }
 
     private void OnTriggerEnter2D(Collider2D other)
     {
+        if (DeathZone.TryResetRunIfAvailable(other))
+        {
+            return;
+        }
+
         var agentV5 = other.GetComponentInParent<EdgeRunnerAgentV5>();
         if (agentV5 != null)
         {

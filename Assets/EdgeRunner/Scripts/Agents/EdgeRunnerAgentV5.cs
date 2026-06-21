@@ -62,6 +62,8 @@ public class EdgeRunnerAgentV5 : Agent
     [SerializeField] private LayerMask groundLayer;
     [FormerlySerializedAs("groundCheckRadius")]
     [SerializeField] private float groundCheckRange = 0.15f;
+    [SerializeField] private bool useDemoGroundedBoxCheck = false;
+    [SerializeField] private float demoGroundCheckWidth = 0.65f;
 
     [Header("Terrain Sensors")]
     [SerializeField] private int forwardTerrainSampleCount = 17;
@@ -144,12 +146,18 @@ public class EdgeRunnerAgentV5 : Agent
     [SerializeField] private float bestXProgressThreshold = 0.25f;
     [SerializeField] private float maxEpisodeTime = 45f;
 
+    [Header("Demo Mode")]
+    [SerializeField] private bool disableTrainingEpisodeEndsInDemo = false;
+    [SerializeField] private bool disableAgentMovementInDemo = false;
+
     [Header("Goal Detection")]
     [SerializeField] private float goalReachDistance = 0.75f;
 
     [Header("Debug")]
     [SerializeField] private bool debugV5Actions = false;
     [SerializeField] private float debugActionLogInterval = 1.0f;
+    [SerializeField] private bool debugJump = false;
+    [SerializeField] private bool debugEpisodeStackTraces = false;
 
     private Vector3 startPosition;
     private Quaternion startRotation;
@@ -177,7 +185,12 @@ public class EdgeRunnerAgentV5 : Agent
     private bool lastMaskLeftBlocked;
     private bool lastMaskRightBlocked;
     private bool lastMaskStopBlocked;
+    private bool warnedDemoIgnoredNoProgress;
+    private bool warnedDemoIgnoredStuck;
+    private bool warnedDemoIgnoredTimeout;
+    private bool warnedDemoManualMovementDisabled;
     private int lastEpisodeEndFrame = -999;
+    private readonly Collider2D[] demoGroundCheckHits = new Collider2D[12];
     private float episodeStartRealtime;
     private float nextDebugActionLogTime;
 
@@ -202,6 +215,8 @@ public class EdgeRunnerAgentV5 : Agent
         {
             evaluationManager = FindObjectOfType<EdgeRunnerEvaluationManager>();
         }
+
+        LogDemoManualMovementDisabledOnce();
     }
 
     public override void OnEpisodeBegin()
@@ -426,6 +441,15 @@ public class EdgeRunnerAgentV5 : Agent
             return;
         }
 
+        if (disableAgentMovementInDemo)
+        {
+            LogDemoManualMovementDisabledOnce();
+            CheckGoalReachedByDistance();
+            heuristicJumpPressedThisStep = false;
+            lastJumpAction = NoJumpAction;
+            return;
+        }
+
         if (CheckGoalReachedByDistance())
         {
             return;
@@ -476,7 +500,21 @@ public class EdgeRunnerAgentV5 : Agent
         bool bufferedJumpPressed = heuristicJumpPressedThisStep || (useJumpBufferForAgent && jumpPressedThisStep);
         UpdateJumpForgivenessTimers(grounded, jumpRequested, bufferedJumpPressed);
 
-        if (ShouldExecuteJump(grounded, jumpRequested))
+        bool shouldExecuteJump = ShouldExecuteJump(grounded, jumpRequested);
+
+        if (debugJump && (heuristicJumpPressedThisStep || jumpPressedThisStep || IsJumpBufferedForLog()))
+        {
+            if (shouldExecuteJump)
+            {
+                LogJumpState("[JUMP ACCEPTED]", grounded, jumpRequested);
+            }
+            else
+            {
+                LogJumpState($"[JUMP BLOCKED: {GetJumpBlockReason(grounded, jumpRequested)}]", grounded, jumpRequested);
+            }
+        }
+
+        if (shouldExecuteJump)
         {
             HandleJumpReward(moveX, direction, terrain);
             rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce);
@@ -497,6 +535,11 @@ public class EdgeRunnerAgentV5 : Agent
 
         if (timeSinceDistanceProgress >= noProgressTimeLimit)
         {
+            if (TryIgnoreTrainingEpisodeEndInDemo(EdgeRunnerEpisodeEndReason.NoProgress))
+            {
+                return;
+            }
+
             AddReward(stuckPenalty);
             TryEndEpisodeSafely(EdgeRunnerEpisodeEndReason.NoProgress);
             return;
@@ -504,6 +547,11 @@ public class EdgeRunnerAgentV5 : Agent
 
         if (timeSinceBestXProgress >= stuckTimeLimit)
         {
+            if (TryIgnoreTrainingEpisodeEndInDemo(EdgeRunnerEpisodeEndReason.Stuck))
+            {
+                return;
+            }
+
             AddReward(stuckPenalty);
             TryEndEpisodeSafely(EdgeRunnerEpisodeEndReason.Stuck);
             return;
@@ -511,6 +559,11 @@ public class EdgeRunnerAgentV5 : Agent
 
         if (episodeTime >= maxEpisodeTime)
         {
+            if (TryIgnoreTrainingEpisodeEndInDemo(EdgeRunnerEpisodeEndReason.Timeout))
+            {
+                return;
+            }
+
             TryEndEpisodeSafely(EdgeRunnerEpisodeEndReason.Timeout);
         }
     }
@@ -543,6 +596,7 @@ public class EdgeRunnerAgentV5 : Agent
         if (heuristicJumpPressedThisStep)
         {
             d[1] = JumpAction;
+            LogJumpState("[JUMP INPUT]", IsGrounded(), true);
         }
 
         bool sprintHeld = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
@@ -614,6 +668,150 @@ public class EdgeRunnerAgentV5 : Agent
         return grounded || (useCoyoteTime && coyoteTimer > 0f);
     }
 
+    private string GetJumpBlockReason(bool grounded, bool jumpRequested)
+    {
+        string reason = string.Empty;
+
+        AppendJumpBlockReason(ref reason, !allowJump, "allowJump false");
+        AppendJumpBlockReason(ref reason, jumpConsumedUntilLanding, "jump consumed until landing");
+        AppendJumpBlockReason(ref reason, waitingForJumpRelease, "waiting for jump release");
+        AppendJumpBlockReason(ref reason, !CanJumpFromGroundState(grounded), "not grounded and coyote inactive");
+        AppendJumpBlockReason(ref reason, !jumpRequested && !IsJumpBufferedForLog(), "no jump request or buffer");
+
+        return string.IsNullOrEmpty(reason) ? "unknown" : reason;
+    }
+
+    private static void AppendJumpBlockReason(ref string reason, bool condition, string value)
+    {
+        if (!condition)
+        {
+            return;
+        }
+
+        reason = string.IsNullOrEmpty(reason) ? value : $"{reason}; {value}";
+    }
+
+    private bool IsJumpBufferedForLog()
+    {
+        return useJumpBuffer && jumpBufferTimer > 0f;
+    }
+
+    private bool CanJumpForLog(bool grounded)
+    {
+        return allowJump &&
+               CanJumpFromGroundState(grounded) &&
+               !jumpConsumedUntilLanding &&
+               !waitingForJumpRelease;
+    }
+
+    private void LogJumpState(string prefix, bool grounded, bool jumpRequested)
+    {
+        if (!debugJump)
+        {
+            return;
+        }
+
+        Vector2 currentVelocity = rb != null ? rb.linearVelocity : Vector2.zero;
+
+        string groundDebug = prefix.Contains("not grounded and coyote inactive")
+            ? "\n" + BuildGroundDebugMessage()
+            : string.Empty;
+
+        Debug.Log(
+            $"{prefix} frame={Time.frameCount} " +
+            $"grounded={grounded} isGrounded={grounded} " +
+            $"canJump={CanJumpForLog(grounded)} jumpRequested={jumpRequested} " +
+            $"jumpBuffered={IsJumpBufferedForLog()} coyoteTimer={coyoteTimer:F3} " +
+            $"requireJumpReleaseBeforeNextJump={requireJumpReleaseBeforeNextJump} " +
+            $"jumpReleasedSinceLastJump={!waitingForJumpRelease} " +
+            $"Rigidbody2D.velocity={currentVelocity} " +
+            $"groundCheckRange={groundCheckRange:F3} groundLayer={FormatGroundLayerMask()}" +
+            groundDebug,
+            this
+        );
+    }
+
+    private string BuildGroundDebugMessage()
+    {
+        Vector2 origin = groundCheck != null ? groundCheck.position : transform.position;
+        float probeDistance = Mathf.Max(0.75f, groundCheckRange + 0.5f);
+        RaycastHit2D[] hits = Physics2D.CircleCastAll(origin, groundCheckRange, Vector2.down, probeDistance);
+        RaycastHit2D bestHit = default;
+        bool hasHit = false;
+
+        for (int i = 0; i < hits.Length; i++)
+        {
+            Collider2D hitCollider = hits[i].collider;
+
+            if (hitCollider == null || hitCollider.transform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            if (!hasHit || hits[i].distance < bestHit.distance)
+            {
+                bestHit = hits[i];
+                hasHit = true;
+            }
+        }
+
+        string common =
+            $"playerPosition={transform.position} " +
+            $"groundCheckPosition={origin} " +
+            $"groundLayer={FormatGroundLayerMask()}";
+
+        if (!hasHit)
+        {
+            return $"[GROUND DEBUG] No collider detected below player {common}";
+        }
+
+        Collider2D collider = bestHit.collider;
+        int colliderLayer = collider.gameObject.layer;
+        string layerName = LayerMask.LayerToName(colliderLayer);
+        string displayLayer = string.IsNullOrEmpty(layerName) ? colliderLayer.ToString() : layerName;
+        string colliderInfo =
+            $"{collider.name} layer={displayLayer} ({colliderLayer}) " +
+            $"isTrigger={collider.isTrigger} distance={bestHit.distance:F3} {common}";
+
+        if (!IsLayerInMask(colliderLayer, groundLayer))
+        {
+            return $"[GROUND DEBUG] Collider below player is not in groundLayer: {colliderInfo}";
+        }
+
+        return $"[GROUND DEBUG] Collider below player: {colliderInfo}";
+    }
+
+    private static bool IsLayerInMask(int layer, LayerMask mask)
+    {
+        return (mask.value & (1 << layer)) != 0;
+    }
+
+    private string FormatGroundLayerMask()
+    {
+        int mask = groundLayer.value;
+
+        if (mask == 0)
+        {
+            return "None (0)";
+        }
+
+        string names = string.Empty;
+
+        for (int i = 0; i < 32; i++)
+        {
+            if ((mask & (1 << i)) == 0)
+            {
+                continue;
+            }
+
+            string layerName = LayerMask.LayerToName(i);
+            string displayName = string.IsNullOrEmpty(layerName) ? i.ToString() : layerName;
+            names = string.IsNullOrEmpty(names) ? displayName : $"{names},{displayName}";
+        }
+
+        return $"{names} ({mask})";
+    }
+
     private void LogV5ActionDebug(
         int moveAction,
         int jumpAction,
@@ -680,6 +878,8 @@ public class EdgeRunnerAgentV5 : Agent
 
     public void FellOffMap()
     {
+        LogEpisodeStackTrace("[RESET SOURCE] EdgeRunnerAgentV5.FellOffMap");
+
         if (Time.realtimeSinceStartup - episodeStartRealtime < 0.05f)
         {
             Debug.LogWarning("Ignored FellOffMap immediately after episode reset.");
@@ -784,6 +984,8 @@ public class EdgeRunnerAgentV5 : Agent
 
     private bool TryEndEpisodeSafely(EdgeRunnerEpisodeEndReason reason)
     {
+        LogEpisodeStackTrace($"[EPISODE END] reason = {reason}");
+
         if (episodeEnding)
         {
             return false;
@@ -800,6 +1002,74 @@ public class EdgeRunnerAgentV5 : Agent
         NotifyEvaluationEpisodeEnded(reason);
         EndEpisode();
         return true;
+    }
+
+    private void LogEpisodeStackTrace(string header)
+    {
+        if (!debugEpisodeStackTraces)
+        {
+            return;
+        }
+
+        Vector2 currentVelocity = rb != null ? rb.linearVelocity : Vector2.zero;
+
+        Debug.LogWarning(
+            $"{header}\n" +
+            $"frame={Time.frameCount} position={transform.position} velocity={currentVelocity}\n" +
+            System.Environment.StackTrace,
+            this
+        );
+    }
+
+    private bool TryIgnoreTrainingEpisodeEndInDemo(EdgeRunnerEpisodeEndReason reason)
+    {
+        if (!disableTrainingEpisodeEndsInDemo)
+        {
+            return false;
+        }
+
+        switch (reason)
+        {
+            case EdgeRunnerEpisodeEndReason.NoProgress:
+                timeSinceDistanceProgress = 0f;
+                LogIgnoredTrainingEpisodeEndOnce(reason, ref warnedDemoIgnoredNoProgress);
+                return true;
+
+            case EdgeRunnerEpisodeEndReason.Stuck:
+                timeSinceBestXProgress = 0f;
+                LogIgnoredTrainingEpisodeEndOnce(reason, ref warnedDemoIgnoredStuck);
+                return true;
+
+            case EdgeRunnerEpisodeEndReason.Timeout:
+                episodeTime = 0f;
+                LogIgnoredTrainingEpisodeEndOnce(reason, ref warnedDemoIgnoredTimeout);
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    private void LogIgnoredTrainingEpisodeEndOnce(EdgeRunnerEpisodeEndReason reason, ref bool warned)
+    {
+        if (warned)
+        {
+            return;
+        }
+
+        warned = true;
+        Debug.LogWarning($"[DEMO MODE] Ignored training episode end: {reason}", this);
+    }
+
+    private void LogDemoManualMovementDisabledOnce()
+    {
+        if (!disableAgentMovementInDemo || warnedDemoManualMovementDisabled)
+        {
+            return;
+        }
+
+        Debug.Log("[DEMO MANUAL] EdgeRunnerAgentV5 movement disabled", this);
+        warnedDemoManualMovementDisabled = true;
     }
 
     private void HandleJumpReward(float moveX, float direction, TerrainAnalysis terrain)
@@ -1278,7 +1548,47 @@ public class EdgeRunnerAgentV5 : Agent
             return false;
         }
 
+        if (useDemoGroundedBoxCheck && IsGroundedByDemoBox())
+        {
+            return true;
+        }
+
         return Physics2D.OverlapCircle(groundCheck.position, groundCheckRange, groundLayer);
+    }
+
+    private bool IsGroundedByDemoBox()
+    {
+        Vector2 boxSize = new Vector2(
+            Mathf.Max(demoGroundCheckWidth, groundCheckRange * 2f),
+            Mathf.Max(groundCheckRange * 2f, 0.02f)
+        );
+
+        ContactFilter2D filter = new ContactFilter2D();
+        filter.SetLayerMask(groundLayer);
+        filter.useTriggers = false;
+
+        int hitCount = Physics2D.OverlapBox(
+            groundCheck.position,
+            boxSize,
+            0f,
+            filter,
+            demoGroundCheckHits
+        );
+
+        for (int i = 0; i < hitCount; i++)
+        {
+            Collider2D hit = demoGroundCheckHits[i];
+            demoGroundCheckHits[i] = null;
+
+            if (hit == null || hit.isTrigger || hit.transform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     private bool IsWallAhead(float direction)
@@ -1364,6 +1674,7 @@ public class EdgeRunnerAgentV5 : Agent
         sprintMoveSpeed = Mathf.Max(normalMoveSpeed, sprintMoveSpeed);
         jumpForce = Mathf.Max(0.1f, jumpForce);
         groundCheckRange = Mathf.Max(0.01f, groundCheckRange);
+        demoGroundCheckWidth = Mathf.Max(0.01f, demoGroundCheckWidth);
         forwardTerrainSampleCount = Mathf.Max(1, forwardTerrainSampleCount);
         backwardTerrainSampleCount = Mathf.Max(1, backwardTerrainSampleCount);
         verticalSensorCount = Mathf.Max(1, verticalSensorCount);

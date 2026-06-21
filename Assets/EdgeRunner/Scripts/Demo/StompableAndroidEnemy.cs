@@ -19,6 +19,12 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
     [SerializeField] private bool harmfulOnSideContact = true;
     [SerializeField] private bool affectsAgent = true;
     [SerializeField] private float sideHitCooldown = 0.5f;
+    [SerializeField] private float sidePollDamageDelay = 0.05f;
+
+    [Header("Contact Zones")]
+    [SerializeField] private Collider2D stompZoneCollider;
+    [SerializeField] private Collider2D sideHazardLeftCollider;
+    [SerializeField] private Collider2D sideHazardRightCollider;
 
     [Header("Visual")]
     [SerializeField] private bool disableColliderWhenDead = true;
@@ -36,14 +42,21 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
     private SpriteRenderer[] spriteRenderers;
     private Color[] initialColors;
     private Collider2D[] stompZoneColliders;
+    private Collider2D[] sideHazardColliders;
     private Vector3 initialScale;
     private Vector3 initialPosition;
     private bool alive = true;
     private float nextAllowedSideHitTime;
     private float ignoreBodyDamageUntil;
+    private float leftPollContactStartTime = -1f;
+    private float rightPollContactStartTime = -1f;
+    private bool hasWarnedInvalidSideSource;
+    private bool warnedDemoHazardDisabled;
+    private readonly Collider2D[] pollResults = new Collider2D[12];
 
     public bool IsAlive => alive;
     public bool AffectsAgent => affectsAgent;
+    public float CurrentCenterX => GetAndroidBounds().center.x;
 
     public void SetScoreManager(EdgeRunnerScoreManager newScoreManager)
     {
@@ -65,12 +78,25 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
         }
     }
 
+    public void SetContactColliders(Collider2D newStompZone, Collider2D newSideHazardLeft, Collider2D newSideHazardRight)
+    {
+        stompZoneCollider = newStompZone;
+        sideHazardLeftCollider = newSideHazardLeft;
+        sideHazardRightCollider = newSideHazardRight;
+    }
+
     private void Awake()
     {
         ownCollider = GetComponent<Collider2D>();
-        ownCollider.isTrigger = true;
+
+        if (ownCollider != null)
+        {
+            ownCollider.isTrigger = true;
+            ownCollider.enabled = false;
+        }
 
         patrol = GetComponent<DemoAndroidPatrol>();
+        DisableDemoEnemyHazardIfPresent();
         demoHazard = GetComponent<DemoEnemyHazard>();
         enemyMarker = GetComponent<EdgeRunnerEnemyMarker>();
 
@@ -81,15 +107,10 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
 
         enemyMarker.SetAffectsAgent(false);
 
-        if (demoHazard != null)
-        {
-            demoHazard.enabled = false;
-            demoHazard.SetAffectsAgent(false);
-        }
-
         spriteRenderers = GetComponentsInChildren<SpriteRenderer>(true);
         initialColors = new Color[spriteRenderers.Length];
         RefreshStompZones();
+        RefreshSideHazards();
 
         for (int i = 0; i < spriteRenderers.Length; i++)
         {
@@ -98,6 +119,11 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
 
         initialScale = transform.localScale;
         initialPosition = transform.position;
+    }
+
+    private void OnEnable()
+    {
+        DisableDemoEnemyHazardIfPresent();
     }
 
     private void Start()
@@ -113,28 +139,23 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
         }
     }
 
-    private void OnTriggerEnter2D(Collider2D other)
-    {
-        HandleBodyContact(other);
-    }
-
-    private void OnCollisionEnter2D(Collision2D collision)
-    {
-        HandleBodyContact(collision.collider);
-    }
-
     public void ResetForNewRun()
     {
+        DisableDemoEnemyHazardIfPresent();
+
         alive = true;
         nextAllowedSideHitTime = 0f;
         ignoreBodyDamageUntil = 0f;
+        leftPollContactStartTime = -1f;
+        rightPollContactStartTime = -1f;
+        hasWarnedInvalidSideSource = false;
         transform.localScale = initialScale;
         transform.position = initialPosition;
 
         if (ownCollider != null)
         {
-            ownCollider.enabled = true;
             ownCollider.isTrigger = true;
+            ownCollider.enabled = false;
         }
 
         if (patrol != null)
@@ -144,6 +165,7 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
         }
 
         SetStompZonesEnabled(true);
+        SetSideHazardsEnabled(true);
 
         for (int i = 0; i < spriteRenderers.Length; i++)
         {
@@ -153,6 +175,32 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
                 spriteRenderers[i].color = initialColors[i];
             }
         }
+    }
+
+    private void DisableDemoEnemyHazardIfPresent()
+    {
+        DemoEnemyHazard hazard = GetComponent<DemoEnemyHazard>();
+
+        if (hazard == null)
+        {
+            demoHazard = null;
+            return;
+        }
+
+        hazard.SetAffectsAgent(false);
+        hazard.enabled = false;
+        demoHazard = hazard;
+
+        if (!warnedDemoHazardDisabled)
+        {
+            Debug.LogWarning($"[ANDROID] Disabled DemoEnemyHazard on stompable android {name}", this);
+            warnedDemoHazardDisabled = true;
+        }
+    }
+
+    private void FixedUpdate()
+    {
+        PollContactZones();
     }
 
     public bool TryStomp(GameObject player)
@@ -166,63 +214,25 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
         return TryStompInternal(playerCollider, true);
     }
 
-    public void HandleBodyContact(GameObject player)
-    {
-        Collider2D playerCollider = player != null ? player.GetComponentInChildren<Collider2D>() : null;
-        HandleBodyContact(playerCollider);
-    }
-
-    public void HandleBodyContact(Collider2D other)
-    {
-        if (!alive)
-        {
-            LogStomp("BODY CONTACT ignored: android dead");
-            return;
-        }
-
-        if (other == null || !IsPlayer(other))
-        {
-            return;
-        }
-
-        LogStomp("BODY CONTACT");
-
-        if (Time.time < ignoreBodyDamageUntil)
-        {
-            LogStomp("BODY CONTACT ignored: stomp grace active");
-            return;
-        }
-
-        if (TryStompFromBody(other))
-        {
-            LogStomp("BODY CONTACT CONVERTED TO STOMP");
-            return;
-        }
-
-        LogStomp("SIDE DAMAGE");
-        HandleSideContact(other);
-    }
-
-    private bool TryStompFromBody(Collider2D playerCollider)
-    {
-        return TryStompInternal(playerCollider, false);
-    }
-
     private bool TryStompInternal(Collider2D playerCollider, bool fromStompZone)
     {
+        LogStompDiagnostic("[STOMP] TryStomp called", playerCollider);
+
         if (fromStompZone)
         {
-            LogStomp("STOMP ZONE ENTER");
+            LogStomp("[STOMP] StompZone_Top entered");
         }
 
         if (!alive)
         {
             LogStomp("STOMP REFUSED: android dead");
+            LogStompDiagnostic("[STOMP] Failed: android dead", playerCollider);
             return false;
         }
 
         if (playerCollider == null || !IsPlayer(playerCollider))
         {
+            LogStompDiagnostic("[STOMP] Failed: missing or non-player collider", playerCollider);
             return false;
         }
 
@@ -231,10 +241,12 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
         if (!IsValidStomp(playerCollider, playerBody, out string rejectReason))
         {
             LogStomp($"STOMP REFUSED: {rejectReason}");
+            LogStompDiagnostic($"[STOMP] Failed: {rejectReason}", playerCollider);
             return false;
         }
 
-        LogStomp("VALID STOMP");
+        LogStomp("[STOMP] Success");
+        LogStompDiagnostic("[STOMP] Success", playerCollider);
         KillByStomp(playerBody);
         return true;
     }
@@ -271,8 +283,9 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
         Bounds playerBounds = playerCollider.bounds;
         float playerFeetY = playerBounds.min.y;
         float playerCenterY = playerBounds.center.y;
-        float enemyTopY = ownCollider != null ? ownCollider.bounds.max.y : transform.position.y;
-        float enemyCenterY = ownCollider != null ? ownCollider.bounds.center.y : transform.position.y;
+        Bounds enemyBounds = GetAndroidBounds();
+        float enemyTopY = enemyBounds.max.y;
+        float enemyCenterY = enemyBounds.center.y;
 
         bool playerCenterAbove = playerCenterY > enemyCenterY + stompHeightOffset;
         bool playerFeetNearTop = playerFeetY > enemyTopY - stompTopTolerance;
@@ -314,6 +327,7 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
         }
 
         SetStompZonesEnabled(false);
+        SetSideHazardsEnabled(false);
 
         transform.localScale = new Vector3(
             initialScale.x * deadScaleMultiplier.x,
@@ -330,14 +344,78 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
         }
     }
 
-    private void HandleSideContact(Collider2D other)
+    public void HandleSideContact(GameObject player)
     {
+        HandleSideContact(player, null);
+    }
+
+    public void HandleSideContact(GameObject player, Component source)
+    {
+        Collider2D playerCollider = player != null ? player.GetComponentInChildren<Collider2D>() : null;
+        HandleSideContact(playerCollider, source);
+    }
+
+    public void HandleSideContact(Collider2D other)
+    {
+        HandleSideContact(other, null);
+    }
+
+    public void HandleSideContact(Collider2D other, Component source)
+    {
+        LogSideContactDiagnostic(other, source);
+
+        if (!IsValidSideHazardSource(source))
+        {
+            WarnInvalidSideSource(source);
+            return;
+        }
+
+        string sideLabel = GetSideHazardLabel(source);
+
+        if (!alive)
+        {
+            LogStomp($"{sideLabel} ignored: android dead");
+            return;
+        }
+
+        if (other == null || !IsPlayer(other))
+        {
+            return;
+        }
+
+        LogStomp($"[SIDE] SideHazard contact: {sideLabel}");
+
+        if (Time.time < ignoreBodyDamageUntil)
+        {
+            LogStomp($"{sideLabel} ignored: stomp grace active");
+            return;
+        }
+
+        if (IsPossibleStompFromSide(other))
+        {
+            if (TryStomp(other))
+            {
+                LogStomp("[SIDE HAZARD] Converted side contact to stomp");
+                return;
+            }
+
+            LogStomp("[SIDE HAZARD] Ignored because possible stomp");
+            return;
+        }
+
+        if (IsPlayerClearlyAbove(other))
+        {
+            LogStomp("[SIDE HAZARD] Ignored because possible stomp");
+            return;
+        }
+
         if (!harmfulOnSideContact || !affectsAgent || Time.time < nextAllowedSideHitTime)
         {
             return;
         }
 
         nextAllowedSideHitTime = Time.time + sideHitCooldown;
+        LogStomp("[SIDE HAZARD] Damage applied");
 
         DemoPlayerDamageHandler damageHandler = other.GetComponentInParent<DemoPlayerDamageHandler>();
 
@@ -370,6 +448,47 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
         }
     }
 
+    private bool IsPlayerClearlyAbove(Collider2D playerCollider)
+    {
+        if (playerCollider == null)
+        {
+            return false;
+        }
+
+        Bounds playerBounds = playerCollider.bounds;
+        float playerFeetY = playerBounds.min.y;
+        float playerCenterY = playerBounds.center.y;
+        Bounds enemyBounds = GetAndroidBounds();
+        float enemyTopY = enemyBounds.max.y;
+        float enemyCenterY = enemyBounds.center.y;
+
+        return playerCenterY > enemyCenterY + stompHeightOffset ||
+               playerFeetY > enemyTopY - stompTopTolerance;
+    }
+
+    private bool IsPossibleStompFromSide(Collider2D playerCollider)
+    {
+        if (playerCollider == null || !alive)
+        {
+            return false;
+        }
+
+        Rigidbody2D playerBody = playerCollider.GetComponentInParent<Rigidbody2D>();
+
+        if (playerBody == null || playerBody.linearVelocity.y > 0.5f)
+        {
+            return false;
+        }
+
+        Bounds playerBounds = playerCollider.bounds;
+        Bounds enemyBounds = GetAndroidBounds();
+
+        bool playerBottomNearTop = playerBounds.min.y >= enemyBounds.max.y - 0.45f;
+        bool playerCenterAbove = playerBounds.center.y > enemyBounds.center.y;
+
+        return playerBottomNearTop || playerCenterAbove;
+    }
+
     private static bool IsPlayer(Collider2D other)
     {
         return other.GetComponentInParent<EdgeRunnerAgentV5>() != null ||
@@ -393,7 +512,319 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
 
             zones[i].Configure(this);
             stompZoneColliders[i] = zones[i].GetComponent<Collider2D>();
+
+            if (stompZoneColliders[i] != null &&
+                (zones[i].name == "StompZone_Top" || stompZoneCollider == null))
+            {
+                stompZoneCollider = stompZoneColliders[i];
+            }
         }
+    }
+
+    private void RefreshSideHazards()
+    {
+        StompableAndroidSideHazard[] hazards = GetComponentsInChildren<StompableAndroidSideHazard>(true);
+        sideHazardColliders = new Collider2D[hazards.Length];
+
+        for (int i = 0; i < hazards.Length; i++)
+        {
+            if (hazards[i] == null)
+            {
+                continue;
+            }
+
+            hazards[i].Configure(this);
+            sideHazardColliders[i] = hazards[i].GetComponent<Collider2D>();
+
+            if (sideHazardColliders[i] == null)
+            {
+                continue;
+            }
+
+            if (hazards[i].name == "SideHazard_Left")
+            {
+                sideHazardLeftCollider = sideHazardColliders[i];
+            }
+            else if (hazards[i].name == "SideHazard_Right")
+            {
+                sideHazardRightCollider = sideHazardColliders[i];
+            }
+        }
+    }
+
+    private void PollContactZones()
+    {
+        if (!alive)
+        {
+            ResetPollTimers();
+            return;
+        }
+
+        Collider2D stompPlayer = FindPlayerInZone(stompZoneCollider);
+
+        if (stompPlayer != null)
+        {
+            LogStomp("[STOMP POLL] Player detected in StompZone");
+            TryStomp(stompPlayer);
+            ResetPollTimers();
+            return;
+        }
+
+        bool handledLeft = PollSideHazard(sideHazardLeftCollider, true, ref leftPollContactStartTime, "Left");
+        bool handledRight = PollSideHazard(sideHazardRightCollider, false, ref rightPollContactStartTime, "Right");
+
+        if (!handledLeft)
+        {
+            leftPollContactStartTime = -1f;
+        }
+
+        if (!handledRight)
+        {
+            rightPollContactStartTime = -1f;
+        }
+    }
+
+    private bool PollSideHazard(Collider2D sideCollider, bool isLeft, ref float contactStartTime, string label)
+    {
+        Collider2D playerCollider = FindPlayerInZone(sideCollider);
+
+        if (playerCollider == null)
+        {
+            return false;
+        }
+
+        LogStomp($"[SIDE POLL] Player detected in {label}");
+
+        if (!IsPlayerOnExpectedSide(playerCollider, isLeft))
+        {
+            LogStomp($"[SIDE POLL] Ignored wrong side: {label}");
+            return false;
+        }
+
+        if (IsPossibleStompFromSide(playerCollider) || IsPlayerClearlyAbove(playerCollider))
+        {
+            LogStomp("[SIDE POLL] Ignored because stomp possible");
+            return true;
+        }
+
+        if (contactStartTime < 0f)
+        {
+            contactStartTime = Time.time;
+            return true;
+        }
+
+        if (Time.time - contactStartTime < sidePollDamageDelay)
+        {
+            return true;
+        }
+
+        StompableAndroidSideHazard source = sideCollider != null
+            ? sideCollider.GetComponent<StompableAndroidSideHazard>()
+            : null;
+
+        HandleSideContact(playerCollider, source);
+        return true;
+    }
+
+    private Collider2D FindPlayerInZone(Collider2D zoneCollider)
+    {
+        if (zoneCollider == null || !zoneCollider.enabled || !zoneCollider.gameObject.activeInHierarchy)
+        {
+            return null;
+        }
+
+        Bounds zoneBounds = zoneCollider.bounds;
+        ContactFilter2D contactFilter = new ContactFilter2D
+        {
+            useTriggers = true,
+            useLayerMask = false,
+            useDepth = false,
+            useNormalAngle = false
+        };
+        int hitCount = Physics2D.OverlapBox(zoneBounds.center, zoneBounds.size, 0f, contactFilter, pollResults);
+
+        for (int i = 0; i < hitCount; i++)
+        {
+            Collider2D hit = pollResults[i];
+
+            if (hit == null || hit == zoneCollider || hit.transform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            if (IsPlayer(hit))
+            {
+                return hit;
+            }
+        }
+
+        return null;
+    }
+
+    private bool IsPlayerOnExpectedSide(Collider2D playerCollider, bool isLeft)
+    {
+        if (playerCollider == null)
+        {
+            return false;
+        }
+
+        float playerCenterX = playerCollider.bounds.center.x;
+        float androidCenterX = CurrentCenterX;
+
+        return isLeft
+            ? playerCenterX < androidCenterX
+            : playerCenterX > androidCenterX;
+    }
+
+    private void ResetPollTimers()
+    {
+        leftPollContactStartTime = -1f;
+        rightPollContactStartTime = -1f;
+    }
+
+    private bool IsValidSideHazardSource(Component source)
+    {
+        StompableAndroidSideHazard sideHazard = source as StompableAndroidSideHazard;
+
+        if (sideHazard == null)
+        {
+            return false;
+        }
+
+        if (sideHazard.GetComponentInParent<StompableAndroidEnemy>() != this)
+        {
+            return false;
+        }
+
+        string sourceName = sideHazard.gameObject.name;
+        return sourceName == "SideHazard_Left" || sourceName == "SideHazard_Right";
+    }
+
+    private string GetSideHazardLabel(Component source)
+    {
+        StompableAndroidSideHazard sideHazard = source as StompableAndroidSideHazard;
+        return sideHazard != null ? sideHazard.SideLabel : "[SIDE] SideHazard contact";
+    }
+
+    private void WarnInvalidSideSource(Component source)
+    {
+        string sourceName = source != null ? source.name : "null";
+
+        if (!hasWarnedInvalidSideSource)
+        {
+            Debug.LogWarning($"StompableAndroidEnemy '{name}': [SIDE] Ignored invalid side contact source: {sourceName}", this);
+            hasWarnedInvalidSideSource = true;
+        }
+        else
+        {
+            LogStomp($"[SIDE] Ignored invalid side contact source: {sourceName}");
+        }
+    }
+
+    private void LogSideContactDiagnostic(Collider2D playerCollider, Component source)
+    {
+        if (!debugStomp)
+        {
+            return;
+        }
+
+        Debug.LogWarning(
+            "[SIDE CONTACT]\n" +
+            $"source={DescribeComponent(source)}\n" +
+            $"player position={GetColliderPosition(playerCollider)}\n" +
+            $"android position={transform.position}\n" +
+            System.Environment.StackTrace,
+            this
+        );
+    }
+
+    private void LogStompDiagnostic(string message, Collider2D playerCollider)
+    {
+        if (!debugStomp)
+        {
+            return;
+        }
+
+        Debug.Log(
+            $"{message}\n" +
+            $"player={DescribeCollider(playerCollider)}\n" +
+            $"player position={GetColliderPosition(playerCollider)}\n" +
+            $"android position={transform.position}\n" +
+            System.Environment.StackTrace,
+            this
+        );
+    }
+
+    private static string DescribeComponent(Component component)
+    {
+        if (component == null)
+        {
+            return "null";
+        }
+
+        return $"{component.GetType().Name} on {component.gameObject.name}";
+    }
+
+    private static string DescribeCollider(Collider2D collider)
+    {
+        if (collider == null)
+        {
+            return "null";
+        }
+
+        return $"{collider.GetType().Name} on {collider.gameObject.name}";
+    }
+
+    private static Vector3 GetColliderPosition(Collider2D collider)
+    {
+        return collider != null ? collider.transform.position : Vector3.zero;
+    }
+
+    private Bounds GetAndroidBounds()
+    {
+        bool hasBounds = false;
+        Bounds bounds = new Bounds(transform.position, Vector3.zero);
+
+        if (spriteRenderers != null)
+        {
+            for (int i = 0; i < spriteRenderers.Length; i++)
+            {
+                SpriteRenderer spriteRenderer = spriteRenderers[i];
+
+                if (spriteRenderer == null || !spriteRenderer.enabled)
+                {
+                    continue;
+                }
+
+                if (!hasBounds)
+                {
+                    bounds = spriteRenderer.bounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(spriteRenderer.bounds);
+                }
+            }
+        }
+
+        if (hasBounds)
+        {
+            return bounds;
+        }
+
+        if (ownCollider != null && ownCollider.enabled)
+        {
+            return ownCollider.bounds;
+        }
+
+        Vector3 fallbackSize = new Vector3(
+            Mathf.Max(Mathf.Abs(transform.lossyScale.x), 0.1f),
+            Mathf.Max(Mathf.Abs(transform.lossyScale.y), 0.1f),
+            0.1f
+        );
+
+        return new Bounds(transform.position, fallbackSize);
     }
 
     private void SetStompZonesEnabled(bool value)
@@ -418,6 +849,28 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
         }
     }
 
+    private void SetSideHazardsEnabled(bool value)
+    {
+        if (sideHazardColliders == null || sideHazardColliders.Length == 0)
+        {
+            RefreshSideHazards();
+        }
+
+        if (sideHazardColliders == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < sideHazardColliders.Length; i++)
+        {
+            if (sideHazardColliders[i] != null)
+            {
+                sideHazardColliders[i].enabled = value;
+                sideHazardColliders[i].isTrigger = true;
+            }
+        }
+    }
+
     private void OnValidate()
     {
         bounceForce = Mathf.Max(0f, bounceForce);
@@ -425,6 +878,7 @@ public class StompableAndroidEnemy : MonoBehaviour, IEdgeRunnerResettable
         stompTopTolerance = Mathf.Max(0f, stompTopTolerance);
         maxUpwardVelocityForStomp = Mathf.Max(0f, maxUpwardVelocityForStomp);
         sideHitCooldown = Mathf.Max(0f, sideHitCooldown);
+        sidePollDamageDelay = Mathf.Max(0f, sidePollDamageDelay);
         stompDamageGraceTime = Mathf.Max(0f, stompDamageGraceTime);
     }
 

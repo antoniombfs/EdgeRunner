@@ -1,4 +1,5 @@
 using Unity.InferenceEngine;
+using Unity.MLAgents;
 using Unity.MLAgents.Policies;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -113,6 +114,7 @@ public static class BuildER_V5_DemoScene
         EdgeRunnerScoreManager scoreManager = scoreObject.AddComponent<EdgeRunnerScoreManager>();
         EdgeRunnerRunResetManager resetManager = scoreObject.AddComponent<EdgeRunnerRunResetManager>();
         SetObjectReference(resetManager, "scoreManager", scoreManager);
+        SetBool(resetManager, "debugResetStackTraces", false);
         return scoreManager;
     }
 
@@ -282,6 +284,20 @@ public static class BuildER_V5_DemoScene
         SetBool(agent, "useMixedLevelGenerator", false);
         SetObjectReference(agent, "mixedLevelGenerator", null);
         SetObjectReference(agent, "evaluationManager", null);
+        SetBool(agent, "requireJumpReleaseBeforeNextJump", false);
+        SetBool(agent, "useCoyoteTime", true);
+        SetFloat(agent, "coyoteTime", 0.22f);
+        SetBool(agent, "useJumpBuffer", true);
+        SetBool(agent, "useJumpBufferForAgent", true);
+        SetFloat(agent, "jumpForce", 12.8f);
+        SetFloat(agent, "groundCheckRange", 0.30f);
+        SetInt(agent, "groundLayer", LayerMask.GetMask("Ground"));
+        SetBool(agent, "useDemoGroundedBoxCheck", true);
+        SetFloat(agent, "demoGroundCheckWidth", 0.90f);
+        SetBool(agent, "disableTrainingEpisodeEndsInDemo", true);
+        SetBool(agent, "disableAgentMovementInDemo", true);
+        SetBool(agent, "debugJump", false);
+        SetBool(agent, "debugEpisodeStackTraces", false);
 
         BehaviorParameters behavior = player.GetComponent<BehaviorParameters>();
 
@@ -303,8 +319,101 @@ public static class BuildER_V5_DemoScene
             behavior.BehaviorType = BehaviorType.InferenceOnly;
         }
 
+        DecisionRequester decisionRequester = player.GetComponent<DecisionRequester>();
+
+        if (decisionRequester != null)
+        {
+            decisionRequester.enabled = false;
+        }
+
         ConfigureSprintVisual(player, rb);
+        ConfigureManualPlayerController(player, rb);
         ConfigurePlayerDamageHandler(player, scoreManager);
+    }
+
+    private static void ConfigureManualPlayerController(GameObject player, Rigidbody2D rb)
+    {
+        Component controller = GetOrAddComponentByType(player, "DemoManualPlayerController");
+
+        if (controller == null)
+        {
+            return;
+        }
+
+        Collider2D bodyCollider = GetPlayerBodyCollider(player);
+        LayerMask groundMask = LayerMask.GetMask("Ground");
+
+        SetObjectReference(controller, "rb", rb);
+        SetObjectReference(controller, "bodyCollider", bodyCollider);
+        SetInt(controller, "groundLayer", groundMask.value);
+        SetFloat(controller, "normalMoveSpeed", 8f);
+        SetFloat(controller, "sprintMoveSpeed", 11f);
+        SetFloat(controller, "jumpForce", 12.8f);
+        SetFloat(controller, "coyoteTime", 0.22f);
+        SetFloat(controller, "jumpBufferTime", 0.18f);
+        SetFloat(controller, "groundCheckWidth", 0.90f);
+        SetFloat(controller, "groundCheckHeight", 0.16f);
+        SetFloat(controller, "groundCheckExtraDistance", 0.04f);
+        SetBool(controller, "debugManualInput", true);
+
+        if (controller is Behaviour controllerBehaviour)
+        {
+            controllerBehaviour.enabled = true;
+        }
+    }
+
+    private static Component GetOrAddComponentByType(GameObject gameObject, string typeName)
+    {
+        System.Type componentType = System.Type.GetType($"{typeName}, Assembly-CSharp") ??
+                                    System.Type.GetType(typeName);
+
+        if (componentType == null || !typeof(Component).IsAssignableFrom(componentType))
+        {
+            Debug.LogWarning($"Could not resolve component type '{typeName}'.");
+            return null;
+        }
+
+        Component component = gameObject.GetComponent(componentType);
+
+        if (component == null)
+        {
+            component = gameObject.AddComponent(componentType);
+        }
+
+        return component;
+    }
+
+    private static Collider2D GetPlayerBodyCollider(GameObject player)
+    {
+        Collider2D[] colliders = player.GetComponentsInChildren<Collider2D>(true);
+        Collider2D firstNonTrigger = null;
+
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            Collider2D collider = colliders[i];
+
+            if (collider == null || collider.isTrigger)
+            {
+                continue;
+            }
+
+            if (collider.gameObject == player)
+            {
+                return collider;
+            }
+
+            if (firstNonTrigger == null)
+            {
+                firstNonTrigger = collider;
+            }
+        }
+
+        if (firstNonTrigger != null)
+        {
+            return firstNonTrigger;
+        }
+
+        return colliders.Length > 0 ? colliders[0] : null;
     }
 
     private static void ConfigurePlayerDamageHandler(GameObject player, EdgeRunnerScoreManager scoreManager)
@@ -321,6 +430,7 @@ public static class BuildER_V5_DemoScene
             : null;
 
         damageHandler.Configure(resetManager, scoreManager, true);
+        SetBool(damageHandler, "debugDamageStackTraces", false);
     }
 
     private static void ConfigureSprintVisual(GameObject player, Rigidbody2D rb)
@@ -452,7 +562,8 @@ public static class BuildER_V5_DemoScene
         Sprite sprite)
     {
         GameObject platform = new GameObject(name);
-        platform.layer = LayerMask.NameToLayer("Ground");
+        int groundLayerIndex = GetRequiredLayer("Ground");
+        platform.layer = groundLayerIndex;
         platform.transform.SetParent(parent, false);
         platform.transform.position = new Vector3(position.x, position.y, 0f);
         platform.transform.localScale = new Vector3(size.x, size.y, 1f);
@@ -462,10 +573,24 @@ public static class BuildER_V5_DemoScene
         renderer.color = color;
 
         BoxCollider2D collider = platform.AddComponent<BoxCollider2D>();
+        collider.enabled = true;
         collider.size = Vector2.one;
+        collider.offset = Vector2.zero;
         collider.isTrigger = false;
 
         return platform;
+    }
+
+    private static int GetRequiredLayer(string layerName)
+    {
+        int layer = LayerMask.NameToLayer(layerName);
+
+        if (layer < 0)
+        {
+            throw new System.InvalidOperationException($"Required layer '{layerName}' is missing.");
+        }
+
+        return layer;
     }
 
     private static GameObject CreatePlatformWithTop(
@@ -609,20 +734,13 @@ public static class BuildER_V5_DemoScene
         enemy.transform.position = new Vector3(position.x, position.y, 0f);
 
         ConfigureAndroidBodyCollider(enemy);
+        RemoveDemoEnemyHazard(enemy);
 
         DemoAndroidPatrol patrol = enemy.GetComponent<DemoAndroidPatrol>();
 
         if (patrol != null)
         {
             patrol.Configure(speed, patrolDistance);
-        }
-
-        DemoEnemyHazard hazard = enemy.GetComponent<DemoEnemyHazard>();
-
-        if (hazard != null)
-        {
-            hazard.SetAffectsAgent(false);
-            hazard.enabled = false;
         }
 
         StompableAndroidEnemy stompable = enemy.GetComponent<StompableAndroidEnemy>();
@@ -643,7 +761,7 @@ public static class BuildER_V5_DemoScene
         SetFloat(stompable, "maxUpwardVelocityForStomp", 1f);
         SetFloat(stompable, "stompDamageGraceTime", 0.2f);
         SetBool(stompable, "debugStomp", false);
-        EnsureAndroidStompZone(enemy.transform, stompable);
+        EnsureAndroidContactZones(enemy.transform, stompable);
 
         EdgeRunnerEnemyMarker marker = enemy.GetComponent<EdgeRunnerEnemyMarker>();
 
@@ -665,18 +783,65 @@ public static class BuildER_V5_DemoScene
         bodyCollider.isTrigger = true;
         bodyCollider.size = new Vector2(0.9f, 0.55f);
         bodyCollider.offset = new Vector2(0f, -0.22f);
+        bodyCollider.enabled = false;
     }
 
-    private static void EnsureAndroidStompZone(Transform enemyRoot, StompableAndroidEnemy stompable)
+    private static void RemoveDemoEnemyHazard(GameObject enemy)
     {
-        Transform existingZone = enemyRoot.Find("StompZone");
+        DemoEnemyHazard hazard = enemy.GetComponent<DemoEnemyHazard>();
+
+        if (hazard == null)
+        {
+            return;
+        }
+
+        Object.DestroyImmediate(hazard);
+        Debug.Log($"[BUILDER] Removed DemoEnemyHazard from stompable android {enemy.name}");
+    }
+
+    private static void EnsureAndroidContactZones(Transform enemyRoot, StompableAndroidEnemy stompable)
+    {
+        Collider2D stompZoneCollider = EnsureAndroidStompZone(enemyRoot, stompable);
+        Collider2D sideHazardLeftCollider = EnsureAndroidSideHazard(
+            enemyRoot,
+            stompable,
+            "SideHazard_Left",
+            new Vector3(-0.55f, -0.05f, 0f),
+            new Vector2(0.25f, 0.55f),
+            "SIDE HAZARD LEFT",
+            StompableAndroidSideHazard.Side.Left
+        );
+        Collider2D sideHazardRightCollider = EnsureAndroidSideHazard(
+            enemyRoot,
+            stompable,
+            "SideHazard_Right",
+            new Vector3(0.55f, -0.05f, 0f),
+            new Vector2(0.25f, 0.55f),
+            "SIDE HAZARD RIGHT",
+            StompableAndroidSideHazard.Side.Right
+        );
+
+        stompable.SetContactColliders(stompZoneCollider, sideHazardLeftCollider, sideHazardRightCollider);
+    }
+
+    private static Collider2D EnsureAndroidStompZone(Transform enemyRoot, StompableAndroidEnemy stompable)
+    {
+        Transform existingZone = enemyRoot.Find("StompZone_Top");
+
+        if (existingZone == null)
+        {
+            existingZone = enemyRoot.Find("StompZone");
+        }
+
         GameObject zone = existingZone != null
             ? existingZone.gameObject
-            : new GameObject("StompZone");
+            : new GameObject("StompZone_Top");
 
+        zone.name = "StompZone_Top";
+        zone.SetActive(true);
         zone.layer = enemyRoot.gameObject.layer;
         zone.transform.SetParent(enemyRoot, false);
-        zone.transform.localPosition = new Vector3(0f, 0.38f, 0f);
+        zone.transform.localPosition = new Vector3(0f, 0.50f, 0f);
         zone.transform.localRotation = Quaternion.identity;
         zone.transform.localScale = Vector3.one;
 
@@ -687,8 +852,9 @@ public static class BuildER_V5_DemoScene
             zoneCollider = zone.AddComponent<BoxCollider2D>();
         }
 
+        zoneCollider.enabled = true;
         zoneCollider.isTrigger = true;
-        zoneCollider.size = new Vector2(1.35f, 0.45f);
+        zoneCollider.size = new Vector2(1.8f, 0.55f);
         zoneCollider.offset = Vector2.zero;
 
         StompableAndroidStompZone stompZone = zone.GetComponent<StompableAndroidStompZone>();
@@ -698,7 +864,58 @@ public static class BuildER_V5_DemoScene
             stompZone = zone.AddComponent<StompableAndroidStompZone>();
         }
 
+        stompZone.enabled = true;
         stompZone.Configure(stompable);
+        SetBool(stompZone, "debugStompZone", false);
+        Debug.Log($"[BUILDER] Created active StompZone_Top for {enemyRoot.name}");
+        return zoneCollider;
+    }
+
+    private static Collider2D EnsureAndroidSideHazard(
+        Transform enemyRoot,
+        StompableAndroidEnemy stompable,
+        string name,
+        Vector3 localPosition,
+        Vector2 size,
+        string sideLabel,
+        StompableAndroidSideHazard.Side side)
+    {
+        Transform existingHazard = enemyRoot.Find(name);
+        GameObject hazard = existingHazard != null
+            ? existingHazard.gameObject
+            : new GameObject(name);
+
+        hazard.name = name;
+        hazard.SetActive(true);
+        hazard.layer = enemyRoot.gameObject.layer;
+        hazard.transform.SetParent(enemyRoot, false);
+        hazard.transform.localPosition = localPosition;
+        hazard.transform.localRotation = Quaternion.identity;
+        hazard.transform.localScale = Vector3.one;
+
+        BoxCollider2D hazardCollider = hazard.GetComponent<BoxCollider2D>();
+
+        if (hazardCollider == null)
+        {
+            hazardCollider = hazard.AddComponent<BoxCollider2D>();
+        }
+
+        hazardCollider.enabled = true;
+        hazardCollider.isTrigger = true;
+        hazardCollider.size = size;
+        hazardCollider.offset = Vector2.zero;
+
+        StompableAndroidSideHazard sideHazard = hazard.GetComponent<StompableAndroidSideHazard>();
+
+        if (sideHazard == null)
+        {
+            sideHazard = hazard.AddComponent<StompableAndroidSideHazard>();
+        }
+
+        sideHazard.enabled = true;
+        sideHazard.Configure(stompable, sideLabel, side);
+        SetBool(sideHazard, "debugSideHazard", false);
+        return hazardCollider;
     }
 
     private static GameObject CreateGoal(DemoHUD hud, EdgeRunnerScoreManager scoreManager)
@@ -782,10 +999,14 @@ public static class BuildER_V5_DemoScene
         deathZone.transform.position = new Vector3(68f, -7f, 0f);
         deathZone.transform.localScale = new Vector3(190f, 1f, 1f);
 
-        if (deathZone.GetComponent<TrainingDeathZone>() == null)
+        TrainingDeathZone trainingDeathZone = deathZone.GetComponent<TrainingDeathZone>();
+
+        if (trainingDeathZone == null)
         {
-            deathZone.AddComponent<TrainingDeathZone>();
+            trainingDeathZone = deathZone.AddComponent<TrainingDeathZone>();
         }
+
+        SetBool(trainingDeathZone, "debugDeathZone", false);
     }
 
     private static GameObject CreateOrUpdateEnergyCellPrefab(Sprite sprite)
@@ -852,10 +1073,9 @@ public static class BuildER_V5_DemoScene
         ConfigureAndroidBodyCollider(enemy);
 
         enemy.AddComponent<DemoAndroidPatrol>();
-        enemy.AddComponent<DemoEnemyHazard>();
         enemy.AddComponent<EdgeRunnerEnemyMarker>();
         StompableAndroidEnemy stompable = enemy.AddComponent<StompableAndroidEnemy>();
-        EnsureAndroidStompZone(enemy.transform, stompable);
+        EnsureAndroidContactZones(enemy.transform, stompable);
 
         CreateEnemyEye(enemy.transform, "LeftEye", new Vector3(-0.18f, 0.18f, -0.03f), sprite);
         CreateEnemyEye(enemy.transform, "RightEye", new Vector3(0.18f, 0.18f, -0.03f), sprite);

@@ -6,6 +6,7 @@ public class DemoPlayerDamageHandler : MonoBehaviour, IEdgeRunnerResettable
     [SerializeField] private EdgeRunnerScoreManager scoreManager;
     [SerializeField] private bool resetRunOnDamage = true;
     [SerializeField] private float damageCooldown = 0.35f;
+    [SerializeField] private bool debugDamageStackTraces = false;
 
     private Rigidbody2D rb;
     private Vector3 spawnPosition;
@@ -32,6 +33,16 @@ public class DemoPlayerDamageHandler : MonoBehaviour, IEdgeRunnerResettable
 
     public bool TakeDamage(Component source)
     {
+        if (debugDamageStackTraces)
+        {
+            Debug.LogWarning(
+                "[RESET SOURCE] DemoPlayerDamageHandler.TakeDamage\n" +
+                $"source={DescribeSource(source)}\n" +
+                System.Environment.StackTrace,
+                this
+            );
+        }
+
         if (Time.time < nextAllowedDamageTime)
         {
             return true;
@@ -105,6 +116,16 @@ public class DemoPlayerDamageHandler : MonoBehaviour, IEdgeRunnerResettable
         spawnPosition = transform.position;
         spawnRotation = transform.rotation;
         hasSpawn = true;
+    }
+
+    private static string DescribeSource(Component source)
+    {
+        if (source == null)
+        {
+            return "null";
+        }
+
+        return $"{source.GetType().Name} on {source.gameObject.name}";
     }
 
     private void OnValidate()

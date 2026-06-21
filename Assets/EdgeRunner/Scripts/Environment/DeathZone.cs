@@ -1,10 +1,14 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 public class DeathZone : MonoBehaviour
 {
     private void OnTriggerEnter2D(Collider2D other)
     {
+        if (TryResetRunIfAvailable(other))
+        {
+            return;
+        }
+
         EdgeRunnerAgentV5 agentV5 = other.GetComponentInParent<EdgeRunnerAgentV5>();
         if (agentV5 != null)
         {
@@ -39,8 +43,38 @@ public class DeathZone : MonoBehaviour
 
         if (other.CompareTag("Player"))
         {
-            Debug.LogWarning("DeathZone.cs reloading current scene for normal gameplay Player.");
-            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+            Debug.LogWarning("DeathZone.cs found Player without an EdgeRunner agent or run reset manager. Scene reload skipped.");
         }
+    }
+
+    public static bool TryResetRunIfAvailable(Collider2D other)
+    {
+        if (!IsPlayerLikeCollider(other))
+        {
+            return false;
+        }
+
+        EdgeRunnerRunResetManager resetManager = FindAnyObjectByType<EdgeRunnerRunResetManager>();
+
+        if (resetManager == null)
+        {
+            return false;
+        }
+
+        resetManager.ResetRun();
+        return true;
+    }
+
+    private static bool IsPlayerLikeCollider(Collider2D other)
+    {
+        return other != null &&
+               (other.GetComponentInParent<EdgeRunnerAgentV5>() != null ||
+                other.GetComponentInParent<EdgeRunnerAgentV5EnemyAware>() != null ||
+                other.GetComponentInParent<EdgeRunnerAgentV5EnemiesTransfer>() != null ||
+                other.GetComponentInParent<EdgeRunnerAgentV3>() != null ||
+                other.GetComponentInParent<EdgeRunnerAgentV2>() != null ||
+                other.GetComponentInParent<EdgeRunnerAgent>() != null ||
+                other.GetComponentInParent<DemoPlayerDamageHandler>() != null ||
+                other.CompareTag("Player"));
     }
 }

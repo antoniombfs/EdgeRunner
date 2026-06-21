@@ -29,11 +29,13 @@ public class DemoEnemyHazard : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D other)
     {
+        LogHazardContact("[ENEMY HAZARD] triggered by", other);
         TryHandlePlayer(other);
     }
 
     private void OnCollisionEnter2D(Collision2D collision)
     {
+        LogHazardContact("[ENEMY HAZARD] collided with", collision.collider);
         TryHandlePlayer(collision.collider);
     }
 
@@ -111,5 +113,24 @@ public class DemoEnemyHazard : MonoBehaviour
     private void OnValidate()
     {
         hitCooldown = Mathf.Max(0f, hitCooldown);
+    }
+
+    private void LogHazardContact(string prefix, Collider2D other)
+    {
+        Debug.LogWarning(
+            $"{prefix} {DescribeCollider(other)}\n" +
+            System.Environment.StackTrace,
+            this
+        );
+    }
+
+    private static string DescribeCollider(Collider2D other)
+    {
+        if (other == null)
+        {
+            return "null";
+        }
+
+        return $"{other.GetType().Name} on {other.gameObject.name}";
     }
 }
