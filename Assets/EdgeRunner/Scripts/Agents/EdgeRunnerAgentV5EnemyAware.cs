@@ -155,10 +155,11 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
     [Tooltip("Adds 8 vector observations for nearby Android/Cyborg hazards. Disable only for debugging.")]
     [SerializeField] private bool enableEnemyAwareness = true;
     [SerializeField] private string enemyTag = "Enemy";
-    [SerializeField] private float enemySensorRangeX = 12f;
-    [SerializeField] private float enemySensorRangeY = 4f;
-    [SerializeField] private float enemyVelocityReference = 4f;
-    [SerializeField] private float enemyDangerCloseDistance = 1.4f;
+    [FormerlySerializedAs("enemySensorRangeX")]
+    [SerializeField] private float enemyDetectionRangeX = 12f;
+    [FormerlySerializedAs("enemySensorRangeY")]
+    [SerializeField] private float enemyDetectionRangeY = 5f;
+    [SerializeField] private int enemyObservationSlots = 2;
     [SerializeField] private float enemyHitPenalty = -2.5f;
     [SerializeField] private bool rewardPassedEnemies = true;
     [SerializeField] private float enemyPassReward = 0.35f;
@@ -167,6 +168,7 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
     [Header("Debug")]
     [SerializeField] private bool debugV5Actions = false;
     [SerializeField] private float debugActionLogInterval = 1.0f;
+    [SerializeField] private bool debugEnemyObservations = false;
 
     private Vector3 startPosition;
     private Quaternion startRotation;
@@ -198,6 +200,7 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
     private float episodeStartRealtime;
     private float nextDebugActionLogTime;
     private readonly HashSet<Transform> rewardedEnemyTransforms = new HashSet<Transform>();
+    private readonly List<EnemyCandidate> enemyObservationCandidates = new List<EnemyCandidate>(2);
 
     public int ExpectedObservationSize =>
         BaseObservationCount +
@@ -293,7 +296,7 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
     {
         float direction = GetForwardDirection();
         TerrainAnalysis terrain = AnalyzeTerrain(direction);
-        EnemyObservationSnapshot enemyObservation = AnalyzeEnemies(direction);
+        List<EnemyCandidate> enemyObservation = AnalyzeEnemies(direction);
         float maxHorizontalSpeed = GetMaxHorizontalSpeed();
 
         float velX = rb != null ? rb.linearVelocity.x / maxHorizontalSpeed : 0f;
@@ -1065,51 +1068,43 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         }
     }
 
-    private void AddEnemyObservations(VectorSensor sensor, EnemyObservationSnapshot observation)
+    private void AddEnemyObservations(VectorSensor sensor, List<EnemyCandidate> candidates)
     {
-        if (!observation.enemyAheadExists)
-        {
-            sensor.AddObservation(0f);
-            sensor.AddObservation(0f);
-            sensor.AddObservation(0f);
-            sensor.AddObservation(0f);
-            sensor.AddObservation(0f);
-        }
-        else
-        {
-            sensor.AddObservation(1f);
-            sensor.AddObservation(observation.enemyAheadForwardDistanceNormalized);
-            sensor.AddObservation(observation.enemyAheadVerticalDistanceNormalized);
-            sensor.AddObservation(observation.enemyAheadVelocityNormalized);
-            sensor.AddObservation(observation.enemyAheadDangerClose ? 1f : 0f);
-        }
+        int maxSlots = EnemyObservationCount / 4;
+        int activeSlots = Mathf.Clamp(enemyObservationSlots, 1, maxSlots);
+        float maxDistance = Mathf.Sqrt(
+            enemyDetectionRangeX * enemyDetectionRangeX +
+            enemyDetectionRangeY * enemyDetectionRangeY
+        );
 
-        if (!observation.nearestEnemyExists)
+        for (int slot = 0; slot < maxSlots; slot++)
         {
-            sensor.AddObservation(0f);
-            sensor.AddObservation(0f);
-            sensor.AddObservation(0f);
-            return;
-        }
+            if (slot >= activeSlots || slot >= candidates.Count)
+            {
+                sensor.AddObservation(0f);
+                sensor.AddObservation(0f);
+                sensor.AddObservation(0f);
+                sensor.AddObservation(0f);
+                continue;
+            }
 
-        sensor.AddObservation(1f);
-        sensor.AddObservation(observation.nearestEnemyDxNormalized);
-        sensor.AddObservation(observation.nearestEnemyDyNormalized);
+            EnemyCandidate candidate = candidates[slot];
+            sensor.AddObservation(NormalizeSignedDistance(candidate.delta.x, enemyDetectionRangeX));
+            sensor.AddObservation(NormalizeSignedDistance(candidate.delta.y, enemyDetectionRangeY));
+            sensor.AddObservation(NormalizeDistance(candidate.delta.magnitude, maxDistance));
+            sensor.AddObservation(candidate.isDangerous ? 1f : 0f);
+        }
     }
 
-    private EnemyObservationSnapshot AnalyzeEnemies(float direction)
+    private List<EnemyCandidate> AnalyzeEnemies(float direction)
     {
-        EnemyObservationSnapshot snapshot = default;
+        enemyObservationCandidates.Clear();
 
         if (!enableEnemyAwareness)
         {
-            return snapshot;
+            return enemyObservationCandidates;
         }
 
-        EnemyCandidate aheadCandidate = default;
-        EnemyCandidate nearestCandidate = default;
-        float bestAheadDistance = float.PositiveInfinity;
-        float bestNearestDistanceSqr = float.PositiveInfinity;
         HashSet<Transform> seenEnemies = new HashSet<Transform>();
 
         EdgeRunnerEnemyMarker[] markers = FindObjectsByType<EdgeRunnerEnemyMarker>(FindObjectsInactive.Exclude);
@@ -1118,20 +1113,18 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         {
             EdgeRunnerEnemyMarker marker = markers[i];
 
-            if (marker == null || !marker.AffectsAgent)
+            if (marker == null || !marker.IsObservable)
             {
                 continue;
             }
 
             ConsiderEnemyCandidate(
-                marker.transform,
+                marker.ObservationTransform,
                 marker.CurrentVelocity,
+                marker.IsDangerous,
                 direction,
                 seenEnemies,
-                ref aheadCandidate,
-                ref bestAheadDistance,
-                ref nearestCandidate,
-                ref bestNearestDistanceSqr
+                enemyObservationCandidates
             );
         }
 
@@ -1149,61 +1142,29 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
             ConsiderEnemyCandidate(
                 hazard.transform,
                 GetEnemyVelocity(hazard.transform),
+                true,
                 direction,
                 seenEnemies,
-                ref aheadCandidate,
-                ref bestAheadDistance,
-                ref nearestCandidate,
-                ref bestNearestDistanceSqr
+                enemyObservationCandidates
             );
         }
 
         AddTaggedEnemyCandidates(
             direction,
             seenEnemies,
-            ref aheadCandidate,
-            ref bestAheadDistance,
-            ref nearestCandidate,
-            ref bestNearestDistanceSqr
+            enemyObservationCandidates
         );
 
-        if (aheadCandidate.exists)
-        {
-            snapshot.enemyAheadExists = true;
-            snapshot.enemyAheadForwardDistanceNormalized = NormalizeDistance(
-                aheadCandidate.forwardDistance,
-                enemySensorRangeX
-            );
-            snapshot.enemyAheadVerticalDistanceNormalized = NormalizeSignedDistance(
-                aheadCandidate.delta.y,
-                enemySensorRangeY
-            );
-            snapshot.enemyAheadVelocityNormalized = Mathf.Clamp(
-                aheadCandidate.velocity.x * direction / Mathf.Max(0.0001f, enemyVelocityReference),
-                -1f,
-                1f
-            );
-            snapshot.enemyAheadDangerClose = aheadCandidate.forwardDistance <= enemyDangerCloseDistance &&
-                                             Mathf.Abs(aheadCandidate.delta.y) <= enemyDangerCloseDistance;
-        }
-
-        if (nearestCandidate.exists)
-        {
-            snapshot.nearestEnemyExists = true;
-            snapshot.nearestEnemyDxNormalized = NormalizeSignedDistance(nearestCandidate.delta.x, enemySensorRangeX);
-            snapshot.nearestEnemyDyNormalized = NormalizeSignedDistance(nearestCandidate.delta.y, enemySensorRangeY);
-        }
-
-        return snapshot;
+        enemyObservationCandidates.Sort(CompareEnemyCandidates);
+        TrimEnemyCandidatesToSlots();
+        LogEnemyObservations(enemyObservationCandidates);
+        return enemyObservationCandidates;
     }
 
     private void AddTaggedEnemyCandidates(
         float direction,
         HashSet<Transform> seenEnemies,
-        ref EnemyCandidate aheadCandidate,
-        ref float bestAheadDistance,
-        ref EnemyCandidate nearestCandidate,
-        ref float bestNearestDistanceSqr)
+        List<EnemyCandidate> candidates)
     {
         if (string.IsNullOrWhiteSpace(enemyTag))
         {
@@ -1233,12 +1194,10 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
             ConsiderEnemyCandidate(
                 taggedEnemy.transform,
                 GetEnemyVelocity(taggedEnemy.transform),
+                true,
                 direction,
                 seenEnemies,
-                ref aheadCandidate,
-                ref bestAheadDistance,
-                ref nearestCandidate,
-                ref bestNearestDistanceSqr
+                candidates
             );
         }
     }
@@ -1246,12 +1205,10 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
     private void ConsiderEnemyCandidate(
         Transform enemyTransform,
         Vector2 enemyVelocity,
+        bool isDangerous,
         float direction,
         HashSet<Transform> seenEnemies,
-        ref EnemyCandidate aheadCandidate,
-        ref float bestAheadDistance,
-        ref EnemyCandidate nearestCandidate,
-        ref float bestNearestDistanceSqr)
+        List<EnemyCandidate> candidates)
     {
         if (enemyTransform == null)
         {
@@ -1265,42 +1222,82 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
 
         Vector2 delta = (Vector2)(enemyTransform.position - transform.position);
 
-        if (Mathf.Abs(delta.x) > enemySensorRangeX || Mathf.Abs(delta.y) > enemySensorRangeY)
+        if (Mathf.Abs(delta.x) > enemyDetectionRangeX || Mathf.Abs(delta.y) > enemyDetectionRangeY)
         {
             return;
         }
 
         float distanceSqr = delta.sqrMagnitude;
-
-        if (distanceSqr < bestNearestDistanceSqr)
-        {
-            bestNearestDistanceSqr = distanceSqr;
-            nearestCandidate = new EnemyCandidate
-            {
-                exists = true,
-                transform = enemyTransform,
-                delta = delta,
-                velocity = enemyVelocity,
-                forwardDistance = Mathf.Max(0f, delta.x * direction)
-            };
-        }
-
         float forwardDistance = delta.x * direction;
+        float priority = forwardDistance >= 0f
+            ? distanceSqr
+            : distanceSqr + enemyDetectionRangeX * enemyDetectionRangeX;
 
-        if (forwardDistance < 0f || forwardDistance >= bestAheadDistance)
-        {
-            return;
-        }
-
-        bestAheadDistance = forwardDistance;
-        aheadCandidate = new EnemyCandidate
+        candidates.Add(new EnemyCandidate
         {
             exists = true,
             transform = enemyTransform,
             delta = delta,
             velocity = enemyVelocity,
-            forwardDistance = forwardDistance
-        };
+            forwardDistance = Mathf.Max(0f, forwardDistance),
+            priority = priority,
+            isDangerous = isDangerous
+        });
+    }
+
+    private int CompareEnemyCandidates(EnemyCandidate a, EnemyCandidate b)
+    {
+        int priorityComparison = a.priority.CompareTo(b.priority);
+
+        if (priorityComparison != 0)
+        {
+            return priorityComparison;
+        }
+
+        return a.delta.sqrMagnitude.CompareTo(b.delta.sqrMagnitude);
+    }
+
+    private void TrimEnemyCandidatesToSlots()
+    {
+        int maxSlots = EnemyObservationCount / 4;
+        int activeSlots = Mathf.Clamp(enemyObservationSlots, 1, maxSlots);
+
+        if (enemyObservationCandidates.Count > activeSlots)
+        {
+            enemyObservationCandidates.RemoveRange(activeSlots, enemyObservationCandidates.Count - activeSlots);
+        }
+    }
+
+    private void LogEnemyObservations(List<EnemyCandidate> candidates)
+    {
+        if (!debugEnemyObservations)
+        {
+            return;
+        }
+
+        int maxSlots = EnemyObservationCount / 4;
+        int activeSlots = Mathf.Clamp(enemyObservationSlots, 1, maxSlots);
+        string message = $"[ENEMY OBS] detected={candidates.Count} slots={activeSlots}";
+
+        for (int i = 0; i < activeSlots; i++)
+        {
+            if (i >= candidates.Count)
+            {
+                message += $"\nslot {i}: empty";
+                continue;
+            }
+
+            EnemyCandidate candidate = candidates[i];
+            string enemyName = candidate.transform != null ? candidate.transform.name : "unknown";
+            message +=
+                $"\nslot {i}: {enemyName} " +
+                $"dx={NormalizeSignedDistance(candidate.delta.x, enemyDetectionRangeX):F3} " +
+                $"dy={NormalizeSignedDistance(candidate.delta.y, enemyDetectionRangeY):F3} " +
+                $"dist={NormalizeDistance(candidate.delta.magnitude, Mathf.Sqrt(enemyDetectionRangeX * enemyDetectionRangeX + enemyDetectionRangeY * enemyDetectionRangeY)):F3} " +
+                $"danger={(candidate.isDangerous ? 1 : 0)}";
+        }
+
+        Debug.Log(message, this);
     }
 
     private void RewardPassedEnemies(float direction)
@@ -1350,7 +1347,7 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         Vector2 deltaFromEnemy = (Vector2)(transform.position - enemyTransform.position);
         float passedDistance = deltaFromEnemy.x * direction;
 
-        if (passedDistance < enemyPassMargin || Mathf.Abs(deltaFromEnemy.y) > enemySensorRangeY)
+        if (passedDistance < enemyPassMargin || Mathf.Abs(deltaFromEnemy.y) > enemyDetectionRangeY)
         {
             return;
         }
@@ -1749,10 +1746,11 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         maxExpectedHeightDelta = Mathf.Max(0.1f, maxExpectedHeightDelta);
         wallSensorRange = Mathf.Max(0f, wallSensorRange);
         goalReachDistance = Mathf.Max(0.01f, goalReachDistance);
-        enemySensorRangeX = Mathf.Max(0.1f, enemySensorRangeX);
-        enemySensorRangeY = Mathf.Max(0.1f, enemySensorRangeY);
-        enemyVelocityReference = Mathf.Max(0.1f, enemyVelocityReference);
-        enemyDangerCloseDistance = Mathf.Max(0.1f, enemyDangerCloseDistance);
+        enemyDetectionRangeX = Mathf.Max(0.1f, enemyDetectionRangeX);
+        enemyDetectionRangeY = Mathf.Max(0.1f, enemyDetectionRangeY);
+        enemyObservationSlots = Mathf.Clamp(enemyObservationSlots, 1, EnemyObservationCount / 4);
+        enemyHitPenalty = Mathf.Min(0f, enemyHitPenalty);
+        enemyPassReward = Mathf.Max(0f, enemyPassReward);
         enemyPassMargin = Mathf.Max(0f, enemyPassMargin);
         debugActionLogInterval = Mathf.Max(0.05f, debugActionLogInterval);
     }
@@ -1923,18 +1921,6 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         public float distanceNormalized;
     }
 
-    private struct EnemyObservationSnapshot
-    {
-        public bool enemyAheadExists;
-        public float enemyAheadForwardDistanceNormalized;
-        public float enemyAheadVerticalDistanceNormalized;
-        public float enemyAheadVelocityNormalized;
-        public bool enemyAheadDangerClose;
-        public bool nearestEnemyExists;
-        public float nearestEnemyDxNormalized;
-        public float nearestEnemyDyNormalized;
-    }
-
     private struct EnemyCandidate
     {
         public bool exists;
@@ -1942,6 +1928,8 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         public Vector2 delta;
         public Vector2 velocity;
         public float forwardDistance;
+        public float priority;
+        public bool isDangerous;
     }
 
     private struct TerrainAnalysis

@@ -220,6 +220,35 @@ public static class BuildER_V5_EnemiesTrainScene
         enemyRoot.transform.SetParent(root, false);
 
         GameObject enemyPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(AndroidEnemyPrefabPath);
+        CreateEnemyAwareAndroid(
+            enemyRoot.transform,
+            enemyPrefab,
+            fallbackSprite,
+            "Android_EnemyAware_Intro01",
+            new Vector3(38f, 1.02f, 0f),
+            0.8f,
+            2.2f
+        );
+        CreateEnemyAwareAndroid(
+            enemyRoot.transform,
+            enemyPrefab,
+            fallbackSprite,
+            "Android_EnemyAware_Intro02",
+            new Vector3(56f, 1.02f, 0f),
+            1.0f,
+            2.8f
+        );
+    }
+
+    private static void CreateEnemyAwareAndroid(
+        Transform parent,
+        GameObject enemyPrefab,
+        Sprite fallbackSprite,
+        string enemyName,
+        Vector3 position,
+        float patrolSpeed,
+        float patrolDistance)
+    {
         GameObject enemy = enemyPrefab != null
             ? PrefabUtility.InstantiatePrefab(enemyPrefab) as GameObject
             : CreateFallbackEnemy(fallbackSprite);
@@ -229,14 +258,20 @@ public static class BuildER_V5_EnemiesTrainScene
             return;
         }
 
-        enemy.name = "Android_EnemyAware_Intro01";
-        enemy.transform.SetParent(enemyRoot.transform, false);
-        enemy.transform.position = new Vector3(38f, 1.02f, 0f);
+        enemy.name = enemyName;
+        enemy.transform.SetParent(parent, false);
+        enemy.transform.position = position;
 
         Collider2D collider = enemy.GetComponent<Collider2D>();
 
+        if (collider == null)
+        {
+            collider = enemy.AddComponent<BoxCollider2D>();
+        }
+
         if (collider != null)
         {
+            collider.enabled = true;
             collider.isTrigger = true;
         }
 
@@ -244,14 +279,26 @@ public static class BuildER_V5_EnemiesTrainScene
 
         if (patrol != null)
         {
-            patrol.Configure(0.8f, 2.2f);
+            patrol.Configure(patrolSpeed, patrolDistance);
         }
 
         DemoEnemyHazard demoHazard = enemy.GetComponent<DemoEnemyHazard>();
 
         if (demoHazard != null)
         {
-            demoHazard.SetAffectsAgent(true);
+            demoHazard.SetAffectsAgent(false);
+            demoHazard.enabled = false;
+        }
+
+        DisableDemoStompComponents(enemy);
+
+        Rigidbody2D enemyBody = enemy.GetComponent<Rigidbody2D>();
+
+        if (enemyBody != null)
+        {
+            enemyBody.bodyType = RigidbodyType2D.Kinematic;
+            enemyBody.gravityScale = 0f;
+            enemyBody.freezeRotation = true;
         }
 
         EdgeRunnerEnemyMarker marker = enemy.GetComponent<EdgeRunnerEnemyMarker>();
@@ -262,6 +309,35 @@ public static class BuildER_V5_EnemiesTrainScene
         }
 
         marker.SetAffectsAgent(true);
+        SetBool(marker, "isActiveEnemy", true);
+        SetBool(marker, "isAlive", true);
+        SetBool(marker, "isDangerous", true);
+        SetObjectReference(marker, "enemyCollider", collider);
+        SetObjectReference(marker, "visualRoot", enemy.transform);
+    }
+
+    private static void DisableDemoStompComponents(GameObject enemy)
+    {
+        MonoBehaviour[] behaviours = enemy.GetComponentsInChildren<MonoBehaviour>(true);
+
+        for (int i = 0; i < behaviours.Length; i++)
+        {
+            MonoBehaviour behaviour = behaviours[i];
+
+            if (behaviour == null)
+            {
+                continue;
+            }
+
+            string typeName = behaviour.GetType().Name;
+
+            if (typeName == "StompableAndroidEnemy" ||
+                typeName == "StompableAndroidStompZone" ||
+                typeName == "StompableAndroidSideHazard")
+            {
+                behaviour.enabled = false;
+            }
+        }
     }
 
     private static GameObject CreateFallbackEnemy(Sprite sprite)

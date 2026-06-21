@@ -4,6 +4,8 @@ engine_settings:
   capture_frame_rate: 60
   no_graphics: false
 
+# EdgeRunnerV5Enemies usa observation space 63.
+# Nao inicializar diretamente a partir de modelos V5 com observation space 55.
 behaviors:
   EdgeRunnerV5Enemies:
     trainer_type: ppo
@@ -28,7 +30,7 @@ behaviors:
         gamma: 0.99
         strength: 1.0
 
-    max_steps: 100000
+    max_steps: 50000
     time_horizon: 64
     summary_freq: 500
     checkpoint_interval: 1000

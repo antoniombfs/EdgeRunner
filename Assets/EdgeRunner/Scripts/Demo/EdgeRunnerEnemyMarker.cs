@@ -3,7 +3,15 @@ using UnityEngine;
 [RequireComponent(typeof(Collider2D))]
 public class EdgeRunnerEnemyMarker : MonoBehaviour
 {
+    [Header("Enemy State")]
     [SerializeField] private bool affectsAgent = true;
+    [SerializeField] private bool isActiveEnemy = true;
+    [SerializeField] private bool isAlive = true;
+    [SerializeField] private bool isDangerous = true;
+    [SerializeField] private Transform visualRoot;
+    [SerializeField] private Collider2D enemyCollider;
+
+    [Header("Contact")]
     [SerializeField] private float hitCooldown = 0.5f;
 
     private Rigidbody2D rb;
@@ -12,6 +20,12 @@ public class EdgeRunnerEnemyMarker : MonoBehaviour
     private float nextAllowedHitTime;
 
     public bool AffectsAgent => affectsAgent;
+    public bool IsActiveEnemy => isActiveEnemy;
+    public bool IsAlive => isAlive;
+    public bool IsDangerous => isDangerous;
+    public bool IsObservable => affectsAgent && isActiveEnemy && isAlive && gameObject.activeInHierarchy;
+    public Transform ObservationTransform => visualRoot != null ? visualRoot : transform;
+    public Collider2D EnemyCollider => enemyCollider;
     public Vector2 CurrentVelocity
     {
         get
@@ -30,18 +44,51 @@ public class EdgeRunnerEnemyMarker : MonoBehaviour
         affectsAgent = value;
     }
 
+    public void SetAlive(bool value)
+    {
+        isAlive = value;
+    }
+
+    public Vector2 GetObservationPosition()
+    {
+        if (enemyCollider != null)
+        {
+            return enemyCollider.bounds.center;
+        }
+
+        return (Vector2)ObservationTransform.position;
+    }
+
+    public Bounds GetObservationBounds()
+    {
+        if (enemyCollider != null)
+        {
+            return enemyCollider.bounds;
+        }
+
+        return new Bounds(GetObservationPosition(), Vector3.zero);
+    }
+
     private void Reset()
     {
         Collider2D ownCollider = GetComponent<Collider2D>();
-        ownCollider.isTrigger = true;
+
+        if (ownCollider != null)
+        {
+            enemyCollider = ownCollider;
+            ownCollider.isTrigger = true;
+        }
     }
 
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+        ResolveCollider();
 
-        Collider2D ownCollider = GetComponent<Collider2D>();
-        ownCollider.isTrigger = true;
+        if (enemyCollider != null)
+        {
+            enemyCollider.isTrigger = true;
+        }
     }
 
     private void OnEnable()
@@ -70,7 +117,7 @@ public class EdgeRunnerEnemyMarker : MonoBehaviour
 
     private void TryHandlePlayer(Collider2D other)
     {
-        if (!affectsAgent || Time.time < nextAllowedHitTime)
+        if (!affectsAgent || !isActiveEnemy || !isAlive || !isDangerous || Time.time < nextAllowedHitTime)
         {
             return;
         }
@@ -89,5 +136,14 @@ public class EdgeRunnerEnemyMarker : MonoBehaviour
     private void OnValidate()
     {
         hitCooldown = Mathf.Max(0f, hitCooldown);
+        ResolveCollider();
+    }
+
+    private void ResolveCollider()
+    {
+        if (enemyCollider == null)
+        {
+            enemyCollider = GetComponent<Collider2D>();
+        }
     }
 }
