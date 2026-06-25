@@ -37,6 +37,14 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
     private const int NoSprintAction = 0;
     private const int SprintAction = 1;
     private const float HorizontalGoalDirectionDeadZone = 0.05f;
+    private const float EnemyActionMaskMaxNearGroundVelocityY = 0.1f;
+    private const int EnemyRayCount = 4;
+    private const int EnemyRayFrontLow = 0;
+    private const int EnemyRayFrontMid = 1;
+    private const int EnemyRayBackMid = 2;
+    private const int EnemyRayDownForward = 3;
+    // front rays = avoidance/patrol threat; back ray = patrol awareness; down_forward = future stomp awareness.
+    private static readonly float[] EnemyRayVerticalOffsets = { 0.1f, 0.5f, 0.5f, 0.35f };
 
     [Header("References")]
     [SerializeField] private Rigidbody2D rb;
@@ -148,6 +156,14 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
     [SerializeField] private float bestXProgressThreshold = 0.25f;
     [SerializeField] private float maxEpisodeTime = 45f;
 
+    [Header("Micro Curriculum Controls")]
+    [SerializeField] private bool enableRetreatPenalty = false;
+    [SerializeField] private float retreatPenalty = -0.02f;
+    [SerializeField] private float retreatEndDistance = 2.0f;
+    [SerializeField] private bool enableShortMicroTimeout = false;
+    [SerializeField] private float microTimeoutSeconds = 6.0f;
+    [SerializeField] private float microTimeoutPenalty = -2.0f;
+
     [Header("Goal Detection")]
     [SerializeField] private float goalReachDistance = 0.75f;
 
@@ -160,10 +176,57 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
     [FormerlySerializedAs("enemySensorRangeY")]
     [SerializeField] private float enemyDetectionRangeY = 5f;
     [SerializeField] private int enemyObservationSlots = 2;
+    [SerializeField] private bool useEnemyRayObservations = false;
     [SerializeField] private float enemyHitPenalty = -2.5f;
     [SerializeField] private bool rewardPassedEnemies = true;
     [SerializeField] private float enemyPassReward = 0.35f;
     [SerializeField] private float enemyPassMargin = 0.9f;
+    [SerializeField] private float enemyDangerProximityPenalty = -0.005f;
+    [SerializeField] private float enemyDangerProximityHorizontalRange = 1.5f;
+    [SerializeField] private float enemyDangerProximityVerticalTolerance = 1.25f;
+    [SerializeField] private float enemyApproachPenalty = -0.01f;
+    [SerializeField] private float enemyJumpCueReward = 0.05f;
+    [SerializeField] private float earlyEnemyJumpPenalty = 0f;
+    [SerializeField] private bool enableJumpCommitReward = false;
+    [SerializeField] private float jumpCommitReward = 1.0f;
+    [SerializeField] private float enemyAvoidanceWindowX = 3.0f;
+    [SerializeField] private float enemyVerticalDangerTolerance = 1.0f;
+    [SerializeField] private float enemyJumpCueMinUpVelocity = 0.5f;
+    [SerializeField] private bool disableProgressRewardNearEnemy = false;
+
+    [Header("Enemy Action Masking")]
+    [SerializeField] private bool maskForwardActionNearEnemy = false;
+    [SerializeField] private float enemyActionMaskWindowX = 5.0f;
+    [SerializeField] private float enemyActionMaskVerticalTolerance = 1.2f;
+    [SerializeField] private bool forceJumpActionNearEnemy = false;
+    [SerializeField] private float enemyForcedJumpWindowX = 2.5f;
+    [SerializeField] private float enemyForcedJumpMinDistance = 2.6f;
+    [SerializeField] private float enemyForcedJumpMaxDistance = 3.8f;
+    [SerializeField] private float enemyForcedJumpVerticalTolerance = 1.2f;
+    [SerializeField] private bool forceJumpOnlyOncePerEnemy = true;
+    [SerializeField] private bool enableJumpCommitMask = false;
+    [SerializeField] private bool jumpCommitOnlyOncePerEnemy = true;
+    [SerializeField] private float jumpCommitMinDistance = 2.6f;
+    [SerializeField] private float jumpCommitMaxDistance = 3.8f;
+    [SerializeField] private bool debugEnemyActionMask = false;
+    [SerializeField] private bool debugForcedJumpMask = false;
+    [SerializeField] private bool debugForcedJumpTiming = false;
+    [SerializeField] private bool debugJumpCommitMask = false;
+    [SerializeField] private bool maskPrematureEnemyJumps = false;
+    [SerializeField] private float prematureJumpMinThreatDistance = 2.6f;
+    [SerializeField] private float prematureJumpMaxThreatDistance = 3.8f;
+    [SerializeField] private bool debugPrematureJumpMask = false;
+    [SerializeField] private bool useRuleBasedCommitTest = false;
+    [SerializeField] private bool enableAirCommitAfterJump = false;
+    [SerializeField] private float airCommitDuration = 0.75f;
+    [SerializeField] private bool airCommitUntilEnemyPassed = true;
+    [SerializeField] private bool debugAirCommit = false;
+
+    [Header("Episode Start Settle")]
+    [SerializeField] private bool waitUntilGroundedOnEpisodeStart = false;
+    [SerializeField] private float episodeStartSettleMaxSeconds = 1.0f;
+    [SerializeField] private bool episodeStartSettleFreezeMovement = true;
+    [SerializeField] private bool debugEpisodeStartSettle = false;
 
     [Header("Debug")]
     [SerializeField] private bool debugV5Actions = false;
@@ -171,6 +234,12 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
     [SerializeField] private bool debugEnemyAwareProgress = false;
     [SerializeField] private float debugActionLogInterval = 1.0f;
     [SerializeField] private bool debugEnemyObservations = false;
+    [SerializeField] private bool debugEnemyRewards = false;
+    [SerializeField] private bool debugEnemyRayObservations = false;
+    [SerializeField] private bool debugTrainingActionStats = false;
+    [SerializeField] private int debugTrainingActionStatsInterval = 1000;
+    [SerializeField] private bool debugActionTrace = false;
+    [SerializeField] private float debugActionTraceInterval = 0.25f;
 
     private Vector3 startPosition;
     private Quaternion startRotation;
@@ -185,6 +254,45 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
     private float coyoteTimer;
     private float jumpBufferTimer;
     private int lastJumpAction;
+    private int trainingActionDecisionCount;
+    private int trainingActionJumpCount;
+    private int trainingActionJumpNearEnemyCount;
+    private int trainingActionForcedJumpMaskCount;
+    private int trainingActionMaskedNoJumpCount;
+    private int trainingActionJumpAttemptCount;
+    private int trainingActionJumpAppliedCount;
+    private int actionTraceJumpsAppliedCount;
+    private int trainingActionJumpBlockedNotGroundedCount;
+    private int trainingActionEarlyJumpCount;
+    private int trainingActionSweetSpotJumpCount;
+    private int trainingActionLateJumpCount;
+    private int trainingActionJumpCommitMaskCount;
+    private int trainingActionJumpCommitAppliedCount;
+    private int trainingActionCommitMaskActiveCount;
+    private int trainingActionCommitMaskButMoveNotRightCount;
+    private int trainingActionCommitMaskButJumpNotSelectedCount;
+    private int trainingActionCommitMaskRightJumpSelectedCount;
+    private int trainingActionCommitMaskRightJumpAppliedCount;
+    private int trainingActionAirCommitStartsCount;
+    private int trainingActionAirCommitActiveStepsCount;
+    private int trainingActionAirCommitEndsPassedCount;
+    private int trainingActionAirCommitEndsDurationCount;
+    private int trainingActionAirCommitEndsHitCount;
+    private int trainingActionPrematureJumpMaskCount;
+    private int trainingActionPrematureJumpAttemptCount;
+    private int trainingActionAllowedSweetSpotJumpCount;
+    private int trainingActionRightJumpActionCount;
+    private int trainingActionRetreatActionCount;
+    private int trainingActionStallActionCount;
+    private int trainingActionMicroTimeoutCount;
+    private int lastEnemyActionMaskDebugFrame = -1;
+    private int lastForcedJumpMaskDebugFrame = -1;
+    private int lastForcedJumpTimingDebugFrame = -1;
+    private int lastJumpCommitMaskDebugFrame = -1;
+    private int lastJumpCommitMaskActiveDebugFrame = -1;
+    private int lastJumpCommitAppliedDebugFrame = -1;
+    private int lastPrematureJumpMaskDebugFrame = -1;
+    private int lastRightActionNegativeVelocityWarningFrame = -1;
 
     private bool wasGroundedLastStep;
     private bool jumpedForGap;
@@ -198,11 +306,30 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
     private bool lastMaskLeftBlocked;
     private bool lastMaskRightBlocked;
     private bool lastMaskStopBlocked;
+    private bool jumpCommitMaskActiveForDecision;
+    private bool episodeStartSettling;
+    private bool episodeStartSettleTimedOut;
+    private bool airCommitActive;
+    private EnemyRayProbe jumpCommitThreatForDecision;
+    private Transform airCommitEnemyTransform;
+    private string airCommitEnemyName = "none";
     private int lastEpisodeEndFrame = -999;
+    private string lastEndReason = "None";
     private float episodeStartRealtime;
+    private float episodeStartSettleElapsed;
+    private float airCommitEndTime;
     private float nextDebugActionLogTime;
     private float nextDebugProgressLogTime;
+    private float nextDebugEnemyRewardLogTime;
+    private float nextDebugEnemyRayLogTime;
+    private float nextDebugActionTraceTime;
+    private float nextEpisodeStartSettleLogTime;
+    private float nextAirCommitLogTime;
     private readonly HashSet<Transform> rewardedEnemyTransforms = new HashSet<Transform>();
+    private readonly HashSet<Transform> jumpCueRewardedEnemyTransforms = new HashSet<Transform>();
+    private readonly HashSet<Transform> forcedJumpMaskedEnemyTransforms = new HashSet<Transform>();
+    private readonly HashSet<Transform> jumpCommitMaskedEnemyTransforms = new HashSet<Transform>();
+    private readonly HashSet<Transform> jumpCommitRewardedEnemyTransforms = new HashSet<Transform>();
     private readonly List<EnemyCandidate> enemyObservationCandidates = new List<EnemyCandidate>(2);
 
     public int ExpectedObservationSize =>
@@ -288,10 +415,28 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         lastMaskLeftBlocked = false;
         lastMaskRightBlocked = false;
         lastMaskStopBlocked = false;
+        jumpCommitMaskActiveForDecision = false;
+        episodeStartSettling = waitUntilGroundedOnEpisodeStart;
+        episodeStartSettleTimedOut = false;
+        airCommitActive = false;
+        airCommitEnemyTransform = null;
+        airCommitEnemyName = "none";
+        airCommitEndTime = 0f;
+        nextAirCommitLogTime = 0f;
+        jumpCommitThreatForDecision = default;
         episodeStartRealtime = Time.realtimeSinceStartup;
+        episodeStartSettleElapsed = 0f;
         nextDebugActionLogTime = 0f;
         nextDebugProgressLogTime = 0f;
+        nextDebugEnemyRewardLogTime = 0f;
+        nextDebugEnemyRayLogTime = 0f;
+        nextDebugActionTraceTime = 0f;
+        nextEpisodeStartSettleLogTime = 0f;
         rewardedEnemyTransforms.Clear();
+        jumpCueRewardedEnemyTransforms.Clear();
+        forcedJumpMaskedEnemyTransforms.Clear();
+        jumpCommitMaskedEnemyTransforms.Clear();
+        jumpCommitRewardedEnemyTransforms.Clear();
 
         NotifyEvaluationEpisodeStarted();
     }
@@ -300,7 +445,9 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
     {
         float direction = GetForwardDirection();
         TerrainAnalysis terrain = AnalyzeTerrain(direction);
-        List<EnemyCandidate> enemyObservation = AnalyzeEnemies(direction);
+        List<EnemyCandidate> enemyObservation = useEnemyRayObservations
+            ? null
+            : AnalyzeEnemies(direction);
         float maxHorizontalSpeed = GetMaxHorizontalSpeed();
 
         float velX = rb != null ? rb.linearVelocity.x / maxHorizontalSpeed : 0f;
@@ -365,15 +512,42 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         }
 
         // 8 enemy awareness observations. Default total vector size: 63.
-        AddEnemyObservations(sensor, enemyObservation);
+        if (useEnemyRayObservations)
+        {
+            AddEnemyRayObservations(sensor, direction);
+        }
+        else
+        {
+            AddEnemyObservations(sensor, enemyObservation);
+        }
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
         float direction = GetForwardDirection();
+        RefreshAirCommitState(direction);
+        bool grounded = IsGrounded();
+        jumpCommitMaskActiveForDecision = false;
+        jumpCommitThreatForDecision = default;
         bool blockLeft = false;
         bool blockRight = false;
         bool blockStop = false;
+        bool enemyForwardMaskActive = ShouldMaskForwardActionNearEnemy(
+            direction,
+            grounded,
+            out int forwardActionToMask,
+            out string maskedEnemyName
+        );
+        bool forcedJumpMaskActive = ShouldForceJumpActionNearEnemy(
+            direction,
+            grounded,
+            out EnemyRayProbe forcedJumpThreat
+        );
+        bool jumpCommitMaskActive = ShouldApplyJumpCommitMask(
+            direction,
+            grounded,
+            out EnemyRayProbe jumpCommitThreat
+        );
 
         if (ShouldLimitBacktracking(direction))
         {
@@ -389,6 +563,32 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
 
         if (!allowIdleAction)
         {
+            blockStop = true;
+        }
+
+        if (enemyForwardMaskActive)
+        {
+            if (forwardActionToMask == MoveRightAction)
+            {
+                blockRight = true;
+            }
+            else if (forwardActionToMask == MoveLeftAction)
+            {
+                blockLeft = true;
+            }
+        }
+
+        if (jumpCommitMaskActive)
+        {
+            blockLeft = true;
+            blockRight = false;
+            blockStop = true;
+        }
+
+        if (IsAirCommitActive())
+        {
+            blockLeft = true;
+            blockRight = false;
             blockStop = true;
         }
 
@@ -418,7 +618,16 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         lastMaskRightBlocked = blockRight;
         lastMaskStopBlocked = blockStop;
 
-        bool grounded = IsGrounded();
+        bool forwardActionWasMasked =
+            enemyForwardMaskActive &&
+            ((forwardActionToMask == MoveRightAction && blockRight) ||
+             (forwardActionToMask == MoveLeftAction && blockLeft));
+
+        if (forwardActionWasMasked)
+        {
+            LogEnemyActionMask(maskedEnemyName);
+        }
+
         bool canJumpImmediately =
             allowJump &&
             CanJumpFromGroundState(grounded) &&
@@ -429,13 +638,44 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         {
             actionMask.SetActionEnabled(1, JumpAction, false);
         }
-        else if (maskUselessJumps)
+        else if (jumpCommitMaskActive)
         {
-            TerrainAnalysis terrain = AnalyzeTerrain(direction);
+            actionMask.SetActionEnabled(1, NoJumpAction, false);
+            RecordJumpCommitMaskActivated();
+            RecordNoJumpMasked();
+            MarkJumpCommitMaskApplied(jumpCommitThreat);
+            jumpCommitMaskActiveForDecision = true;
+            jumpCommitThreatForDecision = jumpCommitThreat;
+            LogJumpCommitMask(jumpCommitThreat);
+            LogJumpCommitMaskActive(jumpCommitThreat, blockLeft, blockStop);
+        }
+        else if (forcedJumpMaskActive)
+        {
+            actionMask.SetActionEnabled(1, NoJumpAction, false);
+            RecordForcedJumpMaskActivated();
+            RecordNoJumpMasked();
+            MarkForcedJumpApplied(forcedJumpThreat);
+            LogForcedJumpMask(forcedJumpThreat);
+        }
+        else if (ShouldMaskPrematureEnemyJump(direction, out EnemyRayProbe prematureJumpThreat, out string prematureJumpReason))
+        {
+            actionMask.SetActionEnabled(1, JumpAction, false);
+            RecordPrematureJumpMask();
+            LogPrematureJumpMask(prematureJumpThreat, prematureJumpReason);
+        }
+        else if (maskUselessJumps && !enableJumpCommitMask && !enableAirCommitAfterJump)
+        {
+            // JumpCommit/AirCommit tutorial phases use jump to clear enemies, not terrain gaps.
+            bool keepJumpAvailableForEnemyMask = forwardActionWasMasked;
 
-            if (!IsUsefulJumpSituation(terrain))
+            if (!keepJumpAvailableForEnemyMask)
             {
-                actionMask.SetActionEnabled(1, JumpAction, false);
+                TerrainAnalysis terrain = AnalyzeTerrain(direction);
+
+                if (!IsUsefulJumpSituation(terrain))
+                {
+                    actionMask.SetActionEnabled(1, JumpAction, false);
+                }
             }
         }
 
@@ -462,8 +702,8 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
             return;
         }
 
-        episodeTime += Time.fixedDeltaTime;
-
+        // Action mapping: branch 0 = movement (0 left, 1 stop, 2 right),
+        // branch 1 = jump (0 no jump, 1 jump), branch 2 = sprint (0 off, 1 on).
         int moveAction = actions.DiscreteActions[0];
         int jumpAction = actions.DiscreteActions[1];
         int sprintAction = actions.DiscreteActions.Length > 2
@@ -471,6 +711,36 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
             : NoSprintAction;
 
         float direction = GetForwardDirection();
+        bool groundedBeforeAction = IsGrounded();
+
+        if (TryHandleEpisodeStartSettle(direction, groundedBeforeAction))
+        {
+            lastJumpAction = NoJumpAction;
+            heuristicJumpPressedThisStep = false;
+            return;
+        }
+
+        episodeTime += Time.fixedDeltaTime;
+
+        RefreshAirCommitState(direction);
+        bool airCommitForcedMovementThisDecision = ApplyAirCommitActions(ref moveAction);
+        bool ruleBasedCommitJumpThisDecision = false;
+        EnemyRayProbe ruleBasedCommitThreatThisDecision = default;
+
+        if (!airCommitForcedMovementThisDecision)
+        {
+            ruleBasedCommitJumpThisDecision = ApplyRuleBasedCommitTestActions(
+                direction,
+                groundedBeforeAction,
+                ref moveAction,
+                ref jumpAction,
+                ref sprintAction,
+                out ruleBasedCommitThreatThisDecision
+            );
+        }
+
+        bool commitMaskActiveThisDecision = jumpCommitMaskActiveForDecision;
+        EnemyRayProbe commitMaskThreatThisDecision = jumpCommitThreatForDecision;
         TerrainAnalysis terrain = AnalyzeTerrain(direction);
 
         float moveX = moveAction switch
@@ -498,16 +768,21 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
             direction,
             grounded
         );
+        TrackTrainingActionStats(moveAction, jumpAction, direction, grounded);
 
-        ApplyDistanceProgressReward();
-        ApplyLocomotionReward(direction, moveX, grounded);
+        bool suppressProgressRewardNearEnemy = ShouldSuppressProgressRewardNearEnemy(direction);
+        ApplyDistanceProgressReward(suppressProgressRewardNearEnemy);
+        ApplyLocomotionReward(direction, moveX, grounded, suppressProgressRewardNearEnemy);
 
         bool jumpRequested = jumpAction == JumpAction;
         bool jumpPressedThisStep = jumpRequested && lastJumpAction == NoJumpAction;
         bool bufferedJumpPressed = heuristicJumpPressedThisStep || (useJumpBufferForAgent && jumpPressedThisStep);
         UpdateJumpForgivenessTimers(grounded, jumpRequested, bufferedJumpPressed);
+        bool jumpExecutionRequested = jumpRequested || (useJumpBuffer && jumpBufferTimer > 0f);
+        bool shouldExecuteJump = ShouldExecuteJump(grounded, jumpRequested);
+        RecordJumpExecutionStats(jumpRequested, jumpExecutionRequested, shouldExecuteJump, grounded);
 
-        if (ShouldExecuteJump(grounded, jumpRequested))
+        if (shouldExecuteJump)
         {
             HandleJumpReward(moveX, direction, terrain);
             rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce);
@@ -518,14 +793,56 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
             waitingForJumpRelease = requireJumpReleaseBeforeNextJump && jumpRequested;
         }
 
+        if (shouldExecuteJump)
+        {
+            actionTraceJumpsAppliedCount++;
+        }
+
+        TrackJumpCommitActionOutcome(
+            commitMaskActiveThisDecision,
+            moveAction,
+            jumpAction,
+            shouldExecuteJump
+        );
+        MaybeStartAirCommitAfterRightJump(
+            commitMaskActiveThisDecision,
+            ruleBasedCommitJumpThisDecision,
+            ruleBasedCommitJumpThisDecision ? ruleBasedCommitThreatThisDecision : commitMaskThreatThisDecision,
+            direction,
+            moveAction,
+            jumpAction,
+            shouldExecuteJump
+        );
+        TrackAirCommitActiveStep();
+        LogRightActionNegativeVelocityWarning(moveAction);
+        LogActionTrace(
+            moveAction,
+            jumpAction,
+            sprintAction,
+            commitMaskActiveThisDecision,
+            commitMaskThreatThisDecision,
+            direction,
+            grounded,
+            shouldExecuteJump
+        );
+        ApplyJumpCommitRewardIfNeeded(moveAction, jumpAction, shouldExecuteJump);
+
         lastJumpAction = jumpAction;
         heuristicJumpPressedThisStep = false;
 
         TrackGapLandingReward(direction, grounded);
         ApplyProgressRewards(direction, moveX);
+        ApplyEnemyAvoidanceCueRewards(direction, moveX, jumpRequested, grounded);
+        ApplyEnemyDangerProximityPenalty(direction);
         RewardPassedEnemies(direction);
+        ApplyRetreatPenalty(direction);
 
         AddReward(stepPenalty);
+
+        if (CheckMicroTimeout())
+        {
+            return;
+        }
 
         if (timeSinceDistanceProgress >= noProgressTimeLimit)
         {
@@ -684,6 +1001,1169 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
             $"grounded={grounded}",
             this
         );
+    }
+
+    private bool ShouldMaskForwardActionNearEnemy(
+        float direction,
+        bool grounded,
+        out int forwardActionToMask,
+        out string enemyName)
+    {
+        forwardActionToMask = GetForwardMoveAction(direction);
+        enemyName = string.Empty;
+
+        if (!enableEnemyAwareness || !maskForwardActionNearEnemy || episodeEnding)
+        {
+            return false;
+        }
+
+        if (!CanJumpFromGroundState(grounded) || jumpConsumedUntilLanding || waitingForJumpRelease)
+        {
+            return false;
+        }
+
+        if (useEnemyRayObservations)
+        {
+            if (TryFindEnemyRayThreat(direction, enemyActionMaskWindowX, EnemyRayThreatMode.FrontOnly, out EnemyRayProbe rayThreat))
+            {
+                enemyName = rayThreat.enemyName;
+                return true;
+            }
+
+            return false;
+        }
+
+        return TryFindDangerousEnemyAhead(
+            direction,
+            enemyActionMaskWindowX,
+            enemyActionMaskVerticalTolerance,
+            out _,
+            out _,
+            out enemyName,
+            out _
+        );
+    }
+
+    private bool ShouldForceJumpActionNearEnemy(
+        float direction,
+        bool grounded,
+        out EnemyRayProbe threat)
+    {
+        threat = default;
+
+        if (!enableEnemyAwareness || !useEnemyRayObservations || !forceJumpActionNearEnemy || episodeEnding)
+        {
+            return false;
+        }
+
+        if (!IsGroundedOrNearlyGroundedForActionMask(grounded))
+        {
+            return false;
+        }
+
+        if (!TryFindEnemyRayThreat(direction, enemyForcedJumpWindowX, EnemyRayThreatMode.FrontOnly, out threat))
+        {
+            return false;
+        }
+
+        EnemyJumpTimingZone timingZone = GetEnemyJumpTimingZone(threat.distance);
+
+        if (threat.enemyTransform != null)
+        {
+            float verticalDelta = Mathf.Abs(transform.position.y - threat.enemyTransform.position.y);
+
+            if (verticalDelta > enemyForcedJumpVerticalTolerance)
+            {
+                return false;
+            }
+        }
+
+        if (timingZone != EnemyJumpTimingZone.SweetSpot)
+        {
+            LogEnemyJumpTiming(threat, timingZone, false);
+            return false;
+        }
+
+        if (forceJumpOnlyOncePerEnemy &&
+            threat.enemyTransform != null &&
+            forcedJumpMaskedEnemyTransforms.Contains(threat.enemyTransform))
+        {
+            LogEnemyJumpTiming(threat, timingZone, false);
+            return false;
+        }
+
+        LogEnemyJumpTiming(threat, timingZone, true);
+        return true;
+    }
+
+    private bool ShouldApplyJumpCommitMask(
+        float direction,
+        bool grounded,
+        out EnemyRayProbe threat)
+    {
+        threat = default;
+
+        if (!enableEnemyAwareness || !useEnemyRayObservations || !enableJumpCommitMask || episodeEnding)
+        {
+            return false;
+        }
+
+        if (!CanJumpFromGroundState(grounded) || jumpConsumedUntilLanding || waitingForJumpRelease)
+        {
+            return false;
+        }
+
+        float windowX = Mathf.Max(jumpCommitMaxDistance, enemyForcedJumpWindowX);
+
+        if (!TryFindEnemyRayThreat(direction, windowX, EnemyRayThreatMode.FrontOnly, out threat))
+        {
+            return false;
+        }
+
+        if (threat.distance < jumpCommitMinDistance || threat.distance > jumpCommitMaxDistance)
+        {
+            return false;
+        }
+
+        if (threat.enemyTransform != null)
+        {
+            float verticalDelta = Mathf.Abs(transform.position.y - threat.enemyTransform.position.y);
+
+            if (verticalDelta > enemyForcedJumpVerticalTolerance)
+            {
+                return false;
+            }
+        }
+
+        if (jumpCommitOnlyOncePerEnemy &&
+            threat.enemyTransform != null &&
+            jumpCommitMaskedEnemyTransforms.Contains(threat.enemyTransform))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool ShouldMaskPrematureEnemyJump(
+        float direction,
+        out EnemyRayProbe threat,
+        out string reason)
+    {
+        threat = default;
+        reason = string.Empty;
+
+        if (!enableEnemyAwareness ||
+            !useEnemyRayObservations ||
+            !maskPrematureEnemyJumps ||
+            episodeEnding)
+        {
+            return false;
+        }
+
+        if (!TryFindEnemyRayThreat(direction, enemyDetectionRangeX, EnemyRayThreatMode.FrontOnly, out threat))
+        {
+            reason = "no_threat";
+            return true;
+        }
+
+        if (threat.distance > prematureJumpMaxThreatDistance)
+        {
+            reason = "too_early";
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool TryHandleEpisodeStartSettle(float direction, bool grounded)
+    {
+        if (!episodeStartSettling)
+        {
+            return false;
+        }
+
+        if (CanJumpFromGroundState(grounded))
+        {
+            FinishEpisodeStartSettle();
+            return false;
+        }
+
+        episodeStartSettleElapsed += Time.fixedDeltaTime;
+
+        if (episodeStartSettleElapsed >= episodeStartSettleMaxSeconds)
+        {
+            episodeStartSettling = false;
+            episodeStartSettleTimedOut = true;
+            Debug.LogWarning(
+                "[EPISODE START SETTLE] timed out before grounded " +
+                $"after {episodeStartSettleElapsed:F2}s pos={FormatVector3(transform.position)} " +
+                $"vel={FormatVector2(rb != null ? rb.linearVelocity : Vector2.zero)}",
+                this
+            );
+            return false;
+        }
+
+        if (episodeStartSettleFreezeMovement && rb != null)
+        {
+            rb.linearVelocity = new Vector2(0f, rb.linearVelocity.y);
+        }
+
+        LogEpisodeStartSettleWaiting();
+        LogActionTrace(
+            StopAction,
+            NoJumpAction,
+            NoSprintAction,
+            false,
+            default,
+            direction,
+            grounded,
+            false
+        );
+        return true;
+    }
+
+    private void FinishEpisodeStartSettle()
+    {
+        if (!episodeStartSettling)
+        {
+            return;
+        }
+
+        episodeStartSettling = false;
+
+        if (rb != null && episodeStartSettleFreezeMovement)
+        {
+            rb.linearVelocity = new Vector2(0f, rb.linearVelocity.y);
+        }
+
+        if (debugEpisodeStartSettle)
+        {
+            Debug.Log(
+                $"[EPISODE START SETTLE] grounded after {episodeStartSettleElapsed:F2}s " +
+                $"pos={FormatVector3(transform.position)} vel={FormatVector2(rb != null ? rb.linearVelocity : Vector2.zero)}",
+                this
+            );
+        }
+    }
+
+    private void LogEpisodeStartSettleWaiting()
+    {
+        if (!debugEpisodeStartSettle || Time.time < nextEpisodeStartSettleLogTime)
+        {
+            return;
+        }
+
+        nextEpisodeStartSettleLogTime = Time.time + 0.25f;
+        Debug.Log(
+            "[EPISODE START SETTLE] waiting grounded " +
+            $"pos={FormatVector3(transform.position)} " +
+            $"vel={FormatVector2(rb != null ? rb.linearVelocity : Vector2.zero)}",
+            this
+        );
+    }
+
+    private bool ApplyAirCommitActions(ref int moveAction)
+    {
+        if (!IsAirCommitActive())
+        {
+            return false;
+        }
+
+        moveAction = MoveRightAction;
+        return true;
+    }
+
+    private bool ApplyRuleBasedCommitTestActions(
+        float direction,
+        bool grounded,
+        ref int moveAction,
+        ref int jumpAction,
+        ref int sprintAction,
+        out EnemyRayProbe commitThreat)
+    {
+        commitThreat = default;
+
+        if (!useRuleBasedCommitTest || episodeEnding)
+        {
+            return false;
+        }
+
+        if (!CanJumpFromGroundState(grounded))
+        {
+            moveAction = StopAction;
+            jumpAction = NoJumpAction;
+            sprintAction = NoSprintAction;
+            return false;
+        }
+
+        moveAction = GetForwardMoveAction(direction);
+        bool shouldJump = ShouldUseRuleBasedCommitJump(direction, grounded, out commitThreat);
+        jumpAction = shouldJump
+            ? JumpAction
+            : NoJumpAction;
+        sprintAction = NoSprintAction;
+        return shouldJump;
+    }
+
+    private bool ShouldUseRuleBasedCommitJump(
+        float direction,
+        bool grounded,
+        out EnemyRayProbe threat)
+    {
+        threat = default;
+
+        if (!enableEnemyAwareness || !useEnemyRayObservations)
+        {
+            return false;
+        }
+
+        if (!CanJumpFromGroundState(grounded) || jumpConsumedUntilLanding || waitingForJumpRelease)
+        {
+            return false;
+        }
+
+        float windowX = Mathf.Max(jumpCommitMaxDistance, enemyForcedJumpWindowX);
+
+        if (!TryFindEnemyRayThreat(direction, windowX, EnemyRayThreatMode.FrontOnly, out threat))
+        {
+            return false;
+        }
+
+        if (threat.distance < jumpCommitMinDistance || threat.distance > jumpCommitMaxDistance)
+        {
+            return false;
+        }
+
+        if (threat.enemyTransform != null)
+        {
+            float verticalDelta = Mathf.Abs(transform.position.y - threat.enemyTransform.position.y);
+
+            if (verticalDelta > enemyForcedJumpVerticalTolerance)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void MaybeStartAirCommitAfterRightJump(
+        bool commitMaskActive,
+        bool ruleBasedCommitJump,
+        EnemyRayProbe threat,
+        float direction,
+        int moveAction,
+        int jumpAction,
+        bool jumpApplied)
+    {
+        if (!enableAirCommitAfterJump ||
+            !jumpApplied ||
+            jumpAction != JumpAction)
+        {
+            return;
+        }
+
+        bool guidedCommitJump = commitMaskActive || ruleBasedCommitJump;
+
+        if (guidedCommitJump && moveAction != MoveRightAction)
+        {
+            return;
+        }
+
+        if (!guidedCommitJump && !TryFindVoluntaryAirCommitThreat(direction, out threat))
+        {
+            return;
+        }
+
+        if (!threat.hasHit && useEnemyRayObservations)
+        {
+            float windowX = Mathf.Max(jumpCommitMaxDistance, enemyForcedJumpWindowX);
+            TryFindEnemyRayThreat(direction, windowX, EnemyRayThreatMode.FrontOnly, out threat);
+        }
+
+        StartAirCommit(threat);
+    }
+
+    private bool TryFindVoluntaryAirCommitThreat(float direction, out EnemyRayProbe threat)
+    {
+        threat = default;
+
+        if (!enableEnemyAwareness || !useEnemyRayObservations)
+        {
+            return false;
+        }
+
+        float minDistance = maskPrematureEnemyJumps
+            ? prematureJumpMinThreatDistance
+            : jumpCommitMinDistance;
+        float maxDistance = maskPrematureEnemyJumps
+            ? prematureJumpMaxThreatDistance
+            : jumpCommitMaxDistance;
+
+        if (!TryFindEnemyRayThreat(direction, maxDistance, EnemyRayThreatMode.FrontOnly, out threat))
+        {
+            return false;
+        }
+
+        if (threat.distance < minDistance || threat.distance > maxDistance)
+        {
+            return false;
+        }
+
+        if (threat.enemyTransform != null)
+        {
+            float verticalDelta = Mathf.Abs(transform.position.y - threat.enemyTransform.position.y);
+
+            if (verticalDelta > enemyForcedJumpVerticalTolerance)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void StartAirCommit(EnemyRayProbe threat)
+    {
+        if (!enableAirCommitAfterJump)
+        {
+            return;
+        }
+
+        airCommitActive = true;
+        airCommitEndTime = Time.time + Mathf.Max(0.01f, airCommitDuration);
+        airCommitEnemyTransform = threat.enemyTransform;
+        airCommitEnemyName = string.IsNullOrEmpty(threat.enemyName)
+            ? "unknown"
+            : threat.enemyName;
+        nextAirCommitLogTime = 0f;
+
+        if (debugTrainingActionStats)
+        {
+            trainingActionAirCommitStartsCount++;
+        }
+
+        if (debugAirCommit)
+        {
+            Debug.Log(
+                "[ENEMY AIR COMMIT START] " +
+                $"enemy={airCommitEnemyName} duration={airCommitDuration:F2}",
+                this
+            );
+        }
+    }
+
+    private void RefreshAirCommitState(float direction)
+    {
+        if (!airCommitActive)
+        {
+            return;
+        }
+
+        if (airCommitUntilEnemyPassed && HasAirCommitEnemyPassed(direction))
+        {
+            EndAirCommit("passed");
+            return;
+        }
+
+        if (Time.time >= airCommitEndTime)
+        {
+            EndAirCommit("duration");
+            return;
+        }
+
+        if (debugAirCommit && Time.time >= nextAirCommitLogTime)
+        {
+            nextAirCommitLogTime = Time.time + 0.25f;
+            Debug.Log(
+                "[ENEMY AIR COMMIT ACTIVE] " +
+                $"remaining={GetAirCommitRemainingTime():F2} enemy={airCommitEnemyName}",
+                this
+            );
+        }
+    }
+
+    private bool HasAirCommitEnemyPassed(float direction)
+    {
+        if (airCommitEnemyTransform == null)
+        {
+            return false;
+        }
+
+        float passedDistance = (transform.position.x - airCommitEnemyTransform.position.x) * direction;
+        return passedDistance >= enemyPassMargin;
+    }
+
+    private void EndAirCommit(string reason)
+    {
+        if (!airCommitActive)
+        {
+            return;
+        }
+
+        if (debugTrainingActionStats)
+        {
+            if (reason == "passed")
+            {
+                trainingActionAirCommitEndsPassedCount++;
+            }
+            else if (reason == "duration")
+            {
+                trainingActionAirCommitEndsDurationCount++;
+            }
+            else if (reason == "hit")
+            {
+                trainingActionAirCommitEndsHitCount++;
+            }
+        }
+
+        if (debugAirCommit)
+        {
+            Debug.Log(
+                $"[ENEMY AIR COMMIT END] reason={reason} enemy={airCommitEnemyName}",
+                this
+            );
+        }
+
+        airCommitActive = false;
+        airCommitEnemyTransform = null;
+        airCommitEnemyName = "none";
+        airCommitEndTime = 0f;
+    }
+
+    private bool IsAirCommitActive()
+    {
+        return enableAirCommitAfterJump && airCommitActive;
+    }
+
+    private float GetAirCommitRemainingTime()
+    {
+        return IsAirCommitActive()
+            ? Mathf.Max(0f, airCommitEndTime - Time.time)
+            : 0f;
+    }
+
+    private void TrackAirCommitActiveStep()
+    {
+        if (debugTrainingActionStats && IsAirCommitActive())
+        {
+            trainingActionAirCommitActiveStepsCount++;
+        }
+    }
+
+    private int GetForwardMoveAction(float direction)
+    {
+        return direction >= 0f ? MoveRightAction : MoveLeftAction;
+    }
+
+    private bool IsGroundedOrNearlyGrounded(bool grounded)
+    {
+        if (grounded)
+        {
+            return true;
+        }
+
+        return rb != null && Mathf.Abs(rb.linearVelocity.y) <= enemyJumpCueMinUpVelocity;
+    }
+
+    private bool IsGroundedOrNearlyGroundedForActionMask(bool grounded)
+    {
+        if (grounded)
+        {
+            return true;
+        }
+
+        return rb != null && Mathf.Abs(rb.linearVelocity.y) <= EnemyActionMaskMaxNearGroundVelocityY;
+    }
+
+    private void RecordForcedJumpMaskActivated()
+    {
+        if (debugTrainingActionStats)
+        {
+            trainingActionForcedJumpMaskCount++;
+        }
+    }
+
+    private void RecordNoJumpMasked()
+    {
+        if (debugTrainingActionStats)
+        {
+            trainingActionMaskedNoJumpCount++;
+        }
+    }
+
+    private void RecordJumpCommitMaskActivated()
+    {
+        if (debugTrainingActionStats)
+        {
+            trainingActionJumpCommitMaskCount++;
+            trainingActionCommitMaskActiveCount++;
+        }
+    }
+
+    private void RecordPrematureJumpMask()
+    {
+        if (debugTrainingActionStats)
+        {
+            trainingActionPrematureJumpMaskCount++;
+        }
+    }
+
+    private void MarkForcedJumpApplied(EnemyRayProbe threat)
+    {
+        if (!forceJumpOnlyOncePerEnemy || threat.enemyTransform == null)
+        {
+            return;
+        }
+
+        forcedJumpMaskedEnemyTransforms.Add(threat.enemyTransform);
+    }
+
+    private void MarkJumpCommitMaskApplied(EnemyRayProbe threat)
+    {
+        if (!jumpCommitOnlyOncePerEnemy || threat.enemyTransform == null)
+        {
+            return;
+        }
+
+        jumpCommitMaskedEnemyTransforms.Add(threat.enemyTransform);
+    }
+
+    private EnemyJumpTimingZone GetEnemyJumpTimingZone(float distance)
+    {
+        if (distance > enemyForcedJumpMaxDistance)
+        {
+            return EnemyJumpTimingZone.TooEarly;
+        }
+
+        if (distance < enemyForcedJumpMinDistance)
+        {
+            return EnemyJumpTimingZone.TooLate;
+        }
+
+        return EnemyJumpTimingZone.SweetSpot;
+    }
+
+    private string GetEnemyJumpTimingZoneName(EnemyJumpTimingZone zone)
+    {
+        switch (zone)
+        {
+            case EnemyJumpTimingZone.TooEarly:
+                return "too_early";
+            case EnemyJumpTimingZone.SweetSpot:
+                return "sweet_spot";
+            case EnemyJumpTimingZone.TooLate:
+                return "too_late";
+            default:
+                return "unknown";
+        }
+    }
+
+    private void LogEnemyJumpTiming(EnemyRayProbe threat, EnemyJumpTimingZone zone, bool forced)
+    {
+        if (!debugForcedJumpTiming || lastForcedJumpTimingDebugFrame == Time.frameCount)
+        {
+            return;
+        }
+
+        lastForcedJumpTimingDebugFrame = Time.frameCount;
+        Debug.Log(
+            "[ENEMY JUMP TIMING] " +
+            $"dist={threat.distance:F2} " +
+            $"zone={GetEnemyJumpTimingZoneName(zone)} " +
+            $"forced={forced} " +
+            $"enemy={threat.enemyName}",
+            this
+        );
+    }
+
+    private void RecordJumpExecutionStats(
+        bool jumpRequested,
+        bool jumpExecutionRequested,
+        bool jumpApplied,
+        bool grounded)
+    {
+        if (!debugTrainingActionStats)
+        {
+            return;
+        }
+
+        if (jumpExecutionRequested)
+        {
+            trainingActionJumpAttemptCount++;
+        }
+
+        if (jumpApplied)
+        {
+            trainingActionJumpAppliedCount++;
+        }
+        else if (jumpRequested && !CanJumpFromGroundState(grounded))
+        {
+            trainingActionJumpBlockedNotGroundedCount++;
+        }
+    }
+
+    private void ApplyJumpCommitRewardIfNeeded(int moveAction, int jumpAction, bool jumpApplied)
+    {
+        if (!jumpCommitMaskActiveForDecision)
+        {
+            return;
+        }
+
+        bool rightJumpApplied =
+            moveAction == MoveRightAction &&
+            jumpAction == JumpAction &&
+            jumpApplied;
+
+        if (!rightJumpApplied)
+        {
+            jumpCommitMaskActiveForDecision = false;
+            jumpCommitThreatForDecision = default;
+            return;
+        }
+
+        if (debugTrainingActionStats)
+        {
+            trainingActionJumpCommitAppliedCount++;
+        }
+
+        LogJumpCommitApplied(jumpCommitThreatForDecision);
+
+        Transform enemyTransform = jumpCommitThreatForDecision.enemyTransform;
+
+        if (enableJumpCommitReward &&
+            jumpCommitReward > 0f &&
+            enemyTransform != null &&
+            !jumpCommitRewardedEnemyTransforms.Contains(enemyTransform))
+        {
+            jumpCommitRewardedEnemyTransforms.Add(enemyTransform);
+            AddReward(jumpCommitReward);
+        }
+
+        jumpCommitMaskActiveForDecision = false;
+        jumpCommitThreatForDecision = default;
+    }
+
+    private void LogEnemyActionMask(string enemyName)
+    {
+        if (!debugEnemyActionMask || lastEnemyActionMaskDebugFrame == Time.frameCount)
+        {
+            return;
+        }
+
+        lastEnemyActionMaskDebugFrame = Time.frameCount;
+        Debug.Log($"[ENEMY ACTION MASK] masked forward action near enemy={enemyName}", this);
+    }
+
+    private void LogForcedJumpMask(EnemyRayProbe threat)
+    {
+        if (!debugForcedJumpMask || lastForcedJumpMaskDebugFrame == Time.frameCount)
+        {
+            return;
+        }
+
+        lastForcedJumpMaskDebugFrame = Time.frameCount;
+        Debug.Log(
+            "[ENEMY FORCED JUMP MASK] " +
+            $"forced jump near enemy ray={threat.rayName} " +
+            $"dist={threat.distance:F2} enemy={threat.enemyName}",
+            this
+        );
+    }
+
+    private void LogJumpCommitApplied(EnemyRayProbe threat)
+    {
+        if (!debugJumpCommitMask || lastJumpCommitAppliedDebugFrame == Time.frameCount)
+        {
+            return;
+        }
+
+        lastJumpCommitAppliedDebugFrame = Time.frameCount;
+        Debug.Log(
+            "[ENEMY JUMP COMMIT] " +
+            $"right+jump applied dist={threat.distance:F2} enemy={threat.enemyName}",
+            this
+        );
+    }
+
+    private void LogJumpCommitMask(EnemyRayProbe threat)
+    {
+        if (!debugJumpCommitMask || lastJumpCommitMaskDebugFrame == Time.frameCount)
+        {
+            return;
+        }
+
+        lastJumpCommitMaskDebugFrame = Time.frameCount;
+        Debug.Log(
+            "[ENEMY JUMP COMMIT MASK] " +
+            $"forced right+jump dist={threat.distance:F2} enemy={threat.enemyName}",
+            this
+        );
+    }
+
+    private void LogJumpCommitMaskActive(EnemyRayProbe threat, bool blockLeft, bool blockStop)
+    {
+        if (!debugJumpCommitMask || lastJumpCommitMaskActiveDebugFrame == Time.frameCount)
+        {
+            return;
+        }
+
+        lastJumpCommitMaskActiveDebugFrame = Time.frameCount;
+        Debug.Log(
+            "[JUMP COMMIT MASK ACTIVE]\n" +
+            $"dist={threat.distance:F2}\n" +
+            $"masked branch0 left={blockLeft.ToString().ToLowerInvariant()}\n" +
+            $"masked branch0 stop={blockStop.ToString().ToLowerInvariant()}\n" +
+            $"branch0 right available={(!lastMaskRightBlocked).ToString().ToLowerInvariant()}\n" +
+            "masked branch1 noJump=true\n" +
+            "branch1 jump available=true",
+            this
+        );
+    }
+
+    private void LogPrematureJumpMask(EnemyRayProbe threat, string reason)
+    {
+        if (!debugPrematureJumpMask || lastPrematureJumpMaskDebugFrame == Time.frameCount)
+        {
+            return;
+        }
+
+        lastPrematureJumpMaskDebugFrame = Time.frameCount;
+        string distance = threat.hasHit ? threat.distance.ToString("F2") : "none";
+        Debug.Log(
+            "[ENEMY PREMATURE JUMP MASK] " +
+            $"masked jump reason={reason} dist={distance}",
+            this
+        );
+    }
+
+    private void TrackJumpCommitActionOutcome(
+        bool commitMaskActive,
+        int moveAction,
+        int jumpAction,
+        bool jumpApplied)
+    {
+        if (!debugTrainingActionStats || !commitMaskActive)
+        {
+            return;
+        }
+
+        if (moveAction != MoveRightAction)
+        {
+            trainingActionCommitMaskButMoveNotRightCount++;
+        }
+
+        if (jumpAction != JumpAction)
+        {
+            trainingActionCommitMaskButJumpNotSelectedCount++;
+        }
+
+        bool rightJumpSelected = moveAction == MoveRightAction && jumpAction == JumpAction;
+
+        if (rightJumpSelected)
+        {
+            trainingActionCommitMaskRightJumpSelectedCount++;
+        }
+
+        if (rightJumpSelected && jumpApplied)
+        {
+            trainingActionCommitMaskRightJumpAppliedCount++;
+        }
+    }
+
+    private void LogRightActionNegativeVelocityWarning(int moveAction)
+    {
+        if (!debugActionTrace || moveAction != MoveRightAction || rb == null)
+        {
+            return;
+        }
+
+        if (rb.linearVelocity.x >= -0.01f || lastRightActionNegativeVelocityWarningFrame == Time.frameCount)
+        {
+            return;
+        }
+
+        lastRightActionNegativeVelocityWarningFrame = Time.frameCount;
+        Debug.LogWarning(
+            "[EA PHYSICS WARNING] right action but negative velocity after action " +
+            $"velocity={FormatVector2(rb.linearVelocity)}",
+            this
+        );
+    }
+
+    private void LogActionTrace(
+        int moveAction,
+        int jumpAction,
+        int sprintAction,
+        bool commitMaskActive,
+        EnemyRayProbe commitMaskThreat,
+        float direction,
+        bool grounded,
+        bool jumpAppliedThisStep)
+    {
+        if (!debugActionTrace || Time.time < nextDebugActionTraceTime)
+        {
+            return;
+        }
+
+        nextDebugActionTraceTime = Time.time + Mathf.Max(0.01f, debugActionTraceInterval);
+
+        EnemyRayProbe frontThreat = commitMaskThreat;
+        bool hasFrontThreat = frontThreat.hasHit;
+
+        if (!hasFrontThreat && useEnemyRayObservations)
+        {
+            hasFrontThreat = TryFindEnemyRayThreat(
+                direction,
+                enemyDetectionRangeX,
+                EnemyRayThreatMode.FrontOnly,
+                out frontThreat
+            );
+        }
+
+        string frontDist = hasFrontThreat ? frontThreat.distance.ToString("F2") : "none";
+        string enemyPos = hasFrontThreat && frontThreat.enemyTransform != null
+            ? FormatVector3(frontThreat.enemyTransform.position)
+            : "none";
+        Vector2 velocity = rb != null ? rb.linearVelocity : Vector2.zero;
+        bool coyoteAvailable = useCoyoteTime && coyoteTimer > 0f;
+
+        Debug.Log(
+            "[EA TRACE] " +
+            $"step={StepCount} " +
+            $"moveAction={moveAction} " +
+            $"jumpAction={jumpAction} " +
+            $"sprintAction={sprintAction} " +
+            $"commitMaskActive={commitMaskActive} " +
+            $"frontThreat={hasFrontThreat} " +
+            $"frontDist={frontDist} " +
+            $"grounded={grounded} " +
+            $"coyoteAvailable={coyoteAvailable} " +
+            $"episodeStartSettling={episodeStartSettling} " +
+            $"settleTime={episodeStartSettleElapsed:F2} " +
+            $"settleTimedOut={episodeStartSettleTimedOut} " +
+            $"airCommitActive={IsAirCommitActive()} " +
+            $"airCommitRemaining={GetAirCommitRemainingTime():F2} " +
+            $"airCommitEnemy={airCommitEnemyName} " +
+            $"rbVel={FormatVector2(velocity)} " +
+            $"agentPos={FormatVector3(transform.position)} " +
+            $"enemyPos={enemyPos} " +
+            $"jumpAppliedThisStep={jumpAppliedThisStep} " +
+            $"jumpsApplied={actionTraceJumpsAppliedCount} " +
+            $"lastEndReason={lastEndReason}",
+            this
+        );
+    }
+
+    private string FormatVector2(Vector2 value)
+    {
+        return $"({value.x:F2},{value.y:F2})";
+    }
+
+    private string FormatVector3(Vector3 value)
+    {
+        return $"({value.x:F2},{value.y:F2})";
+    }
+
+    private void TrackTrainingActionStats(
+        int moveAction,
+        int jumpAction,
+        float direction,
+        bool grounded)
+    {
+        if (!debugTrainingActionStats)
+        {
+            return;
+        }
+
+        trainingActionDecisionCount++;
+
+        bool jumpSelected = jumpAction == JumpAction;
+
+        if (jumpSelected)
+        {
+            trainingActionJumpCount++;
+        }
+
+        if (moveAction == MoveRightAction && jumpAction == JumpAction)
+        {
+            trainingActionRightJumpActionCount++;
+        }
+
+        float moveXForStats = moveAction switch
+        {
+            MoveLeftAction => -1f,
+            MoveRightAction => 1f,
+            _ => 0f
+        };
+
+        if (moveXForStats * direction < -minUsefulMoveInput)
+        {
+            trainingActionRetreatActionCount++;
+        }
+
+        if (moveAction == StopAction)
+        {
+            trainingActionStallActionCount++;
+        }
+
+        float enemyStatsWindowX = GetEnemyActionStatsWindowX();
+        bool enemyAhead = useEnemyRayObservations
+            ? TryFindEnemyRayThreat(direction, enemyStatsWindowX, EnemyRayThreatMode.FrontOnly, out _)
+            : TryFindDangerousEnemyAhead(
+                direction,
+                enemyStatsWindowX,
+                enemyActionMaskVerticalTolerance,
+                out _,
+                out _,
+                out _,
+                out _
+            );
+
+        if (enemyAhead && jumpSelected)
+        {
+            trainingActionJumpNearEnemyCount++;
+        }
+
+        if (jumpSelected && useEnemyRayObservations &&
+            TryFindEnemyRayThreat(direction, enemyForcedJumpWindowX, EnemyRayThreatMode.FrontOnly, out EnemyRayProbe jumpTimingThreat))
+        {
+            RecordEnemyJumpTimingStats(jumpTimingThreat.distance);
+        }
+
+        TrackPrematureJumpStats(direction, jumpSelected);
+
+        int interval = Mathf.Max(1, debugTrainingActionStatsInterval);
+
+        if (trainingActionDecisionCount % interval == 0)
+        {
+            Debug.Log(
+                "[EA ACTIONS] " +
+                $"decisions={trainingActionDecisionCount} " +
+                $"jumps={trainingActionJumpCount} " +
+                $"jumpsApplied={trainingActionJumpAppliedCount} " +
+                $"jumpCommitMask={trainingActionJumpCommitMaskCount} " +
+                $"jumpCommitApplied={trainingActionJumpCommitAppliedCount} " +
+                $"rightJumpActions={trainingActionRightJumpActionCount} " +
+                $"airCommitStarts={trainingActionAirCommitStartsCount} " +
+                $"airCommitActiveSteps={trainingActionAirCommitActiveStepsCount} " +
+                $"airCommitEndsPassed={trainingActionAirCommitEndsPassedCount} " +
+                $"airCommitEndsDuration={trainingActionAirCommitEndsDurationCount} " +
+                $"airCommitEndsHit={trainingActionAirCommitEndsHitCount} " +
+                $"prematureJumpMasks={trainingActionPrematureJumpMaskCount} " +
+                $"prematureJumpAttempts={trainingActionPrematureJumpAttemptCount} " +
+                $"allowedSweetSpotJumps={trainingActionAllowedSweetSpotJumpCount} " +
+                $"retreatActions={trainingActionRetreatActionCount} " +
+                $"stallActions={trainingActionStallActionCount} " +
+                $"microTimeouts={trainingActionMicroTimeoutCount} " +
+                $"commitMaskActive={trainingActionCommitMaskActiveCount} " +
+                $"commitMaskButMoveNotRight={trainingActionCommitMaskButMoveNotRightCount} " +
+                $"commitMaskButJumpNotSelected={trainingActionCommitMaskButJumpNotSelectedCount} " +
+                $"commitMaskRightJumpSelected={trainingActionCommitMaskRightJumpSelectedCount} " +
+                $"commitMaskRightJumpApplied={trainingActionCommitMaskRightJumpAppliedCount} " +
+                $"jumpsNearEnemy={trainingActionJumpNearEnemyCount} " +
+                $"forcedMask={trainingActionForcedJumpMaskCount} " +
+                $"maskedNoJump={trainingActionMaskedNoJumpCount} " +
+                $"jumpAttempts={trainingActionJumpAttemptCount} " +
+                $"jumpBlockedNotGrounded={trainingActionJumpBlockedNotGroundedCount} " +
+                $"earlyJumps={trainingActionEarlyJumpCount} " +
+                $"sweetSpotJumps={trainingActionSweetSpotJumpCount} " +
+                $"lateJumps={trainingActionLateJumpCount}",
+                this
+            );
+        }
+    }
+
+    private void TrackPrematureJumpStats(float direction, bool jumpSelected)
+    {
+        if (!jumpSelected || !maskPrematureEnemyJumps || !useEnemyRayObservations)
+        {
+            return;
+        }
+
+        if (!TryFindEnemyRayThreat(direction, enemyDetectionRangeX, EnemyRayThreatMode.FrontOnly, out EnemyRayProbe threat))
+        {
+            trainingActionPrematureJumpAttemptCount++;
+            return;
+        }
+
+        if (threat.distance > prematureJumpMaxThreatDistance)
+        {
+            trainingActionPrematureJumpAttemptCount++;
+        }
+        else if (threat.distance >= prematureJumpMinThreatDistance)
+        {
+            trainingActionAllowedSweetSpotJumpCount++;
+        }
+    }
+
+    private void RecordEnemyJumpTimingStats(float distance)
+    {
+        switch (GetEnemyJumpTimingZone(distance))
+        {
+            case EnemyJumpTimingZone.TooEarly:
+                trainingActionEarlyJumpCount++;
+                break;
+            case EnemyJumpTimingZone.SweetSpot:
+                trainingActionSweetSpotJumpCount++;
+                break;
+            case EnemyJumpTimingZone.TooLate:
+                trainingActionLateJumpCount++;
+                break;
+        }
+    }
+
+    private float GetEnemyActionStatsWindowX()
+    {
+        return forceJumpActionNearEnemy
+            ? Mathf.Max(enemyActionMaskWindowX, enemyForcedJumpWindowX)
+            : enemyActionMaskWindowX;
+    }
+
+    private void ApplyRetreatPenalty(float direction)
+    {
+        if (!enableRetreatPenalty || retreatPenalty >= 0f)
+        {
+            return;
+        }
+
+        float backwardDistanceFromSpawn = (startPosition.x - transform.position.x) * direction;
+
+        if (backwardDistanceFromSpawn <= retreatEndDistance)
+        {
+            return;
+        }
+
+        AddReward(retreatPenalty);
+        LogEnemyRewardEvent(
+            $"[MICRO RETREAT] penalty={retreatPenalty:F4} backDistance={backwardDistanceFromSpawn:F2}",
+            true
+        );
+    }
+
+    private bool CheckMicroTimeout()
+    {
+        if (!enableShortMicroTimeout || episodeEnding || episodeTime < microTimeoutSeconds)
+        {
+            return false;
+        }
+
+        if (rewardedEnemyTransforms.Count > 0)
+        {
+            return false;
+        }
+
+        AddReward(microTimeoutPenalty);
+
+        if (debugTrainingActionStats)
+        {
+            trainingActionMicroTimeoutCount++;
+        }
+
+        LogEnemyRewardEvent($"[MICRO TIMEOUT] penalty={microTimeoutPenalty:F3}", false);
+        TryEndEpisodeSafely(EdgeRunnerEpisodeEndReason.Timeout);
+        return true;
     }
 
     private bool ShouldLimitBacktracking(float direction)
@@ -851,8 +2331,10 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
             return false;
         }
 
+        EndAirCommit(reason == EdgeRunnerEpisodeEndReason.EnemyHit ? "hit" : "reset");
         episodeEnding = true;
         lastEpisodeEndFrame = Time.frameCount;
+        lastEndReason = reason.ToString();
 
         NotifyEvaluationEpisodeEnded(reason);
         EndEpisode();
@@ -958,14 +2440,17 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         return false;
     }
 
-    private void ApplyLocomotionReward(float direction, float moveX, bool grounded)
+    private void ApplyLocomotionReward(float direction, float moveX, bool grounded, bool suppressPositiveProgressReward)
     {
         bool hasHorizontalGoalDirection = HasMeaningfulHorizontalGoalDirection();
         float forwardVelocity = rb.linearVelocity.x * direction;
 
         if (hasHorizontalGoalDirection && moveX * direction > minUsefulMoveInput)
         {
-            AddReward(forwardActionReward);
+            if (!suppressPositiveProgressReward)
+            {
+                AddReward(forwardActionReward);
+            }
         }
         else if (hasHorizontalGoalDirection &&
                  moveX * direction < -minUsefulMoveInput &&
@@ -978,13 +2463,15 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
             AddReward(idlePenalty);
         }
 
-        if (hasHorizontalGoalDirection && forwardVelocity > minUsefulForwardVelocity)
+        if (!suppressPositiveProgressReward &&
+            hasHorizontalGoalDirection &&
+            forwardVelocity > minUsefulForwardVelocity)
         {
             AddReward(Mathf.Clamp01(forwardVelocity / GetMaxHorizontalSpeed()) * forwardVelocityReward);
         }
     }
 
-    private void ApplyDistanceProgressReward()
+    private void ApplyDistanceProgressReward(bool suppressPositiveProgressReward)
     {
         if (goal == null)
         {
@@ -999,10 +2486,13 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
 
         if (delta > 0f)
         {
-            float rewardScale = Mathf.Max(distanceProgressRewardScale, progressRewardScale);
-            float rewardCap = Mathf.Max(maxDistanceProgressReward, maxProgressRewardPerStep);
-            progressReward = Mathf.Clamp(delta * rewardScale, 0f, rewardCap);
-            AddReward(progressReward);
+            if (!suppressPositiveProgressReward)
+            {
+                float rewardScale = Mathf.Max(distanceProgressRewardScale, progressRewardScale);
+                float rewardCap = Mathf.Max(maxDistanceProgressReward, maxProgressRewardPerStep);
+                progressReward = Mathf.Clamp(delta * rewardScale, 0f, rewardCap);
+                AddReward(progressReward);
+            }
         }
         else if (delta < 0f)
         {
@@ -1014,7 +2504,11 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         {
             bestDistanceToGoal = currentDistance;
             timeSinceDistanceProgress = 0f;
-            AddReward(milestoneReward);
+
+            if (!suppressPositiveProgressReward)
+            {
+                AddReward(milestoneReward);
+            }
         }
         else
         {
@@ -1128,6 +2622,343 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
             sensor.AddObservation(NormalizeSignedDistance(candidate.delta.y, enemyDetectionRangeY));
             sensor.AddObservation(NormalizeDistance(candidate.delta.magnitude, maxDistance));
             sensor.AddObservation(candidate.isDangerous ? 1f : 0f);
+        }
+    }
+
+    private void AddEnemyRayObservations(VectorSensor sensor, float direction)
+    {
+        float range = Mathf.Max(0.1f, enemyDetectionRangeX);
+        int frontHits = 0;
+        int backHits = 0;
+        int downHits = 0;
+        float minFrontDistance = range;
+        float minBackDistance = range;
+        float minDownDistance = range;
+
+        for (int i = 0; i < EnemyRayCount; i++)
+        {
+            EnemyRayProbe probe = ProbeEnemyRay(direction, i, range);
+            sensor.AddObservation(probe.hasHit ? 1f : 0f);
+            sensor.AddObservation(probe.hasHit ? probe.distanceNormalized : 1f);
+
+            if (!probe.hasHit)
+            {
+                continue;
+            }
+
+            if (IsFrontEnemyRay(i))
+            {
+                frontHits++;
+                minFrontDistance = Mathf.Min(minFrontDistance, probe.distance);
+            }
+            else if (i == EnemyRayBackMid)
+            {
+                backHits++;
+                minBackDistance = Mathf.Min(minBackDistance, probe.distance);
+            }
+            else if (i == EnemyRayDownForward)
+            {
+                downHits++;
+                minDownDistance = Mathf.Min(minDownDistance, probe.distance);
+            }
+        }
+
+        LogEnemyRayObservations(
+            frontHits,
+            backHits,
+            downHits,
+            frontHits > 0 ? minFrontDistance : -1f,
+            backHits > 0 ? minBackDistance : -1f,
+            downHits > 0 ? minDownDistance : -1f
+        );
+    }
+
+    private void LogEnemyRayObservations(
+        int frontHits,
+        int backHits,
+        int downHits,
+        float minFrontDistance,
+        float minBackDistance,
+        float minDownDistance)
+    {
+        if (!debugEnemyRayObservations || Time.time < nextDebugEnemyRayLogTime)
+        {
+            return;
+        }
+
+        nextDebugEnemyRayLogTime = Time.time + 0.5f;
+        Debug.Log(
+            "[ENEMY RAYS] " +
+            $"frontHits={frontHits} backHits={backHits} downHits={downHits} " +
+            $"minFrontDist={minFrontDistance:F3} minBackDist={minBackDistance:F3} minDownDist={minDownDistance:F3}",
+            this
+        );
+    }
+
+    private EnemyRayProbe ProbeEnemyRay(float direction, int rayIndex, float range)
+    {
+        range = Mathf.Max(0.1f, range);
+        Vector2 rayDirection = GetEnemyRayDirection(direction, rayIndex);
+        float verticalOffset = GetEnemyRayVerticalOffset(rayIndex);
+        Vector2 origin = (Vector2)transform.position + new Vector2(0f, verticalOffset);
+        EnemyRayProbe bestProbe = new EnemyRayProbe
+        {
+            hasHit = false,
+            rayIndex = rayIndex,
+            origin = origin,
+            point = origin + rayDirection * range,
+            distance = range,
+            distanceNormalized = 1f,
+            enemyTransform = null,
+            enemyName = string.Empty,
+            rayName = GetEnemyRayName(rayIndex)
+        };
+
+        RaycastHit2D[] hits = Physics2D.RaycastAll(origin, rayDirection, range);
+
+        for (int i = 0; i < hits.Length; i++)
+        {
+            RaycastHit2D hit = hits[i];
+
+            if (hit.collider == null || IsOwnCollider(hit.collider))
+            {
+                continue;
+            }
+
+            EdgeRunnerEnemyMarker marker = hit.collider.GetComponentInParent<EdgeRunnerEnemyMarker>();
+
+            if (marker == null || !marker.IsObservable || !marker.IsDangerous)
+            {
+                continue;
+            }
+
+            if (hit.distance < bestProbe.distance)
+            {
+                bestProbe = CreateEnemyRayHitProbe(origin, hit.point, hit.distance, range, marker, rayIndex);
+            }
+        }
+
+        EdgeRunnerEnemyMarker[] markers = FindObjectsByType<EdgeRunnerEnemyMarker>(FindObjectsInactive.Exclude);
+
+        for (int i = 0; i < markers.Length; i++)
+        {
+            EdgeRunnerEnemyMarker marker = markers[i];
+
+            if (marker == null || !marker.IsObservable || !marker.IsDangerous)
+            {
+                continue;
+            }
+
+            if (!TryIntersectEnemyBounds(marker, origin, rayDirection, range, out float distance, out Vector2 point))
+            {
+                continue;
+            }
+
+            if (distance < bestProbe.distance)
+            {
+                bestProbe = CreateEnemyRayHitProbe(origin, point, distance, range, marker, rayIndex);
+            }
+        }
+
+        return bestProbe;
+    }
+
+    private Vector2 GetEnemyRayDirection(float direction, int rayIndex)
+    {
+        float directionSign = direction >= 0f ? 1f : -1f;
+
+        if (rayIndex == EnemyRayBackMid)
+        {
+            return new Vector2(-directionSign, 0f);
+        }
+
+        if (rayIndex == EnemyRayDownForward)
+        {
+            return new Vector2(directionSign * 0.65f, -1f).normalized;
+        }
+
+        return new Vector2(directionSign, 0f);
+    }
+
+    private float GetEnemyRayVerticalOffset(int rayIndex)
+    {
+        if (rayIndex < 0 || rayIndex >= EnemyRayVerticalOffsets.Length)
+        {
+            return 0.5f;
+        }
+
+        return EnemyRayVerticalOffsets[rayIndex];
+    }
+
+    private string GetEnemyRayName(int rayIndex)
+    {
+        return rayIndex switch
+        {
+            EnemyRayFrontLow => "front_low",
+            EnemyRayFrontMid => "front_mid",
+            EnemyRayBackMid => "back_mid",
+            EnemyRayDownForward => "down_forward",
+            _ => "unknown"
+        };
+    }
+
+    private bool IsFrontEnemyRay(int rayIndex)
+    {
+        return rayIndex == EnemyRayFrontLow || rayIndex == EnemyRayFrontMid;
+    }
+
+    private EnemyRayProbe CreateEnemyRayHitProbe(
+        Vector2 origin,
+        Vector2 point,
+        float distance,
+        float range,
+        EdgeRunnerEnemyMarker marker,
+        int rayIndex)
+    {
+        Transform enemyTransform = marker.ObservationTransform != null
+            ? marker.ObservationTransform
+            : marker.transform;
+
+        return new EnemyRayProbe
+        {
+            hasHit = true,
+            rayIndex = rayIndex,
+            origin = origin,
+            point = point,
+            distance = distance,
+            distanceNormalized = NormalizeDistance(distance, range),
+            enemyTransform = enemyTransform,
+            enemyName = marker.name,
+            rayName = GetEnemyRayName(rayIndex)
+        };
+    }
+
+    private bool TryIntersectEnemyBounds(
+        EdgeRunnerEnemyMarker marker,
+        Vector2 origin,
+        Vector2 rayDirection,
+        float range,
+        out float distance,
+        out Vector2 point)
+    {
+        distance = 0f;
+        point = origin;
+
+        Bounds bounds = marker.GetObservationBounds();
+
+        if (bounds.size == Vector3.zero)
+        {
+            Vector2 markerPosition = marker.GetObservationPosition();
+            bounds = new Bounds(markerPosition, new Vector3(0.2f, 0.2f, 0.2f));
+        }
+
+        Vector2 normalizedDirection = rayDirection.normalized;
+        float tMin = 0f;
+        float tMax = range;
+
+        if (!UpdateRayBoundsInterval(origin.x, normalizedDirection.x, bounds.min.x, bounds.max.x, ref tMin, ref tMax) ||
+            !UpdateRayBoundsInterval(origin.y, normalizedDirection.y, bounds.min.y, bounds.max.y, ref tMin, ref tMax))
+        {
+            return false;
+        }
+
+        distance = Mathf.Max(0f, tMin);
+
+        if (distance < 0f || distance > range)
+        {
+            return false;
+        }
+
+        point = origin + normalizedDirection * distance;
+        return true;
+    }
+
+    private bool UpdateRayBoundsInterval(
+        float origin,
+        float direction,
+        float min,
+        float max,
+        ref float tMin,
+        ref float tMax)
+    {
+        if (Mathf.Abs(direction) < 0.0001f)
+        {
+            return origin >= min && origin <= max;
+        }
+
+        float t1 = (min - origin) / direction;
+        float t2 = (max - origin) / direction;
+
+        if (t1 > t2)
+        {
+            float temp = t1;
+            t1 = t2;
+            t2 = temp;
+        }
+
+        tMin = Mathf.Max(tMin, t1);
+        tMax = Mathf.Min(tMax, t2);
+        return tMin <= tMax;
+    }
+
+    private bool IsOwnCollider(Collider2D collider)
+    {
+        if (collider == null)
+        {
+            return false;
+        }
+
+        EdgeRunnerAgentV5EnemyAware owner = collider.GetComponentInParent<EdgeRunnerAgentV5EnemyAware>();
+        return owner == this;
+    }
+
+    private bool TryFindEnemyRayThreat(
+        float direction,
+        float maxDistance,
+        EnemyRayThreatMode threatMode,
+        out EnemyRayProbe bestThreat)
+    {
+        bestThreat = default;
+        float range = Mathf.Max(0.1f, enemyDetectionRangeX);
+        float threatDistance = Mathf.Clamp(maxDistance, 0f, range);
+        bool foundThreat = false;
+
+        for (int i = 0; i < EnemyRayCount; i++)
+        {
+            if (!ShouldUseEnemyRayForThreat(i, threatMode))
+            {
+                continue;
+            }
+
+            EnemyRayProbe probe = ProbeEnemyRay(direction, i, range);
+
+            if (!probe.hasHit || probe.distance > threatDistance)
+            {
+                continue;
+            }
+
+            if (!foundThreat || probe.distance < bestThreat.distance)
+            {
+                bestThreat = probe;
+                foundThreat = true;
+            }
+        }
+
+        return foundThreat;
+    }
+
+    private bool ShouldUseEnemyRayForThreat(int rayIndex, EnemyRayThreatMode threatMode)
+    {
+        switch (threatMode)
+        {
+            case EnemyRayThreatMode.FrontOnly:
+                return IsFrontEnemyRay(rayIndex);
+            case EnemyRayThreatMode.FrontOrDownForward:
+                return IsFrontEnemyRay(rayIndex) || rayIndex == EnemyRayDownForward;
+            case EnemyRayThreatMode.Any:
+                return true;
+            default:
+                return false;
         }
     }
 
@@ -1335,6 +3166,378 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         Debug.Log(message, this);
     }
 
+    private void ApplyEnemyAvoidanceCueRewards(
+        float direction,
+        float moveX,
+        bool jumpRequested,
+        bool grounded)
+    {
+        if (!enableEnemyAwareness || episodeEnding)
+        {
+            return;
+        }
+
+        if (useEnemyRayObservations)
+        {
+            TryApplyEnemyRayAvoidanceCueRewards(direction, moveX, jumpRequested, grounded);
+            return;
+        }
+
+        EdgeRunnerEnemyMarker[] markers = FindObjectsByType<EdgeRunnerEnemyMarker>(FindObjectsInactive.Exclude);
+
+        for (int i = 0; i < markers.Length; i++)
+        {
+            EdgeRunnerEnemyMarker marker = markers[i];
+
+            if (marker == null || !marker.IsObservable || !marker.IsDangerous)
+            {
+                continue;
+            }
+
+            TryApplyEnemyAvoidanceCueRewards(
+                marker.ObservationTransform,
+                marker.GetObservationPosition(),
+                marker.name,
+                direction,
+                moveX,
+                jumpRequested,
+                grounded
+            );
+        }
+
+        DemoEnemyHazard[] demoHazards = FindObjectsByType<DemoEnemyHazard>(FindObjectsInactive.Exclude);
+
+        for (int i = 0; i < demoHazards.Length; i++)
+        {
+            DemoEnemyHazard hazard = demoHazards[i];
+
+            if (hazard == null || !hazard.AffectsAgent)
+            {
+                continue;
+            }
+
+            TryApplyEnemyAvoidanceCueRewards(
+                hazard.transform,
+                hazard.transform.position,
+                hazard.name,
+                direction,
+                moveX,
+                jumpRequested,
+                grounded
+            );
+        }
+    }
+
+    private void TryApplyEnemyRayAvoidanceCueRewards(
+        float direction,
+        float moveX,
+        bool jumpRequested,
+        bool grounded)
+    {
+        bool guidedJumpCue = forceJumpActionNearEnemy || enableJumpCommitMask;
+        EnemyRayThreatMode jumpThreatMode = guidedJumpCue
+            ? EnemyRayThreatMode.FrontOnly
+            : EnemyRayThreatMode.FrontOrDownForward;
+        bool hasJumpThreat = TryFindEnemyRayThreat(
+            direction,
+            enemyAvoidanceWindowX,
+            jumpThreatMode,
+            out EnemyRayProbe jumpThreat
+        );
+        bool hasFrontThreat = TryFindEnemyRayThreat(
+            direction,
+            enemyAvoidanceWindowX,
+            EnemyRayThreatMode.FrontOnly,
+            out EnemyRayProbe frontThreat
+        );
+
+        if (!hasJumpThreat)
+        {
+            return;
+        }
+
+        Transform enemyTransform = jumpThreat.enemyTransform;
+
+        if (enemyTransform == null)
+        {
+            return;
+        }
+
+        bool movingTowardEnemy = moveX * direction > minUsefulMoveInput;
+        bool hasUpwardAvoidanceVelocity = rb != null && rb.linearVelocity.y >= enemyJumpCueMinUpVelocity;
+        bool jumpCueActive = jumpRequested || hasUpwardAvoidanceVelocity;
+        bool jumpThreatInRewardWindow = !guidedJumpCue || IsGuidedEnemyJumpThreatInRewardWindow(jumpThreat.distance);
+
+        if (jumpCueActive &&
+            jumpThreatInRewardWindow &&
+            enemyJumpCueReward > 0f &&
+            !jumpCueRewardedEnemyTransforms.Contains(enemyTransform))
+        {
+            jumpCueRewardedEnemyTransforms.Add(enemyTransform);
+            AddReward(enemyJumpCueReward);
+            LogEnemyRewardEvent(
+                $"[ENEMY JUMP CUE] reward={enemyJumpCueReward:F3} enemy={jumpThreat.enemyName} ray={jumpThreat.rayName} rayDist={jumpThreat.distance:F3}",
+                false
+            );
+        }
+
+        if (forceJumpActionNearEnemy &&
+            jumpRequested &&
+            earlyEnemyJumpPenalty < 0f &&
+            hasFrontThreat &&
+            GetEnemyJumpTimingZone(frontThreat.distance) == EnemyJumpTimingZone.TooEarly)
+        {
+            AddReward(earlyEnemyJumpPenalty);
+            LogEnemyRewardEvent(
+                $"[ENEMY EARLY JUMP] penalty={earlyEnemyJumpPenalty:F4} enemy={frontThreat.enemyName} ray={frontThreat.rayName} rayDist={frontThreat.distance:F3}",
+                true
+            );
+        }
+
+        bool groundedOrNearlyGrounded = IsGroundedOrNearlyGrounded(grounded);
+
+        if (hasFrontThreat && movingTowardEnemy && groundedOrNearlyGrounded && !jumpCueActive && enemyApproachPenalty < 0f)
+        {
+            AddReward(enemyApproachPenalty);
+            LogEnemyRewardEvent(
+                $"[ENEMY APPROACH] penalty={enemyApproachPenalty:F4} enemy={frontThreat.enemyName} ray={frontThreat.rayName} rayDist={frontThreat.distance:F3}",
+                true
+            );
+        }
+    }
+
+    private void TryApplyEnemyAvoidanceCueRewards(
+        Transform enemyTransform,
+        Vector2 enemyPosition,
+        string enemyName,
+        float direction,
+        float moveX,
+        bool jumpRequested,
+        bool grounded)
+    {
+        if (enemyTransform == null || rewardedEnemyTransforms.Contains(enemyTransform))
+        {
+            return;
+        }
+
+        if (!IsEnemyInAvoidanceWindow(enemyTransform, enemyPosition, direction, out float forwardDistanceToEnemy))
+        {
+            return;
+        }
+
+        bool movingTowardEnemy = moveX * direction > minUsefulMoveInput;
+        bool hasUpwardAvoidanceVelocity = rb != null && rb.linearVelocity.y >= enemyJumpCueMinUpVelocity;
+        bool jumpCueActive = jumpRequested || hasUpwardAvoidanceVelocity;
+
+        if (jumpCueActive && enemyJumpCueReward > 0f && !jumpCueRewardedEnemyTransforms.Contains(enemyTransform))
+        {
+            jumpCueRewardedEnemyTransforms.Add(enemyTransform);
+            AddReward(enemyJumpCueReward);
+            LogEnemyRewardEvent(
+                $"[ENEMY JUMP CUE] reward={enemyJumpCueReward:F3} enemy={enemyName} distance={forwardDistanceToEnemy:F3}",
+                false
+            );
+        }
+
+        bool groundedOrNearlyGrounded = grounded || (rb != null && Mathf.Abs(rb.linearVelocity.y) <= enemyJumpCueMinUpVelocity);
+
+        if (movingTowardEnemy && groundedOrNearlyGrounded && !jumpCueActive && enemyApproachPenalty < 0f)
+        {
+            AddReward(enemyApproachPenalty);
+            LogEnemyRewardEvent(
+                $"[ENEMY APPROACH] penalty={enemyApproachPenalty:F4} enemy={enemyName} distance={forwardDistanceToEnemy:F3}",
+                true
+            );
+        }
+    }
+
+    private bool ShouldSuppressProgressRewardNearEnemy(float direction)
+    {
+        if (!enableEnemyAwareness || !disableProgressRewardNearEnemy || episodeEnding)
+        {
+            return false;
+        }
+
+        if (useEnemyRayObservations &&
+            TryFindEnemyRayThreat(direction, enemyAvoidanceWindowX, EnemyRayThreatMode.FrontOrDownForward, out EnemyRayProbe threat))
+        {
+            LogEnemyRewardEvent($"[ENEMY PROGRESS SUPPRESSED] enemy={threat.enemyName} ray={threat.rayName}", true);
+            return true;
+        }
+
+        EdgeRunnerEnemyMarker[] markers = FindObjectsByType<EdgeRunnerEnemyMarker>(FindObjectsInactive.Exclude);
+
+        for (int i = 0; i < markers.Length; i++)
+        {
+            EdgeRunnerEnemyMarker marker = markers[i];
+
+            if (marker == null || !marker.IsObservable || !marker.IsDangerous)
+            {
+                continue;
+            }
+
+            if (IsEnemyInAvoidanceWindow(marker.ObservationTransform, marker.GetObservationPosition(), direction, out _))
+            {
+                LogEnemyRewardEvent($"[ENEMY PROGRESS SUPPRESSED] enemy={marker.name}", true);
+                return true;
+            }
+        }
+
+        DemoEnemyHazard[] demoHazards = FindObjectsByType<DemoEnemyHazard>(FindObjectsInactive.Exclude);
+
+        for (int i = 0; i < demoHazards.Length; i++)
+        {
+            DemoEnemyHazard hazard = demoHazards[i];
+
+            if (hazard == null || !hazard.AffectsAgent)
+            {
+                continue;
+            }
+
+            if (IsEnemyInAvoidanceWindow(hazard.transform, hazard.transform.position, direction, out _))
+            {
+                LogEnemyRewardEvent($"[ENEMY PROGRESS SUPPRESSED] enemy={hazard.name}", true);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool IsGuidedEnemyJumpThreatInRewardWindow(float distance)
+    {
+        if (enableJumpCommitMask)
+        {
+            return distance >= jumpCommitMinDistance && distance <= jumpCommitMaxDistance;
+        }
+
+        return GetEnemyJumpTimingZone(distance) == EnemyJumpTimingZone.SweetSpot;
+    }
+
+    private bool TryFindDangerousEnemyAhead(
+        float direction,
+        float windowX,
+        float verticalTolerance,
+        out Transform enemyTransform,
+        out Vector2 enemyPosition,
+        out string enemyName,
+        out float forwardDistanceToEnemy)
+    {
+        enemyTransform = null;
+        enemyPosition = Vector2.zero;
+        enemyName = string.Empty;
+        forwardDistanceToEnemy = 0f;
+
+        EdgeRunnerEnemyMarker[] markers = FindObjectsByType<EdgeRunnerEnemyMarker>(FindObjectsInactive.Exclude);
+
+        for (int i = 0; i < markers.Length; i++)
+        {
+            EdgeRunnerEnemyMarker marker = markers[i];
+
+            if (marker == null || !marker.IsObservable || !marker.IsDangerous)
+            {
+                continue;
+            }
+
+            Transform observationTransform = marker.ObservationTransform != null
+                ? marker.ObservationTransform
+                : marker.transform;
+            Vector2 markerPosition = marker.GetObservationPosition();
+
+            if (IsDangerousEnemyAhead(
+                observationTransform,
+                markerPosition,
+                direction,
+                windowX,
+                verticalTolerance,
+                out forwardDistanceToEnemy))
+            {
+                enemyTransform = observationTransform;
+                enemyPosition = markerPosition;
+                enemyName = marker.name;
+                return true;
+            }
+        }
+
+        DemoEnemyHazard[] demoHazards = FindObjectsByType<DemoEnemyHazard>(FindObjectsInactive.Exclude);
+
+        for (int i = 0; i < demoHazards.Length; i++)
+        {
+            DemoEnemyHazard hazard = demoHazards[i];
+
+            if (hazard == null || !hazard.AffectsAgent)
+            {
+                continue;
+            }
+
+            if (IsDangerousEnemyAhead(
+                hazard.transform,
+                hazard.transform.position,
+                direction,
+                windowX,
+                verticalTolerance,
+                out forwardDistanceToEnemy))
+            {
+                enemyTransform = hazard.transform;
+                enemyPosition = hazard.transform.position;
+                enemyName = hazard.name;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool IsDangerousEnemyAhead(
+        Transform enemyTransform,
+        Vector2 enemyPosition,
+        float direction,
+        float windowX,
+        float verticalTolerance,
+        out float forwardDistanceToEnemy)
+    {
+        forwardDistanceToEnemy = 0f;
+
+        if (enemyTransform == null || rewardedEnemyTransforms.Contains(enemyTransform))
+        {
+            return false;
+        }
+
+        Vector2 deltaToEnemy = enemyPosition - (Vector2)transform.position;
+        forwardDistanceToEnemy = deltaToEnemy.x * direction;
+
+        if (forwardDistanceToEnemy <= 0f || forwardDistanceToEnemy > windowX)
+        {
+            return false;
+        }
+
+        return HasDangerousVerticalOverlap(enemyPosition, verticalTolerance);
+    }
+
+    private bool IsEnemyInAvoidanceWindow(
+        Transform enemyTransform,
+        Vector2 enemyPosition,
+        float direction,
+        out float forwardDistanceToEnemy)
+    {
+        forwardDistanceToEnemy = 0f;
+
+        if (enemyTransform == null || rewardedEnemyTransforms.Contains(enemyTransform))
+        {
+            return false;
+        }
+
+        Vector2 deltaToEnemy = enemyPosition - (Vector2)transform.position;
+        forwardDistanceToEnemy = deltaToEnemy.x * direction;
+
+        if (forwardDistanceToEnemy <= 0f || forwardDistanceToEnemy > enemyAvoidanceWindowX)
+        {
+            return false;
+        }
+
+        return HasDangerousVerticalOverlap(enemyPosition);
+    }
+
     private void RewardPassedEnemies(float direction)
     {
         if (!enableEnemyAwareness || !rewardPassedEnemies || enemyPassReward <= 0f)
@@ -1348,9 +3551,9 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         {
             EdgeRunnerEnemyMarker marker = markers[i];
 
-            if (marker != null && marker.AffectsAgent)
+            if (marker != null && marker.IsObservable && marker.IsDangerous)
             {
-                TryRewardPassedEnemy(marker.transform, direction);
+                TryRewardPassedEnemy(marker.ObservationTransform, marker.GetObservationPosition(), marker.name, direction);
             }
         }
 
@@ -1362,12 +3565,12 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
 
             if (hazard != null && hazard.AffectsAgent)
             {
-                TryRewardPassedEnemy(hazard.transform, direction);
+                TryRewardPassedEnemy(hazard.transform, hazard.transform.position, hazard.name, direction);
             }
         }
     }
 
-    private void TryRewardPassedEnemy(Transform enemyTransform, float direction)
+    private void TryRewardPassedEnemy(Transform enemyTransform, Vector2 enemyPosition, string enemyName, float direction)
     {
         if (enemyTransform == null)
         {
@@ -1379,7 +3582,7 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
             return;
         }
 
-        Vector2 deltaFromEnemy = (Vector2)(transform.position - enemyTransform.position);
+        Vector2 deltaFromEnemy = (Vector2)transform.position - enemyPosition;
         float passedDistance = deltaFromEnemy.x * direction;
 
         if (passedDistance < enemyPassMargin || Mathf.Abs(deltaFromEnemy.y) > enemyDetectionRangeY)
@@ -1389,6 +3592,95 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
 
         rewardedEnemyTransforms.Add(enemyTransform);
         AddReward(enemyPassReward);
+        LogEnemyRewardEvent($"[ENEMY PASS] reward={enemyPassReward:F3} enemy={enemyName}", false);
+    }
+
+    private void ApplyEnemyDangerProximityPenalty(float direction)
+    {
+        if (!enableEnemyAwareness || enemyDangerProximityPenalty >= 0f)
+        {
+            return;
+        }
+
+        EdgeRunnerEnemyMarker[] markers = FindObjectsByType<EdgeRunnerEnemyMarker>(FindObjectsInactive.Exclude);
+
+        for (int i = 0; i < markers.Length; i++)
+        {
+            EdgeRunnerEnemyMarker marker = markers[i];
+
+            if (marker == null || !marker.IsObservable || !marker.IsDangerous)
+            {
+                continue;
+            }
+
+            TryApplyEnemyDangerProximityPenalty(
+                marker.ObservationTransform,
+                marker.GetObservationPosition(),
+                marker.name,
+                direction
+            );
+        }
+
+        DemoEnemyHazard[] demoHazards = FindObjectsByType<DemoEnemyHazard>(FindObjectsInactive.Exclude);
+
+        for (int i = 0; i < demoHazards.Length; i++)
+        {
+            DemoEnemyHazard hazard = demoHazards[i];
+
+            if (hazard == null || !hazard.AffectsAgent)
+            {
+                continue;
+            }
+
+            TryApplyEnemyDangerProximityPenalty(hazard.transform, hazard.transform.position, hazard.name, direction);
+        }
+    }
+
+    private void TryApplyEnemyDangerProximityPenalty(
+        Transform enemyTransform,
+        Vector2 enemyPosition,
+        string enemyName,
+        float direction)
+    {
+        if (enemyTransform == null || rewardedEnemyTransforms.Contains(enemyTransform))
+        {
+            return;
+        }
+
+        Vector2 deltaFromEnemy = (Vector2)transform.position - enemyPosition;
+        float passedDistance = deltaFromEnemy.x * direction;
+
+        if (passedDistance >= enemyPassMargin)
+        {
+            return;
+        }
+
+        float horizontalDistance = Mathf.Abs(deltaFromEnemy.x);
+
+        if (horizontalDistance > enemyDangerProximityHorizontalRange || !HasDangerousVerticalOverlap(enemyPosition))
+        {
+            return;
+        }
+
+        AddReward(enemyDangerProximityPenalty);
+        LogEnemyRewardEvent(
+            $"[ENEMY PROXIMITY] penalty={enemyDangerProximityPenalty:F4} enemy={enemyName} distance={horizontalDistance:F3}",
+            true
+        );
+    }
+
+    private bool HasDangerousVerticalOverlap(Vector2 enemyPosition)
+    {
+        float tolerance = enemyVerticalDangerTolerance > 0f
+            ? enemyVerticalDangerTolerance
+            : enemyDangerProximityVerticalTolerance;
+        return HasDangerousVerticalOverlap(enemyPosition, tolerance);
+    }
+
+    private bool HasDangerousVerticalOverlap(Vector2 enemyPosition, float tolerance)
+    {
+        tolerance = Mathf.Max(0f, tolerance);
+        return Mathf.Abs(transform.position.y - enemyPosition.y) <= tolerance;
     }
 
     private void HandleEnemyHit(Component enemy)
@@ -1400,8 +3692,29 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
 
         AddReward(enemyHitPenalty);
         string enemyName = enemy != null ? enemy.name : "unknown enemy";
+        LogEnemyRewardEvent($"[ENEMY HIT] penalty={enemyHitPenalty:F3} enemy={enemyName}", false);
         Debug.LogWarning($"EdgeRunnerAgentV5EnemyAware: EnemyHit by {enemyName}; ending episode.");
         TryEndEpisodeSafely(EdgeRunnerEpisodeEndReason.EnemyHit);
+    }
+
+    private void LogEnemyRewardEvent(string message, bool rateLimited)
+    {
+        if (!debugEnemyRewards)
+        {
+            return;
+        }
+
+        if (rateLimited && Time.time < nextDebugEnemyRewardLogTime)
+        {
+            return;
+        }
+
+        if (rateLimited)
+        {
+            nextDebugEnemyRewardLogTime = Time.time + Mathf.Max(0.05f, debugActionLogInterval);
+        }
+
+        Debug.Log(message, this);
     }
 
     private Vector2 GetEnemyVelocity(Transform enemyTransform)
@@ -1781,13 +4094,41 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         maxExpectedHeightDelta = Mathf.Max(0.1f, maxExpectedHeightDelta);
         wallSensorRange = Mathf.Max(0f, wallSensorRange);
         goalReachDistance = Mathf.Max(0.01f, goalReachDistance);
+        retreatPenalty = Mathf.Min(0f, retreatPenalty);
+        retreatEndDistance = Mathf.Max(0f, retreatEndDistance);
+        microTimeoutSeconds = Mathf.Max(0f, microTimeoutSeconds);
+        microTimeoutPenalty = Mathf.Min(0f, microTimeoutPenalty);
         enemyDetectionRangeX = Mathf.Max(0.1f, enemyDetectionRangeX);
         enemyDetectionRangeY = Mathf.Max(0.1f, enemyDetectionRangeY);
         enemyObservationSlots = Mathf.Clamp(enemyObservationSlots, 1, EnemyObservationCount / 4);
         enemyHitPenalty = Mathf.Min(0f, enemyHitPenalty);
         enemyPassReward = Mathf.Max(0f, enemyPassReward);
         enemyPassMargin = Mathf.Max(0f, enemyPassMargin);
+        enemyDangerProximityPenalty = Mathf.Min(0f, enemyDangerProximityPenalty);
+        enemyDangerProximityHorizontalRange = Mathf.Max(0f, enemyDangerProximityHorizontalRange);
+        enemyDangerProximityVerticalTolerance = Mathf.Max(0f, enemyDangerProximityVerticalTolerance);
+        enemyApproachPenalty = Mathf.Min(0f, enemyApproachPenalty);
+        enemyJumpCueReward = Mathf.Max(0f, enemyJumpCueReward);
+        earlyEnemyJumpPenalty = Mathf.Min(0f, earlyEnemyJumpPenalty);
+        jumpCommitReward = Mathf.Max(0f, jumpCommitReward);
+        enemyAvoidanceWindowX = Mathf.Max(0f, enemyAvoidanceWindowX);
+        enemyVerticalDangerTolerance = Mathf.Max(0f, enemyVerticalDangerTolerance);
+        enemyJumpCueMinUpVelocity = Mathf.Max(0f, enemyJumpCueMinUpVelocity);
+        enemyActionMaskWindowX = Mathf.Max(0f, enemyActionMaskWindowX);
+        enemyActionMaskVerticalTolerance = Mathf.Max(0f, enemyActionMaskVerticalTolerance);
+        enemyForcedJumpWindowX = Mathf.Max(0f, enemyForcedJumpWindowX);
+        enemyForcedJumpMinDistance = Mathf.Max(0f, enemyForcedJumpMinDistance);
+        enemyForcedJumpMaxDistance = Mathf.Max(enemyForcedJumpMinDistance, enemyForcedJumpMaxDistance);
+        enemyForcedJumpVerticalTolerance = Mathf.Max(0f, enemyForcedJumpVerticalTolerance);
+        jumpCommitMinDistance = Mathf.Max(0f, jumpCommitMinDistance);
+        jumpCommitMaxDistance = Mathf.Max(jumpCommitMinDistance, jumpCommitMaxDistance);
+        prematureJumpMinThreatDistance = Mathf.Max(0f, prematureJumpMinThreatDistance);
+        prematureJumpMaxThreatDistance = Mathf.Max(prematureJumpMinThreatDistance, prematureJumpMaxThreatDistance);
+        episodeStartSettleMaxSeconds = Mathf.Max(0.01f, episodeStartSettleMaxSeconds);
+        airCommitDuration = Mathf.Max(0.01f, airCommitDuration);
         debugActionLogInterval = Mathf.Max(0.05f, debugActionLogInterval);
+        debugActionTraceInterval = Mathf.Max(0.01f, debugActionTraceInterval);
+        debugTrainingActionStatsInterval = Mathf.Max(1, debugTrainingActionStatsInterval);
     }
 
     private void OnDrawGizmos()
@@ -1882,6 +4223,49 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
                 Gizmos.DrawSphere(probe.point, 0.06f);
             }
         }
+
+        if (debugEnemyRayObservations)
+        {
+            DrawEnemyRayGizmos(direction);
+        }
+    }
+
+    private void DrawEnemyRayGizmos(float direction)
+    {
+        float range = Mathf.Max(0.1f, enemyDetectionRangeX);
+
+        for (int i = 0; i < EnemyRayCount; i++)
+        {
+            EnemyRayProbe probe = ProbeEnemyRay(direction, i, range);
+            Gizmos.color = GetEnemyRayGizmoColor(i, probe.hasHit);
+            Gizmos.DrawLine(probe.origin, probe.point);
+            Gizmos.DrawSphere(probe.origin, 0.05f);
+
+            if (probe.hasHit)
+            {
+                Gizmos.DrawSphere(probe.point, 0.08f);
+            }
+        }
+    }
+
+    private Color GetEnemyRayGizmoColor(int rayIndex, bool hasHit)
+    {
+        if (IsFrontEnemyRay(rayIndex))
+        {
+            return hasHit ? new Color(1f, 0.2f, 0.1f) : new Color(1f, 0.75f, 0.15f);
+        }
+
+        if (rayIndex == EnemyRayBackMid)
+        {
+            return hasHit ? new Color(0.2f, 0.55f, 1f) : new Color(0.45f, 0.8f, 1f);
+        }
+
+        if (rayIndex == EnemyRayDownForward)
+        {
+            return hasHit ? new Color(1f, 0.15f, 0.9f) : new Color(0.95f, 0.55f, 1f);
+        }
+
+        return hasHit ? Color.red : Color.gray;
     }
 
     private Color GetSampleGizmoColor(float sampleValue)
@@ -1954,6 +4338,33 @@ public class EdgeRunnerAgentV5EnemyAware : Agent
         public Vector2 point;
         public float distance;
         public float distanceNormalized;
+    }
+
+    private struct EnemyRayProbe
+    {
+        public bool hasHit;
+        public int rayIndex;
+        public Vector2 origin;
+        public Vector2 point;
+        public float distance;
+        public float distanceNormalized;
+        public Transform enemyTransform;
+        public string enemyName;
+        public string rayName;
+    }
+
+    private enum EnemyRayThreatMode
+    {
+        FrontOnly,
+        FrontOrDownForward,
+        Any
+    }
+
+    private enum EnemyJumpTimingZone
+    {
+        TooEarly,
+        SweetSpot,
+        TooLate
     }
 
     private struct EnemyCandidate

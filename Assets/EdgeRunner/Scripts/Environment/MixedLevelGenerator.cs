@@ -46,12 +46,14 @@ public class MixedLevelGenerator : MonoBehaviour
     [SerializeField] private Transform levelRoot;
     [SerializeField] private GameObject platformPrefab;
     [SerializeField] private GameObject goalPrefab;
+    [SerializeField] private PhysicsMaterial2D platformPhysicsMaterial;
 
     [Header("Generation")]
     [SerializeField] private bool generateOnStart = false;
     [SerializeField] private int minSegments = 6;
     [SerializeField] private int maxSegments = 9;
     [SerializeField] private float minPlatformWidth = 4.5f;
+    [SerializeField] private float minLandingPlatformWidth = 4.5f;
     [SerializeField] private float maxPlatformWidth = 7f;
     [SerializeField] private float minGapWidth = 1.5f;
     [SerializeField] private float maxGapWidth = 2.4f;
@@ -78,6 +80,16 @@ public class MixedLevelGenerator : MonoBehaviour
     [SerializeField] private int maxConsecutiveHardSegments = 2;
     [SerializeField] private bool forceRecoveryPlatformAfterHardSegment = true;
     [SerializeField] private float minRecoveryPlatformWidth = 4.5f;
+    [SerializeField] private float safeEdgeMargin = 0.75f;
+    [SerializeField] private float minDistanceBetweenGaps = 0f;
+    [SerializeField] private float minRunupBeforeGap = 0f;
+    [SerializeField] private float minLandingAfterGap = 0f;
+    [SerializeField] private float finalGoalPlatformWidth = 0f;
+    [SerializeField] private float finalGoalSafeRunup = 0f;
+    [SerializeField] private float goalEdgeMargin = 0.75f;
+    [SerializeField] private bool useWideGoalTrigger = false;
+    [SerializeField] private Vector2 wideGoalTriggerSize = new Vector2(2.5f, 6f);
+    [SerializeField] private bool debugGenerationValues = false;
     [SerializeField] private bool avoidRepeatedStepUps = true;
     [SerializeField] private bool avoidRepeatedGaps = true;
     [SerializeField] private bool avoidHardGapIntoStepUp = true;
@@ -129,6 +141,8 @@ public class MixedLevelGenerator : MonoBehaviour
     private int consecutiveHardSegments;
     private bool pendingRecoveryPlatform;
     private float lastSafeDropHeight;
+    private bool hasLastGap;
+    private float lastGapEndX;
     private bool loggedHardSegmentsWarning;
     private bool loggedRecoveryWidthWarning;
     private bool loggedHardGapIntoStepUpWarning;
@@ -167,6 +181,8 @@ public class MixedLevelGenerator : MonoBehaviour
         consecutiveHardSegments = 0;
         pendingRecoveryPlatform = false;
         lastSafeDropHeight = 0f;
+        hasLastGap = false;
+        lastGapEndX = 0f;
 
         int segmentCount = Random.Range(minSegments, maxSegments + 1);
         int requiredVerticalSegment = segmentCount > 2 ? Random.Range(1, segmentCount) : -1;
@@ -196,6 +212,7 @@ public class MixedLevelGenerator : MonoBehaviour
             CreateRecoveryPlatformSegment();
         }
 
+        CreateFinalGoalPlatformSegment();
         CreateGoalSegment();
         ValidateGeneratedLayout();
     }
@@ -445,8 +462,13 @@ public class MixedLevelGenerator : MonoBehaviour
     private MixedSegmentKind CreateGapSegment()
     {
         float gapWidth = RandomGapWidth();
-        CreateGap(gapWidth, currentY);
-        CreatePlatformSegment("GapSegment", RandomPlatformWidth(), currentY);
+        if (!TryCreateGap(gapWidth, currentY))
+        {
+            CreatePlatformSegment("FlatSegment", RandomPlatformWidth(), currentY);
+            return MixedSegmentKind.Flat;
+        }
+
+        CreatePlatformSegment("GapSegment", RandomLandingPlatformWidth(), currentY);
         return MixedSegmentKind.Gap;
     }
 
@@ -461,8 +483,13 @@ public class MixedLevelGenerator : MonoBehaviour
         }
 
         float gapWidth = RandomModerateGapWidth(2.0f);
-        CreateGap(gapWidth, nextY);
-        CreatePlatformSegment("StepUpSegment", RandomPlatformWidth(), nextY);
+        if (!TryCreateGap(gapWidth, nextY))
+        {
+            CreatePlatformSegment("FlatSegment", RandomPlatformWidth(), currentY);
+            return MixedSegmentKind.Flat;
+        }
+
+        CreatePlatformSegment("StepUpSegment", RandomLandingPlatformWidth(), nextY);
         return MixedSegmentKind.StepUp;
     }
 
@@ -477,8 +504,13 @@ public class MixedLevelGenerator : MonoBehaviour
         }
 
         float gapWidth = RandomModerateGapWidth(2.0f);
-        CreateGap(gapWidth, nextY);
-        CreatePlatformSegment("StepDownSegment", RandomPlatformWidth(), nextY);
+        if (!TryCreateGap(gapWidth, nextY))
+        {
+            CreatePlatformSegment("FlatSegment", RandomPlatformWidth(), currentY);
+            return MixedSegmentKind.Flat;
+        }
+
+        CreatePlatformSegment("StepDownSegment", RandomLandingPlatformWidth(), nextY);
         return MixedSegmentKind.StepDown;
     }
 
@@ -495,8 +527,13 @@ public class MixedLevelGenerator : MonoBehaviour
         }
 
         float gapWidth = RandomModerateGapWidth(2.2f);
-        CreateGap(gapWidth, nextY);
-        CreatePlatformSegment("SafeDropSegment", RandomPlatformWidth(), nextY);
+        if (!TryCreateGap(gapWidth, nextY))
+        {
+            CreatePlatformSegment("FlatSegment", RandomPlatformWidth(), currentY);
+            return MixedSegmentKind.Flat;
+        }
+
+        CreatePlatformSegment("SafeDropSegment", RandomLandingPlatformWidth(), nextY);
         return MixedSegmentKind.SafeDrop;
     }
 
@@ -515,33 +552,63 @@ public class MixedLevelGenerator : MonoBehaviour
         {
             if (i > 0)
             {
-                CreateGap(RandomPlatformChainGap(), currentY);
+                if (!TryCreateGap(RandomPlatformChainGap(), currentY))
+                {
+                    CreatePlatformSegment("FlatSegment", RandomPlatformWidth(), currentY);
+                    continue;
+                }
             }
             else if (currentSegments.Count > 0)
             {
-                CreateGap(RandomModerateGapWidth(2.0f), currentY);
+                if (!TryCreateGap(RandomModerateGapWidth(2.0f), currentY))
+                {
+                    CreatePlatformSegment("FlatSegment", RandomPlatformWidth(), currentY);
+                    continue;
+                }
             }
 
-            float width = Random.Range(minPlatformChainWidth, maxPlatformChainWidth);
+            float width = RandomPlatformChainWidth();
             CreatePlatformSegment("PlatformChainSegment", width, currentY);
         }
 
         return MixedSegmentKind.PlatformChain;
     }
 
+    private void CreateFinalGoalPlatformSegment()
+    {
+        if (!useV5GenerationRules || finalGoalPlatformWidth <= 0f)
+        {
+            return;
+        }
+
+        float minimumFinalWidth = Mathf.Max(
+            finalGoalPlatformWidth,
+            finalGoalSafeRunup + goalEdgeMargin + 0.5f
+        );
+
+        CreatePlatformSegment("FinalGoalPlatform", minimumFinalWidth, currentY);
+        RememberGeneratedSegmentKind(MixedSegmentKind.Flat);
+    }
+
     private void CreateGoalSegment()
     {
-        float goalX = Mathf.Clamp(
-            lastPlatformEndX - goalXOffsetFromEnd,
-            lastPlatformStartX + 0.75f,
-            lastPlatformEndX - 0.75f
-        );
+        float goalX = CalculateGoalX();
         float heightOffset = GetGoalHeightOffset();
 
         Vector3 goalPosition = new Vector3(goalX, currentY + heightOffset, 0f);
         GameObject goalInstance = Instantiate(goalPrefab, goalPosition, Quaternion.identity, levelRoot);
+        ConfigureGoalTrigger(goalInstance, heightOffset);
         spawnedObjects.Add(goalInstance);
         CurrentGoal = goalInstance.transform;
+
+        if (debugGenerationValues)
+        {
+            Debug.Log(
+                $"[MIXED GEN] finalGoalPlatformWidth={finalGoalPlatformWidth:F2} " +
+                $"goalX={goalX:F2} goalY={goalPosition.y:F2} " +
+                $"wideGoalTrigger={useWideGoalTrigger} triggerSize={wideGoalTriggerSize}"
+            );
+        }
 
         currentSegments.Add(new MixedSegmentInfo
         {
@@ -586,6 +653,7 @@ public class MixedLevelGenerator : MonoBehaviour
             GameObject platformInstance = Instantiate(platformPrefab, platformPosition, Quaternion.identity, levelRoot);
             platformInstance.transform.localScale = new Vector3(width, platformHeightScale, 1f);
             SetLayerRecursively(platformInstance, LayerMask.NameToLayer("Ground"));
+            ApplyPlatformPhysicsMaterial(platformInstance);
             spawnedObjects.Add(platformInstance);
 
             int platformIndex = spawnedPlatforms.Count;
@@ -611,6 +679,45 @@ public class MixedLevelGenerator : MonoBehaviour
         lastPlatformEndX = platformEndX;
     }
 
+    private bool TryCreateGap(float gapWidth, float nextY)
+    {
+        if (gapWidth < minGapWidth)
+        {
+            LogGenerationValue(
+                $"skipped micro-gap width={gapWidth:F2}, minGapWidth={minGapWidth:F2}"
+            );
+            return false;
+        }
+
+        if (useV5GenerationRules)
+        {
+            float runupBeforeGap = currentX - lastPlatformStartX;
+            if (runupBeforeGap < minRunupBeforeGap)
+            {
+                LogGenerationValue(
+                    $"skipped gap because runup={runupBeforeGap:F2}, minRunupBeforeGap={minRunupBeforeGap:F2}"
+                );
+                return false;
+            }
+
+            if (hasLastGap)
+            {
+                float distanceSinceLastGap = currentX - lastGapEndX;
+                if (distanceSinceLastGap < minDistanceBetweenGaps)
+                {
+                    LogGenerationValue(
+                        $"skipped gap because distanceSinceLastGap={distanceSinceLastGap:F2}, " +
+                        $"minDistanceBetweenGaps={minDistanceBetweenGaps:F2}"
+                    );
+                    return false;
+                }
+            }
+        }
+
+        CreateGap(gapWidth, nextY);
+        return true;
+    }
+
     private void CreateGap(float gapWidth, float nextY)
     {
         float gapStartX = currentX;
@@ -627,6 +734,72 @@ public class MixedLevelGenerator : MonoBehaviour
         });
 
         currentX = gapEndX;
+        hasLastGap = true;
+        lastGapEndX = gapEndX;
+
+        LogGenerationValue(
+            $"gapWidth={gapWidth:F2} startX={gapStartX:F2} endX={gapEndX:F2}"
+        );
+    }
+
+    private float CalculateGoalX()
+    {
+        float edgeMargin = Mathf.Max(safeEdgeMargin, goalEdgeMargin);
+        float minGoalX = lastPlatformStartX + edgeMargin;
+
+        if (useV5GenerationRules && finalGoalSafeRunup > 0f)
+        {
+            minGoalX = Mathf.Max(minGoalX, lastPlatformStartX + finalGoalSafeRunup);
+        }
+
+        float maxGoalX = lastPlatformEndX - edgeMargin;
+
+        if (maxGoalX < minGoalX)
+        {
+            return (lastPlatformStartX + lastPlatformEndX) * 0.5f;
+        }
+
+        return Mathf.Clamp(lastPlatformEndX - goalXOffsetFromEnd, minGoalX, maxGoalX);
+    }
+
+    private void ConfigureGoalTrigger(GameObject goalInstance, float heightOffset)
+    {
+        if (!useWideGoalTrigger || goalInstance == null)
+        {
+            return;
+        }
+
+        BoxCollider2D boxCollider = goalInstance.GetComponent<BoxCollider2D>();
+        if (boxCollider == null)
+        {
+            boxCollider = goalInstance.AddComponent<BoxCollider2D>();
+        }
+
+        float triggerWidth = Mathf.Max(0.1f, wideGoalTriggerSize.x);
+        float triggerHeight = Mathf.Max(0.1f, wideGoalTriggerSize.y);
+
+        boxCollider.enabled = true;
+        boxCollider.isTrigger = true;
+        boxCollider.size = new Vector2(triggerWidth, triggerHeight);
+        boxCollider.offset = new Vector2(0f, triggerHeight * 0.5f - heightOffset);
+    }
+
+    private void ApplyPlatformPhysicsMaterial(GameObject platformInstance)
+    {
+        if (platformPhysicsMaterial == null || platformInstance == null)
+        {
+            return;
+        }
+
+        Collider2D[] colliders = platformInstance.GetComponentsInChildren<Collider2D>(true);
+
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            if (colliders[i] != null)
+            {
+                colliders[i].sharedMaterial = platformPhysicsMaterial;
+            }
+        }
     }
 
     private float RandomPlatformWidth()
@@ -634,9 +807,26 @@ public class MixedLevelGenerator : MonoBehaviour
         return Random.Range(minPlatformWidth, maxPlatformWidth);
     }
 
+    private float RandomLandingPlatformWidth()
+    {
+        float minimumLandingWidth = useV5GenerationRules
+            ? Mathf.Max(minLandingPlatformWidth, minLandingAfterGap)
+            : minLandingPlatformWidth;
+        return Mathf.Max(minimumLandingWidth, RandomPlatformWidth());
+    }
+
     private float RandomRecoveryPlatformWidth()
     {
-        return Mathf.Max(minRecoveryPlatformWidth, RandomPlatformWidth());
+        return Mathf.Max(minRecoveryPlatformWidth, RandomLandingPlatformWidth());
+    }
+
+    private float RandomPlatformChainWidth()
+    {
+        float minimumWidth = useV5GenerationRules
+            ? Mathf.Max(minPlatformChainWidth, minLandingPlatformWidth)
+            : minPlatformChainWidth;
+        float maximumWidth = Mathf.Max(minimumWidth, maxPlatformChainWidth);
+        return Random.Range(minimumWidth, maximumWidth);
     }
 
     private float RandomGapWidth()
@@ -652,7 +842,11 @@ public class MixedLevelGenerator : MonoBehaviour
 
     private float RandomPlatformChainGap()
     {
-        return Random.Range(minPlatformChainGap, maxPlatformChainGap);
+        float minimumGap = useV5GenerationRules
+            ? Mathf.Max(minPlatformChainGap, minGapWidth)
+            : minPlatformChainGap;
+        float maximumGap = Mathf.Max(minimumGap, maxPlatformChainGap);
+        return Random.Range(minimumGap, maximumGap);
     }
 
     private float ClampY(float y)
@@ -1108,6 +1302,16 @@ public class MixedLevelGenerator : MonoBehaviour
         Debug.LogWarning("MixedLevelGenerator diagnostics: " + message, this);
     }
 
+    private void LogGenerationValue(string message)
+    {
+        if (!debugGenerationValues)
+        {
+            return;
+        }
+
+        Debug.Log("[MIXED GEN] " + message, this);
+    }
+
     private void LogV5GenerationWarningOnce(ref bool warningFlag, string message)
     {
         if (warningFlag)
@@ -1147,6 +1351,7 @@ public class MixedLevelGenerator : MonoBehaviour
         minSegments = Mathf.Max(2, minSegments);
         maxSegments = Mathf.Max(minSegments, maxSegments);
         minPlatformWidth = Mathf.Max(2.5f, minPlatformWidth);
+        minLandingPlatformWidth = Mathf.Max(0.1f, minLandingPlatformWidth);
         maxPlatformWidth = Mathf.Max(minPlatformWidth, maxPlatformWidth);
         minGapWidth = Mathf.Max(0f, minGapWidth);
         maxGapWidth = Mathf.Max(minGapWidth, maxGapWidth);
@@ -1166,6 +1371,17 @@ public class MixedLevelGenerator : MonoBehaviour
         verticalSegmentChanceMultiplier = Mathf.Max(0f, verticalSegmentChanceMultiplier);
         maxConsecutiveHardSegments = Mathf.Max(1, maxConsecutiveHardSegments);
         minRecoveryPlatformWidth = Mathf.Max(0.1f, minRecoveryPlatformWidth);
+        safeEdgeMargin = Mathf.Max(0f, safeEdgeMargin);
+        minDistanceBetweenGaps = Mathf.Max(0f, minDistanceBetweenGaps);
+        minRunupBeforeGap = Mathf.Max(0f, minRunupBeforeGap);
+        minLandingAfterGap = Mathf.Max(0f, minLandingAfterGap);
+        finalGoalPlatformWidth = Mathf.Max(0f, finalGoalPlatformWidth);
+        finalGoalSafeRunup = Mathf.Max(0f, finalGoalSafeRunup);
+        goalEdgeMargin = Mathf.Max(0f, goalEdgeMargin);
+        wideGoalTriggerSize = new Vector2(
+            Mathf.Max(0.1f, wideGoalTriggerSize.x),
+            Mathf.Max(0.1f, wideGoalTriggerSize.y)
+        );
         maxGoalHeightOffset = Mathf.Max(MinimumGoalHeightOffset, maxGoalHeightOffset);
 
         if (!useV5GenerationRules)

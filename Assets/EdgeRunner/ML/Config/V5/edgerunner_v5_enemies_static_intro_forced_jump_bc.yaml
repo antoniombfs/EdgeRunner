@@ -1,0 +1,46 @@
+engine_settings:
+  time_scale: 10
+  target_frame_rate: -1
+  capture_frame_rate: 60
+  no_graphics: false
+
+# EdgeRunnerV5Enemies usa observation space 63.
+# TODO: antes de treinar, confirma que o demo_path aponta para o ficheiro .demo gravado.
+# Algumas versoes do ML-Agents sanitizam/truncam o Demonstration Name ao guardar.
+behaviors:
+  EdgeRunnerV5Enemies:
+    trainer_type: ppo
+
+    hyperparameters:
+      batch_size: 128
+      buffer_size: 4096
+      learning_rate: 1.0e-4
+      beta: 1.0e-3
+      epsilon: 0.15
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+
+    network_settings:
+      normalize: false
+      hidden_units: 256
+      num_layers: 2
+
+    behavioral_cloning:
+      demo_path: Assets/EdgeRunner/Demos/EnemyAware_ForcedJump_Demo.demo
+      strength: 0.5
+      steps: 120000
+      batch_size: 128
+      num_epoch: 3
+      samples_per_update: 0
+
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+
+    max_steps: 300000
+    time_horizon: 64
+    summary_freq: 500
+    checkpoint_interval: 10000
+    keep_checkpoints: 10

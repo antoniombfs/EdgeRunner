@@ -25,22 +25,43 @@ public class DemoEnemyHazard : MonoBehaviour
     {
         Collider2D ownCollider = GetComponent<Collider2D>();
         ownCollider.isTrigger = true;
+        DisableIfScoreAttackHazard();
+    }
+
+    private void OnEnable()
+    {
+        DisableIfScoreAttackHazard();
     }
 
     private void OnTriggerEnter2D(Collider2D other)
     {
+        if (IsScoreAttackAndroidHazard())
+        {
+            return;
+        }
+
         LogHazardContact("[ENEMY HAZARD] triggered by", other);
         TryHandlePlayer(other);
     }
 
     private void OnCollisionEnter2D(Collision2D collision)
     {
+        if (IsScoreAttackAndroidHazard())
+        {
+            return;
+        }
+
         LogHazardContact("[ENEMY HAZARD] collided with", collision.collider);
         TryHandlePlayer(collision.collider);
     }
 
     private void TryHandlePlayer(Collider2D other)
     {
+        if (IsScoreAttackAndroidHazard())
+        {
+            return;
+        }
+
         if (Time.time < nextAllowedHitTime)
         {
             return;
@@ -117,6 +138,11 @@ public class DemoEnemyHazard : MonoBehaviour
 
     private void LogHazardContact(string prefix, Collider2D other)
     {
+        if (IsScoreAttackAndroidHazard())
+        {
+            return;
+        }
+
         Debug.LogWarning(
             $"{prefix} {DescribeCollider(other)}\n" +
             System.Environment.StackTrace,
@@ -132,5 +158,27 @@ public class DemoEnemyHazard : MonoBehaviour
         }
 
         return $"{other.GetType().Name} on {other.gameObject.name}";
+    }
+
+    private bool IsScoreAttackAndroidHazard()
+    {
+        if (GetComponentInParent<ScoreAttackAndroid>() != null)
+        {
+            return true;
+        }
+
+        Transform root = transform.root;
+        return root != null && root.GetComponent<ScoreAttackAndroid>() != null;
+    }
+
+    private void DisableIfScoreAttackHazard()
+    {
+        if (!IsScoreAttackAndroidHazard())
+        {
+            return;
+        }
+
+        affectsAgent = false;
+        enabled = false;
     }
 }

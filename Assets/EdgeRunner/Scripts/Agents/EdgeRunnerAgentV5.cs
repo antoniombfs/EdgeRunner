@@ -42,6 +42,7 @@ public class EdgeRunnerAgentV5 : Agent
     [SerializeField] private bool useMixedLevelGenerator = false;
     [SerializeField] private MixedLevelGenerator mixedLevelGenerator;
     [SerializeField] private EdgeRunnerEvaluationManager evaluationManager;
+    [SerializeField] private ScoreAttackManager scoreAttackManager;
 
     [Header("Movement")]
     [SerializeField] private float normalMoveSpeed = 8.0f;
@@ -86,6 +87,17 @@ public class EdgeRunnerAgentV5 : Agent
     [FormerlySerializedAs("wallRayDistance")]
     [SerializeField] private float wallSensorRange = 1.2f;
     [SerializeField] private float wallRayVerticalOffset = 0.15f;
+
+    [Header("Ledge Unstuck Safety")]
+    [SerializeField] private bool enableLedgeUnstuck = false;
+    [SerializeField] private bool debugLedgeUnstuck = false;
+    [SerializeField] private float ledgeStuckMinTime = 0.15f;
+    [SerializeField] private float ledgeFrontCheckDistance = 0.25f;
+    [SerializeField] private float ledgeFootClearCheckDistance = 0.20f;
+    [SerializeField] private float ledgeUnstuckHorizontalNudge = 0.20f;
+    [SerializeField] private float ledgeUnstuckVerticalNudge = 0.12f;
+    [SerializeField] private float ledgeUnstuckCooldown = 0.25f;
+    [SerializeField] private int ledgeMaxUnstucksPerEpisode = 5;
 
     [Header("Jump Decision Control")]
     [SerializeField] private bool maskUselessJumps = true;
@@ -157,6 +169,7 @@ public class EdgeRunnerAgentV5 : Agent
     [SerializeField] private bool debugV5Actions = false;
     [SerializeField] private float debugActionLogInterval = 1.0f;
     [SerializeField] private bool debugJump = false;
+    [SerializeField] private bool debugHeuristicInput = false;
     [SerializeField] private bool debugEpisodeStackTraces = false;
 
     private Vector3 startPosition;
@@ -179,6 +192,8 @@ public class EdgeRunnerAgentV5 : Agent
     private bool jumpConsumedUntilLanding;
     private bool leftGroundAfterJump;
     private bool waitingForJumpRelease;
+    private bool heuristicJumpInputBuffered;
+    private float heuristicJumpInputBufferTimer;
     private bool heuristicJumpPressedThisStep;
     private bool episodeEnding;
     private bool warnedGoalMissingThisEpisode;
@@ -190,6 +205,11 @@ public class EdgeRunnerAgentV5 : Agent
     private bool warnedDemoIgnoredTimeout;
     private bool warnedDemoManualMovementDisabled;
     private int lastEpisodeEndFrame = -999;
+    private Collider2D bodyCollider;
+    private float ledgeStuckTimer;
+    private float nextAllowedLedgeUnstuckTime;
+    private float nextLedgeDebugLogTime;
+    private int ledgeUnstuckCount;
     private readonly Collider2D[] demoGroundCheckHits = new Collider2D[12];
     private float episodeStartRealtime;
     private float nextDebugActionLogTime;
@@ -206,6 +226,11 @@ public class EdgeRunnerAgentV5 : Agent
         if (rb == null)
         {
             rb = GetComponent<Rigidbody2D>();
+        }
+
+        if (bodyCollider == null)
+        {
+            bodyCollider = GetComponent<Collider2D>();
         }
 
         startPosition = transform.position;
@@ -272,14 +297,25 @@ public class EdgeRunnerAgentV5 : Agent
         jumpConsumedUntilLanding = false;
         leftGroundAfterJump = false;
         waitingForJumpRelease = false;
+        heuristicJumpInputBuffered = false;
+        heuristicJumpInputBufferTimer = 0f;
         heuristicJumpPressedThisStep = false;
         episodeEnding = false;
         warnedGoalMissingThisEpisode = false;
         lastMaskLeftBlocked = false;
         lastMaskRightBlocked = false;
         lastMaskStopBlocked = false;
+        ledgeStuckTimer = 0f;
+        nextAllowedLedgeUnstuckTime = 0f;
+        nextLedgeDebugLogTime = 0f;
+        ledgeUnstuckCount = 0;
         episodeStartRealtime = Time.realtimeSinceStartup;
         nextDebugActionLogTime = 0f;
+
+        if (scoreAttackManager != null)
+        {
+            scoreAttackManager.ResetEpisode();
+        }
 
         NotifyEvaluationEpisodeStarted();
     }
@@ -478,10 +514,13 @@ public class EdgeRunnerAgentV5 : Agent
             allowSprint &&
             Mathf.Abs(moveX) > 0.1f;
 
+        bool grounded = IsGrounded();
+
+        TryApplyLedgeUnstuck(moveX, grounded);
+
         float activeMoveSpeed = sprintRequested ? sprintMoveSpeed : normalMoveSpeed;
         rb.linearVelocity = new Vector2(moveX * activeMoveSpeed, rb.linearVelocity.y);
 
-        bool grounded = IsGrounded();
         LogV5ActionDebug(
             moveAction,
             jumpAction,
@@ -573,6 +612,36 @@ public class EdgeRunnerAgentV5 : Agent
         CheckGoalReachedByDistance();
     }
 
+    private void Update()
+    {
+        if (!allowJump)
+        {
+            heuristicJumpInputBuffered = false;
+            heuristicJumpInputBufferTimer = 0f;
+            return;
+        }
+
+        if (IsHeuristicJumpPressedThisFrame())
+        {
+            heuristicJumpInputBuffered = true;
+            heuristicJumpInputBufferTimer = Mathf.Max(0.02f, jumpBufferTime);
+            LogHeuristicInput("jump pressed", true);
+            return;
+        }
+
+        if (!heuristicJumpInputBuffered)
+        {
+            return;
+        }
+
+        heuristicJumpInputBufferTimer = Mathf.Max(0f, heuristicJumpInputBufferTimer - Time.deltaTime);
+
+        if (heuristicJumpInputBufferTimer <= 0f)
+        {
+            heuristicJumpInputBuffered = false;
+        }
+    }
+
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var d = actionsOut.DiscreteActions;
@@ -591,11 +660,14 @@ public class EdgeRunnerAgentV5 : Agent
             d[0] = MoveRightAction;
         }
 
-        heuristicJumpPressedThisStep = allowJump && Input.GetKeyDown(KeyCode.Space);
+        bool jumpHeld = IsHeuristicJumpHeld();
+        bool jumpRequested = allowJump && (heuristicJumpInputBuffered || jumpHeld);
+        heuristicJumpPressedThisStep = allowJump && heuristicJumpInputBuffered;
 
-        if (heuristicJumpPressedThisStep)
+        if (jumpRequested)
         {
             d[1] = JumpAction;
+            LogHeuristicInput("branch jump = 1", true);
             LogJumpState("[JUMP INPUT]", IsGrounded(), true);
         }
 
@@ -605,6 +677,36 @@ public class EdgeRunnerAgentV5 : Agent
         {
             d[2] = SprintAction;
         }
+    }
+
+    private static bool IsHeuristicJumpPressedThisFrame()
+    {
+        return Input.GetKeyDown(KeyCode.Space) ||
+               Input.GetKeyDown(KeyCode.W) ||
+               Input.GetKeyDown(KeyCode.UpArrow);
+    }
+
+    private static bool IsHeuristicJumpHeld()
+    {
+        return Input.GetKey(KeyCode.Space) ||
+               Input.GetKey(KeyCode.W) ||
+               Input.GetKey(KeyCode.UpArrow);
+    }
+
+    private void LogHeuristicInput(string message, bool branchJump)
+    {
+        if (!debugHeuristicInput)
+        {
+            return;
+        }
+
+        bool grounded = IsGrounded();
+        Debug.Log(
+            $"[HEURISTIC INPUT] {message} branchJump={(branchJump ? 1 : 0)} " +
+            $"grounded={grounded} coyoteTimer={coyoteTimer:F3} " +
+            $"buffered={heuristicJumpInputBuffered} bufferTimer={heuristicJumpInputBufferTimer:F3}",
+            this
+        );
     }
 
     private void UpdateJumpForgivenessTimers(bool grounded, bool jumpRequested, bool bufferedJumpPressed)
@@ -890,6 +992,17 @@ public class EdgeRunnerAgentV5 : Agent
         TryEndEpisodeSafely(EdgeRunnerEpisodeEndReason.Fell);
     }
 
+    public void ScoreAttackEnemyHit(float penalty)
+    {
+        if (episodeEnding)
+        {
+            return;
+        }
+
+        AddReward(penalty);
+        TryEndEpisodeSafely(EdgeRunnerEpisodeEndReason.EnemyHit);
+    }
+
     public bool IsCurrentlyGroundedForEvaluation()
     {
         return IsGrounded();
@@ -943,6 +1056,11 @@ public class EdgeRunnerAgentV5 : Agent
     private bool CompleteGoalEpisode()
     {
         if (episodeEnding)
+        {
+            return false;
+        }
+
+        if (scoreAttackManager != null && !scoreAttackManager.TryHandleGoalReached(this))
         {
             return false;
         }
@@ -1596,6 +1714,161 @@ public class EdgeRunnerAgentV5 : Agent
         return ProbeWall(direction).hasWall;
     }
 
+    private void TryApplyLedgeUnstuck(float moveX, bool grounded)
+    {
+        if (!enableLedgeUnstuck || rb == null)
+        {
+            ResetLedgeStuckTimer();
+            return;
+        }
+
+        if (ledgeMaxUnstucksPerEpisode >= 0 && ledgeUnstuckCount >= ledgeMaxUnstucksPerEpisode)
+        {
+            ResetLedgeStuckTimer();
+            return;
+        }
+
+        if (grounded || Mathf.Abs(moveX) <= minUsefulMoveInput)
+        {
+            ResetLedgeStuckTimer();
+            return;
+        }
+
+        float horizontalSpeed = Mathf.Abs(rb.linearVelocity.x);
+        float blockedSpeedThreshold = Mathf.Max(0.1f, minUsefulForwardVelocity);
+
+        if (horizontalSpeed > blockedSpeedThreshold)
+        {
+            ResetLedgeStuckTimer();
+            return;
+        }
+
+        float side = Mathf.Sign(moveX);
+
+        if (!IsLedgeBlockedAhead(side))
+        {
+            ResetLedgeStuckTimer();
+            return;
+        }
+
+        ledgeStuckTimer += Time.fixedDeltaTime;
+
+        if (debugLedgeUnstuck && Time.time >= nextLedgeDebugLogTime)
+        {
+            nextLedgeDebugLogTime = Time.time + 0.25f;
+            Debug.Log(
+                $"[LEDGE STUCK] side={(side > 0f ? "right" : "left")} " +
+                $"vel={rb.linearVelocity} grounded={grounded} stuckTime={ledgeStuckTimer:F2}",
+                this);
+        }
+
+        if (ledgeStuckTimer < ledgeStuckMinTime || Time.time < nextAllowedLedgeUnstuckTime)
+        {
+            return;
+        }
+
+        Vector2 nudge = new Vector2(
+            side * Mathf.Max(0f, ledgeUnstuckHorizontalNudge),
+            Mathf.Max(0f, ledgeUnstuckVerticalNudge));
+
+        rb.position += nudge;
+        rb.linearVelocity = new Vector2(rb.linearVelocity.x, Mathf.Max(rb.linearVelocity.y, 0f));
+
+        ledgeUnstuckCount++;
+        ledgeStuckTimer = 0f;
+        nextAllowedLedgeUnstuckTime = Time.time + Mathf.Max(0f, ledgeUnstuckCooldown);
+
+        if (debugLedgeUnstuck)
+        {
+            Debug.Log(
+                $"[LEDGE UNSTUCK] applied nudge={nudge} count={ledgeUnstuckCount}/{ledgeMaxUnstucksPerEpisode}",
+                this);
+        }
+    }
+
+    private void ResetLedgeStuckTimer()
+    {
+        ledgeStuckTimer = 0f;
+    }
+
+    private bool IsLedgeBlockedAhead(float side)
+    {
+        Bounds bounds = GetBodyBounds();
+        float direction = side >= 0f ? 1f : -1f;
+        Vector2 rayDirection = new Vector2(direction, 0f);
+        float startX = bounds.center.x + direction * Mathf.Max(0.01f, bounds.extents.x * 0.85f);
+        float lowerY = bounds.min.y + Mathf.Max(0.02f, ledgeFootClearCheckDistance);
+        float midY = Mathf.Lerp(bounds.min.y, bounds.center.y, 0.65f);
+        float upperY = bounds.max.y - 0.06f;
+
+        bool lowerBlocked = TryGroundRaycast(
+            new Vector2(startX, lowerY),
+            rayDirection,
+            ledgeFrontCheckDistance,
+            out _);
+
+        bool midBlocked = TryGroundRaycast(
+            new Vector2(startX, midY),
+            rayDirection,
+            ledgeFrontCheckDistance,
+            out _);
+
+        if (!lowerBlocked && !midBlocked)
+        {
+            return false;
+        }
+
+        bool upperBlocked = TryGroundRaycast(
+            new Vector2(startX, upperY),
+            rayDirection,
+            ledgeFrontCheckDistance + ledgeFootClearCheckDistance,
+            out _);
+
+        return !upperBlocked;
+    }
+
+    private Bounds GetBodyBounds()
+    {
+        if (bodyCollider == null)
+        {
+            bodyCollider = GetComponent<Collider2D>();
+        }
+
+        if (bodyCollider != null)
+        {
+            return bodyCollider.bounds;
+        }
+
+        return new Bounds(transform.position, new Vector3(0.8f, 1.6f, 0f));
+    }
+
+    private bool TryGroundRaycast(Vector2 origin, Vector2 direction, float distance, out RaycastHit2D bestHit)
+    {
+        RaycastHit2D[] hits = Physics2D.RaycastAll(origin, direction, Mathf.Max(0.01f, distance), groundLayer);
+        bestHit = default;
+        bool hasHit = false;
+
+        for (int i = 0; i < hits.Length; i++)
+        {
+            Collider2D hitCollider = hits[i].collider;
+
+            if (hitCollider == null ||
+                hitCollider.isTrigger ||
+                hitCollider.transform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            if (!hasHit || hits[i].distance < bestHit.distance)
+            {
+                bestHit = hits[i];
+                hasHit = true;
+            }
+        }
+
+        return hasHit;
+    }
+
     private float GetForwardDirection()
     {
         return GetGoalHorizontalDirection();
@@ -1692,6 +1965,13 @@ public class EdgeRunnerAgentV5 : Agent
         maxExpectedGapWidth = Mathf.Max(0.1f, maxExpectedGapWidth);
         maxExpectedHeightDelta = Mathf.Max(0.1f, maxExpectedHeightDelta);
         wallSensorRange = Mathf.Max(0f, wallSensorRange);
+        ledgeStuckMinTime = Mathf.Max(0.01f, ledgeStuckMinTime);
+        ledgeFrontCheckDistance = Mathf.Max(0.01f, ledgeFrontCheckDistance);
+        ledgeFootClearCheckDistance = Mathf.Max(0.01f, ledgeFootClearCheckDistance);
+        ledgeUnstuckHorizontalNudge = Mathf.Max(0f, ledgeUnstuckHorizontalNudge);
+        ledgeUnstuckVerticalNudge = Mathf.Max(0f, ledgeUnstuckVerticalNudge);
+        ledgeUnstuckCooldown = Mathf.Max(0f, ledgeUnstuckCooldown);
+        ledgeMaxUnstucksPerEpisode = Mathf.Max(0, ledgeMaxUnstucksPerEpisode);
         goalReachDistance = Mathf.Max(0.01f, goalReachDistance);
         debugActionLogInterval = Mathf.Max(0.05f, debugActionLogInterval);
     }
