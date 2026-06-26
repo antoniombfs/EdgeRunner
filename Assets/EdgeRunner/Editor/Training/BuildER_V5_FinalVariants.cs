@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Unity.MLAgents;
 using Unity.MLAgents.Policies;
 using UnityEditor;
@@ -12,6 +13,12 @@ public static class BuildER_V5_FinalVariants
     private const string ScoreAttackIntroScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreAttackIntro.unity";
     private const string ScoreAttackEasyScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreAttackEasy.unity";
     private const string ScoreAttackRandomControlledScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreAttackRandomControlled.unity";
+    private const string SpeedRunnerFinalRandomScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_SpeedRunnerFinalRandom.unity";
+    private const string ScoreMaxCoinIntroScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxCoinIntro.unity";
+    private const string ScoreMaxStompIntroScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxStompIntro.unity";
+    private const string ScoreMaxIntroScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxIntro.unity";
+    private const string ScoreMaxEasyScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxEasy.unity";
+    private const string ScoreMaxFinalRandomScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxFinalRandom.unity";
 
     private const string PlayerPrefabPath = "Assets/EdgeRunner/Prefabs/Agent/Player_V5.prefab";
     private const string GroundPrefabPath = "Assets/EdgeRunner/Prefabs/Environment/GroundSegment.prefab";
@@ -19,6 +26,21 @@ public static class BuildER_V5_FinalVariants
     private const string DeathZonePrefabPath = "Assets/EdgeRunner/Prefabs/Environment/DeathZone.prefab";
     private const string AndroidEnemyPrefabPath = "Assets/EdgeRunner/Prefabs/Demo/DemoAndroidEnemy.prefab";
     private const string NoFrictionMaterialPath = "Assets/EdgeRunner/Physics/NoFriction2D.physicsMaterial2D";
+
+    private const float FinalMinPlatformWidth = 4.8f;
+    private const float FinalMinLandingPlatformWidth = 5.0f;
+    private const float FinalMinRecoveryPlatformWidth = 5.0f;
+    private const float FinalMinGapWidth = 2.8f;
+    private const float FinalMaxGapWidthSpeedRunner = 3.2f;
+    private const float FinalMaxGapWidthScoreMax = 3.0f;
+    private const float FinalMaxVerticalStep = 1.2f;
+    private const float FinalGoalPlatformWidth = 10.0f;
+    private const float FinalSafeEdgeMargin = 1.0f;
+    private const bool ScoreMaxMergeSameHeightPlatforms = true;
+    private const float ScoreMaxPlatformMergeYTolerance = 0.05f;
+    private const float ScoreMaxPlatformMergeGapTolerance = 0.25f;
+    private static readonly Vector2 FinalGoalTriggerSize = new Vector2(2.5f, 7.0f);
+    private static readonly bool ScoreMaxDebugPlatformMerge = false;
 
     [MenuItem("EdgeRunner/Training/V5/Build GoalRunnerRandom")]
     public static void BuildGoalRunnerRandomFromMenu()
@@ -30,6 +52,12 @@ public static class BuildER_V5_FinalVariants
     public static void BuildSpeedRunnerRandomFromMenu()
     {
         BuildSpeedRunnerRandomScene();
+    }
+
+    [MenuItem("EdgeRunner/Training/V5/Build SpeedRunnerFinalRandom")]
+    public static void BuildSpeedRunnerFinalRandomFromMenu()
+    {
+        BuildSpeedRunnerFinalRandomScene();
     }
 
     [MenuItem("EdgeRunner/Training/V5/Build ScoreAttackIntro")]
@@ -48,6 +76,36 @@ public static class BuildER_V5_FinalVariants
     public static void BuildScoreAttackRandomControlledFromMenu()
     {
         BuildScoreAttackRandomControlledScene();
+    }
+
+    [MenuItem("EdgeRunner/Training/V5/Build ScoreMaxCoinIntro")]
+    public static void BuildScoreMaxCoinIntroFromMenu()
+    {
+        BuildScoreMaxCoinIntroScene();
+    }
+
+    [MenuItem("EdgeRunner/Training/V5/Build ScoreMaxStompIntro")]
+    public static void BuildScoreMaxStompIntroFromMenu()
+    {
+        BuildScoreMaxStompIntroScene();
+    }
+
+    [MenuItem("EdgeRunner/Training/V5/Build ScoreMaxIntro")]
+    public static void BuildScoreMaxIntroFromMenu()
+    {
+        BuildScoreMaxIntroScene();
+    }
+
+    [MenuItem("EdgeRunner/Training/V5/Build ScoreMaxEasy")]
+    public static void BuildScoreMaxEasyFromMenu()
+    {
+        BuildScoreMaxEasyScene();
+    }
+
+    [MenuItem("EdgeRunner/Training/V5/Build ScoreMaxFinalRandom")]
+    public static void BuildScoreMaxFinalRandomFromMenu()
+    {
+        BuildScoreMaxFinalRandomScene();
     }
 
     public static void BuildGoalRunnerRandomScene()
@@ -86,6 +144,33 @@ public static class BuildER_V5_FinalVariants
 
         Selection.activeObject = player;
         SaveScene(scene, SpeedRunnerScenePath, "SpeedRunnerRandom");
+    }
+
+    public static void BuildSpeedRunnerFinalRandomScene()
+    {
+        EnsureFolders();
+
+        Sprite sprite = GetSharedSprite();
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        PhysicsMaterial2D noFrictionMaterial = CreateOrUpdateNoFrictionMaterial();
+        GameObject root = new GameObject("ER_V5_SpeedRunnerFinalRandom");
+        List<FinalPlatformBlock> platforms = BuildSpeedRunnerFinalLayout(root.transform, sprite, noFrictionMaterial);
+        FinalPlatformBlock finalPlatform = platforms[platforms.Count - 1];
+        GameObject goal = CreateFinalGoal(
+            "SpeedRunnerFinalRandom_Goal",
+            new Vector3(finalPlatform.CenterX, finalPlatform.TopY + 1.1f, 0f),
+            FinalGoalTriggerSize);
+        GameObject player = CreatePlayer(new Vector3(1f, 1.5f, 0f));
+
+        ConfigureDirectSpeedRunnerPlayer(player, goal.transform, noFrictionMaterial);
+        ConfigureSpeedRunnerSprintVisual(player);
+        CreateCamera(player.transform);
+        CreateDeathZone("DeathZone_SpeedRunnerFinalRandom", GetLayoutCenterX(platforms), GetLayoutWidth(platforms) + 20f);
+        CreateEvaluationManager("SpeedRunnerFinalRandom_Evaluation", player, "SpeedRunnerFinalRandom", "Eval100");
+        StripScoreAttackAndEnemyObjectsFromSpeedRunnerFinalScene();
+
+        Selection.activeObject = player;
+        SaveScene(scene, SpeedRunnerFinalRandomScenePath, "SpeedRunnerFinalRandom");
     }
 
     public static void BuildScoreAttackIntroScene()
@@ -162,6 +247,818 @@ public static class BuildER_V5_FinalVariants
         SaveScene(scene, ScoreAttackRandomControlledScenePath, "ScoreAttackRandomControlled");
     }
 
+    public static void BuildScoreMaxCoinIntroScene()
+    {
+        EnsureFolders();
+
+        Sprite sprite = GetSharedSprite();
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        GameObject root = new GameObject("ER_V5_ScoreMaxCoinIntro");
+        ScoreAttackManager manager = CreateScoreMaxManager(root.transform, false, 1, 0);
+        GameObject goal = CreateScoreAttackGoal(new Vector3(10f, 1.1f, 0f), manager);
+        GameObject player = CreateScoreMaxPlayer(new Vector3(0f, 1.15f, 0f));
+
+        ConfigureScoreMaxPlayer(player, goal.transform, manager);
+        CreateCamera(player.transform);
+        CreatePlatformWithTop(root.transform, "ScoreMaxCoinIntro_Platform", 5f, 0f, new Vector2(24f, 0.4f), sprite);
+        CreateScoreAttackCoin(root.transform, "ScoreMaxCoinIntro_Coin_01", new Vector3(4f, 1.55f, 0f), sprite, manager);
+        CreateDeathZone("DeathZone_ScoreMaxCoinIntro", 5f, 34f);
+        CreateEvaluationManager("ScoreMaxCoinIntro_Evaluation", player, "ScoreMaxCoinIntro", "Eval50");
+
+        Selection.activeObject = player;
+        SaveScene(scene, ScoreMaxCoinIntroScenePath, "ScoreMaxCoinIntro");
+    }
+
+    public static void BuildScoreMaxStompIntroScene()
+    {
+        EnsureFolders();
+
+        Sprite sprite = GetSharedSprite();
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        GameObject root = new GameObject("ER_V5_ScoreMaxStompIntro");
+        ScoreAttackManager manager = CreateScoreMaxManager(root.transform, false, 0, 1);
+        GameObject goal = CreateScoreAttackGoal(new Vector3(10f, 1.1f, 0f), manager);
+        GameObject player = CreateScoreMaxPlayer(new Vector3(0f, 1.15f, 0f));
+
+        ConfigureScoreMaxPlayer(player, goal.transform, manager);
+        CreateCamera(player.transform);
+        CreatePlatformWithTop(root.transform, "ScoreMaxStompIntro_Platform", 5f, 0f, new Vector2(24f, 0.4f), sprite);
+        CreateScoreAttackAndroid(root.transform, "ScoreMaxStompIntro_Android_01", new Vector3(5.5f, 1.02f, 0f), sprite, manager);
+        CreateDeathZone("DeathZone_ScoreMaxStompIntro", 5f, 34f);
+        CreateEvaluationManager("ScoreMaxStompIntro_Evaluation", player, "ScoreMaxStompIntro", "Eval50");
+
+        Selection.activeObject = player;
+        SaveScene(scene, ScoreMaxStompIntroScenePath, "ScoreMaxStompIntro");
+    }
+
+    public static void BuildScoreMaxIntroScene()
+    {
+        EnsureFolders();
+
+        Sprite sprite = GetSharedSprite();
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        GameObject root = new GameObject("ER_V5_ScoreMaxIntro");
+        ScoreAttackManager manager = CreateScoreMaxManager(root.transform, false, 1, 1);
+        GameObject goal = CreateScoreAttackGoal(new Vector3(11.5f, 1.1f, 0f), manager);
+        GameObject player = CreateScoreMaxPlayer(new Vector3(0f, 1.15f, 0f));
+
+        ConfigureScoreMaxPlayer(player, goal.transform, manager);
+        CreateCamera(player.transform);
+        CreatePlatformWithTop(root.transform, "ScoreMaxIntro_Platform", 5.75f, 0f, new Vector2(27f, 0.4f), sprite);
+        CreateScoreAttackCoin(root.transform, "ScoreMaxIntro_Coin_01", new Vector3(3f, 1.55f, 0f), sprite, manager);
+        CreateScoreAttackAndroid(root.transform, "ScoreMaxIntro_Android_01", new Vector3(6f, 1.02f, 0f), sprite, manager);
+        CreateDeathZone("DeathZone_ScoreMaxIntro", 5.75f, 38f);
+        CreateEvaluationManager("ScoreMaxIntro_Evaluation", player, "ScoreMaxIntro", "Eval50");
+
+        Selection.activeObject = player;
+        SaveScene(scene, ScoreMaxIntroScenePath, "ScoreMaxIntro");
+    }
+
+    public static void BuildScoreMaxEasyScene()
+    {
+        EnsureFolders();
+
+        Sprite sprite = GetSharedSprite();
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        GameObject root = new GameObject("ER_V5_ScoreMaxEasy");
+        ScoreAttackManager manager = CreateScoreMaxManager(root.transform, false, 2, 1);
+        GameObject goal = CreateScoreAttackGoal(new Vector3(13f, 1.1f, 0f), manager);
+        GameObject player = CreateScoreMaxPlayer(new Vector3(0f, 1.15f, 0f));
+
+        ConfigureScoreMaxPlayer(player, goal.transform, manager);
+        CreateCamera(player.transform);
+        CreatePlatformWithTop(root.transform, "ScoreMaxEasy_Platform", 6.5f, 0f, new Vector2(30f, 0.4f), sprite);
+        CreateScoreAttackCoin(root.transform, "ScoreMaxEasy_Coin_01", new Vector3(3f, 1.55f, 0f), sprite, manager);
+        CreateScoreAttackCoin(root.transform, "ScoreMaxEasy_Coin_02", new Vector3(8.5f, 1.55f, 0f), sprite, manager);
+        CreateScoreAttackAndroid(root.transform, "ScoreMaxEasy_Android_01", new Vector3(6f, 1.02f, 0f), sprite, manager);
+        CreateDeathZone("DeathZone_ScoreMaxEasy", 6.5f, 40f);
+        CreateEvaluationManager("ScoreMaxEasy_Evaluation", player, "ScoreMaxEasy", "Eval50");
+
+        Selection.activeObject = player;
+        SaveScene(scene, ScoreMaxEasyScenePath, "ScoreMaxEasy");
+    }
+
+    public static void BuildScoreMaxFinalRandomScene()
+    {
+        EnsureFolders();
+
+        Sprite sprite = GetSharedSprite();
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        PhysicsMaterial2D noFrictionMaterial = CreateOrUpdateNoFrictionMaterial();
+        GameObject root = new GameObject("ER_V5_ScoreMaxFinalRandom");
+        ScoreAttackManager manager = CreateScoreMaxManager(root.transform, false, 4, 2);
+        List<FinalPlatformBlock> platforms = BuildScoreMaxFinalLayout(root.transform, sprite, noFrictionMaterial);
+        FinalPlatformBlock finalPlatform = platforms[platforms.Count - 1];
+        GameObject goal = CreateScoreAttackGoal(
+            new Vector3(finalPlatform.CenterX, finalPlatform.TopY + 1.1f, 0f),
+            manager);
+        ConfigureGoalTrigger(goal, FinalGoalTriggerSize);
+        SetObjectReference(manager, "goal", goal.transform);
+
+        GameObject player = CreateScoreMaxPlayer(new Vector3(1f, 1.5f, 0f));
+        ConfigureScoreMaxPlayer(player, goal.transform, manager);
+        ConfigureScoreMaxFinalRandomEpisodeLimits(player);
+        PlaceScoreMaxObjectives(root.transform, platforms, sprite, manager, goal.transform);
+        CreateCamera(player.transform);
+        CreateDeathZone("DeathZone_ScoreMaxFinalRandom", GetLayoutCenterX(platforms), GetLayoutWidth(platforms) + 20f);
+        CreateEvaluationManager("ScoreMaxFinalRandom_Evaluation", player, "ScoreMaxFinalRandom", "Eval100");
+
+        Selection.activeObject = player;
+        SaveScene(scene, ScoreMaxFinalRandomScenePath, "ScoreMaxFinalRandom");
+    }
+
+    private static List<FinalPlatformBlock> BuildSpeedRunnerFinalLayout(
+        Transform root,
+        Sprite sprite,
+        PhysicsMaterial2D noFrictionMaterial)
+    {
+        List<FinalPlatformBlock> platforms = new List<FinalPlatformBlock>();
+        float cursorX = -1f;
+        float topY = 0f;
+
+        FinalPlatformBlock start = AddFinalPlatform(
+            platforms,
+            root,
+            "StartFlat_FlatRun",
+            cursorX,
+            topY,
+            14.5f,
+            sprite,
+            noFrictionMaterial);
+        cursorX = start.MaxX;
+
+        AppendGapPlatform(
+            platforms,
+            root,
+            "MediumGap_LandingRecovery_A",
+            ref cursorX,
+            topY,
+            FinalMinGapWidth,
+            FinalMaxGapWidthSpeedRunner,
+            11.0f,
+            sprite,
+            noFrictionMaterial);
+
+        AppendGapPlatform(
+            platforms,
+            root,
+            "PlatformChain_Start",
+            ref cursorX,
+            topY,
+            FinalMinGapWidth,
+            FinalMaxGapWidthSpeedRunner,
+            5.2f,
+            sprite,
+            noFrictionMaterial);
+        AppendPlatformChain(platforms, root, "PlatformChain", ref cursorX, ref topY, FinalMaxGapWidthSpeedRunner, sprite, noFrictionMaterial);
+
+        AppendSafeDrop(
+            platforms,
+            root,
+            "SafeDrop_FlatRun_B",
+            ref cursorX,
+            ref topY,
+            FinalMaxGapWidthSpeedRunner,
+            13.3f,
+            sprite,
+            noFrictionMaterial);
+        AppendGapPlatform(
+            platforms,
+            root,
+            "MediumGap_LandingRecovery_B",
+            ref cursorX,
+            topY,
+            FinalMinGapWidth,
+            FinalMaxGapWidthSpeedRunner,
+            11.4f,
+            sprite,
+            noFrictionMaterial);
+        AppendGapPlatform(
+            platforms,
+            root,
+            "FinalGoalPlatform",
+            ref cursorX,
+            topY,
+            FinalMinGapWidth,
+            FinalMaxGapWidthSpeedRunner,
+            FinalGoalPlatformWidth,
+            sprite,
+            noFrictionMaterial);
+
+        return platforms;
+    }
+
+    private static List<FinalPlatformBlock> BuildScoreMaxFinalLayout(
+        Transform root,
+        Sprite sprite,
+        PhysicsMaterial2D noFrictionMaterial)
+    {
+        List<FinalPlatformBlock> platforms = new List<FinalPlatformBlock>();
+        float cursorX = -1f;
+        float topY = 0f;
+
+        FinalPlatformBlock start = AddFinalPlatform(
+            platforms,
+            root,
+            "StartFlat",
+            cursorX,
+            topY,
+            10.0f,
+            sprite,
+            noFrictionMaterial);
+        cursorX = start.MaxX;
+
+        AppendContinuousPlatform(platforms, root, "FlatRun_CoinLine", ref cursorX, topY, 8.0f, sprite, noFrictionMaterial);
+        AppendGapPlatform(
+            platforms,
+            root,
+            "MediumGap_AndroidLanding_A",
+            ref cursorX,
+            topY,
+            FinalMinGapWidth,
+            FinalMaxGapWidthScoreMax,
+            8.0f,
+            sprite,
+            noFrictionMaterial);
+        AppendRecoveryPlatform(platforms, root, "RecoveryPlatform_A", ref cursorX, topY, sprite, noFrictionMaterial);
+
+        AppendSafeDrop(platforms, root, "SafeDrop_CoinPocket", ref cursorX, ref topY, FinalMaxGapWidthScoreMax, 8.0f, sprite, noFrictionMaterial);
+        AppendPlatformChain(platforms, root, "PlatformChain_CoinArc", ref cursorX, ref topY, FinalMaxGapWidthScoreMax, sprite, noFrictionMaterial);
+        AppendRecoveryPlatform(platforms, root, "RecoveryPlatform_B", ref cursorX, topY, sprite, noFrictionMaterial);
+        AppendGapPlatform(
+            platforms,
+            root,
+            "AndroidPlatform_FinalApproach",
+            ref cursorX,
+            topY,
+            FinalMinGapWidth,
+            FinalMaxGapWidthScoreMax,
+            8.0f,
+            sprite,
+            noFrictionMaterial);
+        AppendRecoveryPlatform(platforms, root, "RecoveryPlatform_C", ref cursorX, topY, sprite, noFrictionMaterial);
+        AppendFinalGoalPlatform(platforms, root, "FinalLockedGoalPlatform", ref cursorX, topY, sprite, noFrictionMaterial);
+
+        ApplyScoreMaxPlatformColliderMerging(root, platforms, noFrictionMaterial);
+        return platforms;
+    }
+
+    private static void AppendContinuousPlatform(
+        List<FinalPlatformBlock> platforms,
+        Transform root,
+        string name,
+        ref float cursorX,
+        float topY,
+        float width,
+        Sprite sprite,
+        PhysicsMaterial2D noFrictionMaterial)
+    {
+        FinalPlatformBlock platform = AddFinalPlatform(
+            platforms,
+            root,
+            name,
+            cursorX,
+            topY,
+            Mathf.Max(FinalMinPlatformWidth, width),
+            sprite,
+            noFrictionMaterial);
+        cursorX = platform.MaxX;
+    }
+
+    private static void AppendGapPlatform(
+        List<FinalPlatformBlock> platforms,
+        Transform root,
+        string name,
+        ref float cursorX,
+        float topY,
+        float minGap,
+        float maxGap,
+        float width,
+        Sprite sprite,
+        PhysicsMaterial2D noFrictionMaterial)
+    {
+        cursorX += Random.Range(Mathf.Max(FinalMinGapWidth, minGap), Mathf.Max(FinalMinGapWidth, maxGap));
+        FinalPlatformBlock platform = AddFinalPlatform(
+            platforms,
+            root,
+            name,
+            cursorX,
+            topY,
+            Mathf.Max(FinalMinLandingPlatformWidth, width),
+            sprite,
+            noFrictionMaterial);
+        cursorX = platform.MaxX;
+    }
+
+    private static void AppendStaircase(
+        List<FinalPlatformBlock> platforms,
+        Transform root,
+        string baseName,
+        ref float cursorX,
+        ref float topY,
+        bool up,
+        Sprite sprite,
+        PhysicsMaterial2D noFrictionMaterial)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            topY += up ? 0.35f : -0.35f;
+            topY = Mathf.Clamp(topY, -1.0f, 2.2f);
+            AppendContinuousPlatform(
+                platforms,
+                root,
+                $"{baseName}_{i + 1}",
+                ref cursorX,
+                topY,
+                FinalMinPlatformWidth,
+                sprite,
+                noFrictionMaterial);
+        }
+    }
+
+    private static void AppendSafeDrop(
+        List<FinalPlatformBlock> platforms,
+        Transform root,
+        string name,
+        ref float cursorX,
+        ref float topY,
+        float maxGap,
+        Sprite sprite,
+        PhysicsMaterial2D noFrictionMaterial)
+    {
+        AppendSafeDrop(
+            platforms,
+            root,
+            name,
+            ref cursorX,
+            ref topY,
+            maxGap,
+            6.8f,
+            sprite,
+            noFrictionMaterial);
+    }
+
+    private static void AppendSafeDrop(
+        List<FinalPlatformBlock> platforms,
+        Transform root,
+        string name,
+        ref float cursorX,
+        ref float topY,
+        float maxGap,
+        float width,
+        Sprite sprite,
+        PhysicsMaterial2D noFrictionMaterial)
+    {
+        topY = Mathf.Max(-1.0f, topY - Random.Range(0.7f, FinalMaxVerticalStep));
+        AppendGapPlatform(
+            platforms,
+            root,
+            name,
+            ref cursorX,
+            topY,
+            FinalMinGapWidth,
+            maxGap,
+            width,
+            sprite,
+            noFrictionMaterial);
+    }
+
+    private static void AppendPlatformChain(
+        List<FinalPlatformBlock> platforms,
+        Transform root,
+        string baseName,
+        ref float cursorX,
+        ref float topY,
+        float maxGap,
+        Sprite sprite,
+        PhysicsMaterial2D noFrictionMaterial)
+    {
+        for (int i = 0; i < 2; i++)
+        {
+            topY += Random.Range(-0.35f, 0.35f);
+            topY = Mathf.Clamp(topY, -1.0f, 2.2f);
+            AppendGapPlatform(
+                platforms,
+                root,
+                $"{baseName}_{i + 1}",
+                ref cursorX,
+                topY,
+                FinalMinGapWidth,
+                maxGap,
+                FinalMinLandingPlatformWidth,
+                sprite,
+                noFrictionMaterial);
+        }
+    }
+
+    private static void AppendRecoveryPlatform(
+        List<FinalPlatformBlock> platforms,
+        Transform root,
+        string name,
+        ref float cursorX,
+        float topY,
+        Sprite sprite,
+        PhysicsMaterial2D noFrictionMaterial)
+    {
+        AppendContinuousPlatform(
+            platforms,
+            root,
+            name,
+            ref cursorX,
+            topY,
+            FinalMinRecoveryPlatformWidth,
+            sprite,
+            noFrictionMaterial);
+    }
+
+    private static void AppendFinalGoalPlatform(
+        List<FinalPlatformBlock> platforms,
+        Transform root,
+        string name,
+        ref float cursorX,
+        float topY,
+        Sprite sprite,
+        PhysicsMaterial2D noFrictionMaterial)
+    {
+        AppendContinuousPlatform(
+            platforms,
+            root,
+            name,
+            ref cursorX,
+            topY,
+            FinalGoalPlatformWidth,
+            sprite,
+            noFrictionMaterial);
+    }
+
+    private static FinalPlatformBlock AddFinalPlatform(
+        List<FinalPlatformBlock> platforms,
+        Transform root,
+        string name,
+        float startX,
+        float topY,
+        float width,
+        Sprite sprite,
+        PhysicsMaterial2D noFrictionMaterial)
+    {
+        float clampedWidth = Mathf.Max(FinalMinPlatformWidth, width);
+        float centerX = startX + clampedWidth * 0.5f;
+        GameObject platform = CreatePlatformWithTop(
+            root,
+            name,
+            centerX,
+            topY,
+            new Vector2(clampedWidth, 0.4f),
+            sprite);
+        ApplyPhysicsMaterialToColliders(platform, noFrictionMaterial);
+
+        FinalPlatformBlock block = new FinalPlatformBlock(name, centerX, topY, clampedWidth);
+        platforms.Add(block);
+        return block;
+    }
+
+    private static void ApplyScoreMaxPlatformColliderMerging(
+        Transform root,
+        List<FinalPlatformBlock> platforms,
+        PhysicsMaterial2D noFrictionMaterial)
+    {
+        if (!ScoreMaxMergeSameHeightPlatforms || root == null || platforms == null || platforms.Count < 2)
+        {
+            return;
+        }
+
+        int beforeColliderCount = platforms.Count;
+        int disabledPlatformColliderCount = 0;
+        int mergedColliderCount = 0;
+        bool[] coveredByMergedCollider = new bool[platforms.Count];
+
+        for (int i = 0; i < platforms.Count; i++)
+        {
+            int groupStart = i;
+            int groupEnd = i;
+            float minX = platforms[i].MinX;
+            float maxX = platforms[i].MaxX;
+            float topY = platforms[i].TopY;
+
+            while (groupEnd + 1 < platforms.Count && CanMergeScoreMaxPlatforms(platforms[groupEnd], platforms[groupEnd + 1]))
+            {
+                groupEnd++;
+                minX = Mathf.Min(minX, platforms[groupEnd].MinX);
+                maxX = Mathf.Max(maxX, platforms[groupEnd].MaxX);
+                topY = Mathf.Max(topY, platforms[groupEnd].TopY);
+            }
+
+            if (groupEnd > groupStart)
+            {
+                DisablePlatformColliders(root, platforms, groupStart, groupEnd);
+
+                for (int mergedIndex = groupStart; mergedIndex <= groupEnd; mergedIndex++)
+                {
+                    coveredByMergedCollider[mergedIndex] = true;
+                }
+
+                disabledPlatformColliderCount += groupEnd - groupStart + 1;
+                CreateMergedScoreMaxPlatformCollider(
+                    root,
+                    $"ScoreMaxMergedCollider_{mergedColliderCount + 1:00}",
+                    minX,
+                    maxX,
+                    topY,
+                    noFrictionMaterial);
+                mergedColliderCount++;
+            }
+
+            i = groupEnd;
+        }
+
+        if (ScoreMaxDebugPlatformMerge)
+        {
+            int afterColliderCount = beforeColliderCount - disabledPlatformColliderCount + mergedColliderCount;
+            Debug.Log(
+                $"[SCOREMAX PLATFORM MERGE] before={beforeColliderCount} " +
+                $"mergedRuns={mergedColliderCount} after={afterColliderCount}");
+            WarnIfScoreMaxPlatformSeamsRemain(platforms, coveredByMergedCollider);
+        }
+    }
+
+    private static bool CanMergeScoreMaxPlatforms(FinalPlatformBlock current, FinalPlatformBlock next)
+    {
+        float yDelta = Mathf.Abs(current.TopY - next.TopY);
+        float gap = next.MinX - current.MaxX;
+
+        return yDelta <= ScoreMaxPlatformMergeYTolerance &&
+               gap >= -ScoreMaxPlatformMergeGapTolerance &&
+               gap <= ScoreMaxPlatformMergeGapTolerance;
+    }
+
+    private static void DisablePlatformColliders(
+        Transform root,
+        List<FinalPlatformBlock> platforms,
+        int groupStart,
+        int groupEnd)
+    {
+        for (int i = groupStart; i <= groupEnd; i++)
+        {
+            Transform platform = root.Find(platforms[i].Name);
+
+            if (platform == null)
+            {
+                continue;
+            }
+
+            Collider2D[] colliders = platform.GetComponents<Collider2D>();
+
+            for (int j = 0; j < colliders.Length; j++)
+            {
+                colliders[j].enabled = false;
+            }
+        }
+    }
+
+    private static void CreateMergedScoreMaxPlatformCollider(
+        Transform root,
+        string name,
+        float minX,
+        float maxX,
+        float topY,
+        PhysicsMaterial2D noFrictionMaterial)
+    {
+        GameObject platformCollider = new GameObject(name);
+        platformCollider.layer = LayerMask.NameToLayer("Ground");
+        platformCollider.transform.SetParent(root, false);
+        platformCollider.transform.position = new Vector3((minX + maxX) * 0.5f, topY - 0.2f, 0f);
+
+        BoxCollider2D collider = platformCollider.AddComponent<BoxCollider2D>();
+        collider.size = new Vector2(Mathf.Max(0.1f, maxX - minX), 0.4f);
+        collider.isTrigger = false;
+        collider.sharedMaterial = noFrictionMaterial;
+    }
+
+    private static void WarnIfScoreMaxPlatformSeamsRemain(
+        List<FinalPlatformBlock> platforms,
+        bool[] coveredByMergedCollider)
+    {
+        for (int i = 0; i < platforms.Count - 1; i++)
+        {
+            bool handledByMergedCollider =
+                coveredByMergedCollider != null &&
+                i < coveredByMergedCollider.Length - 1 &&
+                coveredByMergedCollider[i] &&
+                coveredByMergedCollider[i + 1];
+
+            if (!handledByMergedCollider && CanMergeScoreMaxPlatforms(platforms[i], platforms[i + 1]))
+            {
+                Debug.LogWarning(
+                    $"[SCOREMAX PLATFORM MERGE] Near seam remains between " +
+                    $"{platforms[i].Name} and {platforms[i + 1].Name}.");
+            }
+        }
+    }
+
+    private static void PlaceScoreMaxObjectives(
+        Transform root,
+        List<FinalPlatformBlock> platforms,
+        Sprite sprite,
+        ScoreAttackManager manager,
+        Transform goal)
+    {
+        List<FinalPlatformBlock> safePlatforms = GetObjectivePlatforms(platforms, goal);
+
+        if (safePlatforms.Count == 0)
+        {
+            return;
+        }
+
+        FinalPlatformBlock coinLine = FindPlatformByName(safePlatforms, "FlatRun_CoinLine", safePlatforms[0]);
+        FinalPlatformBlock coinArc = FindPlatformByName(
+            safePlatforms,
+            "PlatformChain_CoinArc_1",
+            safePlatforms[Mathf.Min(1, safePlatforms.Count - 1)]);
+        FinalPlatformBlock coinPocket = FindPlatformByName(
+            safePlatforms,
+            "SafeDrop_CoinPocket",
+            safePlatforms[Mathf.Min(2, safePlatforms.Count - 1)]);
+        FinalPlatformBlock androidAfterGap = FindPlatformByName(
+            safePlatforms,
+            "MediumGap_AndroidLanding_A",
+            safePlatforms[Mathf.Min(2, safePlatforms.Count - 1)]);
+        FinalPlatformBlock androidPlatform = FindPlatformByName(
+            safePlatforms,
+            "AndroidPlatform_FinalApproach",
+            safePlatforms[Mathf.Min(3, safePlatforms.Count - 1)]);
+
+        CreateScoreAttackCoin(
+            root,
+            "ScoreMax_CoinLine_01",
+            new Vector3(coinLine.SafeMinX + 1.0f, coinLine.TopY + 1.2f, 0f),
+            sprite,
+            manager);
+        CreateScoreAttackCoin(
+            root,
+            "ScoreMax_CoinLine_02",
+            new Vector3(coinLine.SafeMinX + 3.2f, coinLine.TopY + 1.2f, 0f),
+            sprite,
+            manager);
+        CreateScoreAttackCoin(
+            root,
+            "ScoreMax_CoinArc_01",
+            new Vector3(coinArc.CenterX, coinArc.TopY + 1.65f, 0f),
+            sprite,
+            manager);
+        CreateScoreAttackCoin(
+            root,
+            "ScoreMax_CoinPocket_01",
+            new Vector3(coinPocket.CenterX, coinPocket.TopY + 1.2f, 0f),
+            sprite,
+            manager);
+
+        CreateScoreAttackAndroid(
+            root,
+            "ScoreMax_AndroidAfterGap_01",
+            new Vector3(androidAfterGap.CenterX, androidAfterGap.TopY + 1.02f, 0f),
+            sprite,
+            manager);
+        CreateScoreAttackAndroid(
+            root,
+            "ScoreMax_AndroidPlatform_02",
+            new Vector3(androidPlatform.CenterX, androidPlatform.TopY + 1.02f, 0f),
+            sprite,
+            manager);
+    }
+
+    private static List<FinalPlatformBlock> GetObjectivePlatforms(List<FinalPlatformBlock> platforms, Transform goal)
+    {
+        List<FinalPlatformBlock> safePlatforms = new List<FinalPlatformBlock>();
+
+        for (int i = 1; i < platforms.Count - 1; i++)
+        {
+            FinalPlatformBlock platform = platforms[i];
+
+            if (platform.Width < FinalMinLandingPlatformWidth)
+            {
+                continue;
+            }
+
+            if (goal != null && Mathf.Abs(platform.CenterX - goal.position.x) < 5.0f)
+            {
+                continue;
+            }
+
+            safePlatforms.Add(platform);
+        }
+
+        return safePlatforms;
+    }
+
+    private static FinalPlatformBlock FindPlatformByName(
+        List<FinalPlatformBlock> platforms,
+        string name,
+        FinalPlatformBlock fallback)
+    {
+        for (int i = 0; i < platforms.Count; i++)
+        {
+            if (platforms[i].Name == name)
+            {
+                return platforms[i];
+            }
+        }
+
+        return fallback;
+    }
+
+    private static float GetLayoutCenterX(List<FinalPlatformBlock> platforms)
+    {
+        if (platforms.Count == 0)
+        {
+            return 0f;
+        }
+
+        return (platforms[0].MinX + platforms[platforms.Count - 1].MaxX) * 0.5f;
+    }
+
+    private static float GetLayoutWidth(List<FinalPlatformBlock> platforms)
+    {
+        if (platforms.Count == 0)
+        {
+            return 40f;
+        }
+
+        return Mathf.Max(40f, platforms[platforms.Count - 1].MaxX - platforms[0].MinX);
+    }
+
+    private readonly struct FinalPlatformBlock
+    {
+        public FinalPlatformBlock(string name, float centerX, float topY, float width)
+        {
+            Name = name;
+            CenterX = centerX;
+            TopY = topY;
+            Width = width;
+        }
+
+        public string Name { get; }
+        public float CenterX { get; }
+        public float TopY { get; }
+        public float Width { get; }
+        public float MinX => CenterX - Width * 0.5f;
+        public float MaxX => CenterX + Width * 0.5f;
+        public float SafeMinX => MinX + FinalSafeEdgeMargin;
+        public float SafeMaxX => MaxX - FinalSafeEdgeMargin;
+    }
+
+    private static void StripScoreAttackAndEnemyObjectsFromSpeedRunnerFinalScene()
+    {
+        ScoreAttackManager[] managers = Object.FindObjectsByType<ScoreAttackManager>(FindObjectsInactive.Include);
+
+        for (int i = 0; i < managers.Length; i++)
+        {
+            if (managers[i] != null)
+            {
+                Object.DestroyImmediate(managers[i].gameObject);
+            }
+        }
+
+        ScoreAttackCoin[] coins = Object.FindObjectsByType<ScoreAttackCoin>(FindObjectsInactive.Include);
+
+        for (int i = 0; i < coins.Length; i++)
+        {
+            if (coins[i] != null)
+            {
+                Object.DestroyImmediate(coins[i].gameObject);
+            }
+        }
+
+        ScoreAttackAndroid[] androids = Object.FindObjectsByType<ScoreAttackAndroid>(FindObjectsInactive.Include);
+
+        for (int i = 0; i < androids.Length; i++)
+        {
+            if (androids[i] != null)
+            {
+                Object.DestroyImmediate(androids[i].gameObject);
+            }
+        }
+
+        ScoreAttackGoalLock[] goalLocks = Object.FindObjectsByType<ScoreAttackGoalLock>(FindObjectsInactive.Include);
+
+        for (int i = 0; i < goalLocks.Length; i++)
+        {
+            if (goalLocks[i] != null)
+            {
+                Object.DestroyImmediate(goalLocks[i]);
+            }
+        }
+
+        DemoEnemyHazard[] hazards = Object.FindObjectsByType<DemoEnemyHazard>(FindObjectsInactive.Include);
+
+        for (int i = 0; i < hazards.Length; i++)
+        {
+            if (hazards[i] != null)
+            {
+                Object.DestroyImmediate(hazards[i]);
+            }
+        }
+    }
+
     private static void EnsureFolders()
     {
         EnsureFolder("Assets/EdgeRunner/Scenes", "Training");
@@ -203,6 +1100,57 @@ public static class BuildER_V5_FinalVariants
         return player;
     }
 
+    private static GameObject CreateScoreMaxPlayer(Vector3 position)
+    {
+        GameObject player = CreatePlayer(position);
+        EnsureGroundCheckTransform(player);
+        EnsureOnlyScoreMaxAgent(player);
+        player.name = "Player_V5_ScoreMax";
+        return player;
+    }
+
+    private static Transform EnsureGroundCheckTransform(GameObject player)
+    {
+        Transform groundCheck = FindChildByName(player.transform, "GroundCheck");
+
+        if (groundCheck != null)
+        {
+            return groundCheck;
+        }
+
+        GameObject groundCheckObject = new GameObject("GroundCheck");
+        groundCheckObject.transform.SetParent(player.transform, false);
+        groundCheckObject.transform.localPosition = new Vector3(0f, -0.55f, 0f);
+        return groundCheckObject.transform;
+    }
+
+    private static Transform FindChildByName(Transform root, string childName)
+    {
+        if (root == null)
+        {
+            return null;
+        }
+
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform child = root.GetChild(i);
+
+            if (child.name == childName)
+            {
+                return child;
+            }
+
+            Transform nested = FindChildByName(child, childName);
+
+            if (nested != null)
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
+
     private static void ConfigureGoalRunnerPlayer(
         GameObject player,
         MixedLevelGenerator generator,
@@ -222,6 +1170,10 @@ public static class BuildER_V5_FinalVariants
         SetInt(agent, "groundLayer", LayerMask.GetMask("Ground"));
         SetBool(agent, "disableTrainingEpisodeEndsInDemo", false);
         SetBool(agent, "disableAgentMovementInDemo", false);
+        SetBool(agent, "enableSpeedRunnerMode", true);
+        SetBool(agent, "forceSprintInSpeedRunner", true);
+        SetFloat(agent, "speedRunnerSprintReward", 0.0015f);
+        SetBool(agent, "debugSpeedRunnerSprint", false);
         SetBool(agent, "enableLedgeUnstuck", true);
         SetBool(agent, "debugLedgeUnstuck", false);
         SetFloat(agent, "ledgeStuckMinTime", 0.15f);
@@ -264,6 +1216,93 @@ public static class BuildER_V5_FinalVariants
         EnsureDecisionRequester(player, true);
     }
 
+    private static void ConfigureDirectSpeedRunnerPlayer(
+        GameObject player,
+        Transform goal,
+        PhysicsMaterial2D noFrictionMaterial)
+    {
+        EdgeRunnerAgentV5 agent = RequireAgent(player);
+        Rigidbody2D rb = player.GetComponent<Rigidbody2D>();
+        Transform groundCheck = EnsureGroundCheckTransform(player);
+
+        SetObjectReference(agent, "rb", rb);
+        SetObjectReference(agent, "goal", goal);
+        SetObjectReference(agent, "groundCheck", groundCheck);
+        SetObjectReference(agent, "gapGenerator", null);
+        SetBool(agent, "useMixedLevelGenerator", false);
+        SetObjectReference(agent, "mixedLevelGenerator", null);
+        SetObjectReference(agent, "evaluationManager", null);
+        SetObjectReference(agent, "scoreAttackManager", null);
+        SetInt(agent, "groundLayer", LayerMask.GetMask("Ground"));
+        SetBool(agent, "disableTrainingEpisodeEndsInDemo", false);
+        SetBool(agent, "disableAgentMovementInDemo", false);
+        SetBool(agent, "enableLedgeUnstuck", true);
+        SetBool(agent, "debugLedgeUnstuck", false);
+        SetFloat(agent, "ledgeStuckMinTime", 0.15f);
+        SetFloat(agent, "ledgeFrontCheckDistance", 0.25f);
+        SetFloat(agent, "ledgeFootClearCheckDistance", 0.20f);
+        SetFloat(agent, "ledgeUnstuckHorizontalNudge", 0.20f);
+        SetFloat(agent, "ledgeUnstuckVerticalNudge", 0.12f);
+        SetFloat(agent, "ledgeUnstuckCooldown", 0.25f);
+        SetInt(agent, "ledgeMaxUnstucksPerEpisode", 5);
+        SetFloat(agent, "goalReward", 12.0f);
+        SetFloat(agent, "stepPenalty", -0.0015f);
+        SetFloat(agent, "distanceProgressRewardScale", 0.12f);
+        SetFloat(agent, "maxDistanceProgressReward", 0.12f);
+        SetFloat(agent, "progressRewardScale", 0.10f);
+        SetFloat(agent, "maxProgressRewardPerStep", 0.10f);
+        SetFloat(agent, "forwardVelocityReward", 0.004f);
+        SetFloat(agent, "idlePenalty", -0.004f);
+        SetFloat(agent, "noProgressTimeLimit", 6.0f);
+        SetFloat(agent, "stuckTimeLimit", 6.0f);
+        SetFloat(agent, "maxEpisodeTime", 35.0f);
+        ApplyPhysicsMaterialToColliders(player, noFrictionMaterial);
+
+        ConfigureBehavior(player, BehaviorType.Default);
+        EnsureDecisionRequester(player, true);
+    }
+
+    private static void ConfigureSpeedRunnerSprintVisual(GameObject player)
+    {
+        Rigidbody2D rb = player.GetComponent<Rigidbody2D>();
+        SpriteRenderer spriteRenderer = player.GetComponentInChildren<SpriteRenderer>();
+        TrailRenderer trail = player.GetComponent<TrailRenderer>();
+
+        if (trail == null)
+        {
+            trail = player.AddComponent<TrailRenderer>();
+        }
+
+        trail.time = 0.22f;
+        trail.startWidth = 0.35f;
+        trail.endWidth = 0.02f;
+        trail.startColor = new Color(0.3f, 0.95f, 1f, 0.65f);
+        trail.endColor = new Color(0.3f, 0.95f, 1f, 0f);
+        trail.sortingOrder = 3;
+        trail.emitting = false;
+
+        Shader spriteShader = Shader.Find("Sprites/Default");
+
+        if (spriteShader != null)
+        {
+            trail.sharedMaterial = new Material(spriteShader);
+        }
+
+        DemoSprintVisual sprintVisual = player.GetComponent<DemoSprintVisual>();
+
+        if (sprintVisual == null)
+        {
+            sprintVisual = player.AddComponent<DemoSprintVisual>();
+        }
+
+        sprintVisual.enabled = true;
+        sprintVisual.Configure(rb, spriteRenderer, trail);
+        SetFloat(sprintVisual, "sprintOnThreshold", 9.6f);
+        SetFloat(sprintVisual, "sprintOffThreshold", 7.8f);
+        SetFloat(sprintVisual, "minSprintVisualTime", 0.35f);
+        SetBool(sprintVisual, "enableTrail", true);
+    }
+
     private static void ConfigureScoreAttackPlayer(GameObject player, Transform goal, ScoreAttackManager manager)
     {
         EdgeRunnerAgentV5 agent = RequireAgent(player);
@@ -294,6 +1333,71 @@ public static class BuildER_V5_FinalVariants
         EnsureDecisionRequester(player, true);
     }
 
+    private static void ConfigureScoreMaxPlayer(GameObject player, Transform goal, ScoreAttackManager manager)
+    {
+        EdgeRunnerAgentV5ScoreMax agent = EnsureOnlyScoreMaxAgent(player);
+        Rigidbody2D rb = player.GetComponent<Rigidbody2D>();
+
+        SetObjectReference(agent, "rb", rb);
+        SetObjectReference(agent, "goal", goal);
+        SetObjectReference(agent, "gapGenerator", null);
+        SetBool(agent, "useMixedLevelGenerator", false);
+        SetObjectReference(agent, "mixedLevelGenerator", null);
+        SetObjectReference(agent, "evaluationManager", null);
+        SetObjectReference(agent, "scoreAttackManager", manager);
+        SetInt(agent, "groundLayer", LayerMask.GetMask("Ground"));
+        SetFloat(agent, "goalReward", 0.0f);
+        SetFloat(agent, "deathPenalty", -5.0f);
+        SetFloat(agent, "stepPenalty", -0.0015f);
+        SetFloat(agent, "distanceProgressRewardScale", 0.035f);
+        SetFloat(agent, "maxDistanceProgressReward", 0.035f);
+        SetFloat(agent, "progressRewardScale", 0.025f);
+        SetFloat(agent, "maxProgressRewardPerStep", 0.025f);
+        SetFloat(agent, "forwardVelocityReward", 0.0f);
+        SetFloat(agent, "idlePenalty", -0.001f);
+        SetFloat(agent, "noProgressTimeLimit", 12.0f);
+        SetFloat(agent, "stuckTimeLimit", 12.0f);
+        SetFloat(agent, "maxEpisodeTime", 70.0f);
+        SetBool(agent, "disableTrainingEpisodeEndsInDemo", false);
+        SetBool(agent, "disableAgentMovementInDemo", false);
+        SetBool(agent, "enableSpeedRunnerMode", false);
+        SetBool(agent, "forceSprintInSpeedRunner", false);
+        SetBool(agent, "debugSpeedRunnerSprint", false);
+        SetBool(agent, "enableLedgeUnstuck", false);
+        SetBool(agent, "debugLedgeUnstuck", false);
+        SetObjectReference(agent, "scoreMaxRb", rb);
+        SetObjectReference(agent, "scoreMaxManager", manager);
+        SetObjectReference(agent, "scoreMaxGoal", goal);
+        SetInt(agent, "scoreMaxEnemyRayMask", ~0);
+        SetFloat(agent, "progressToNextObjectiveRewardScale", 0.025f);
+        SetFloat(agent, "maxProgressToNextObjectiveReward", 0.025f);
+        SetFloat(agent, "maxRegressionFromNextObjectivePenalty", -0.015f);
+        SetBool(agent, "debugScoreMaxObservations", false);
+        SetBool(agent, "debugScoreMaxObservationCount", false);
+        SetBool(agent, "debugScoreMaxHeuristicInput", false);
+        SetBool(agent, "debugScoreMaxGroundCheck", false);
+        SetBool(agent, "debugScoreMaxRewards", false);
+        SetObjectReference(manager, "goal", goal);
+        SetObjectReference(manager, "agent", agent);
+
+        ConfigureScoreMaxBehavior(player, BehaviorType.Default);
+        EnsureDecisionRequester(player, true);
+    }
+
+    private static void ConfigureScoreMaxFinalRandomEpisodeLimits(GameObject player)
+    {
+        EdgeRunnerAgentV5ScoreMax agent = RequireScoreMaxAgent(player);
+
+        SetFloat(agent, "noProgressTimeLimit", 60.0f);
+        SetFloat(agent, "stuckTimeLimit", 35.0f);
+        SetFloat(agent, "maxEpisodeTime", 240.0f);
+        SetBool(agent, "disableTrainingEpisodeEndsInHeuristic", true);
+        SetBool(agent, "debugEpisodeResetReason", true);
+        SetBool(agent, "debugScoreMaxObservationCount", true);
+        SetBool(agent, "debugScoreMaxHeuristicInput", true);
+        SetBool(agent, "debugScoreMaxGroundCheck", true);
+    }
+
     private static EdgeRunnerAgentV5 RequireAgent(GameObject player)
     {
         EdgeRunnerAgentV5 agent = player.GetComponent<EdgeRunnerAgentV5>();
@@ -301,6 +1405,60 @@ public static class BuildER_V5_FinalVariants
         if (agent == null)
         {
             throw new System.InvalidOperationException("Player_V5 prefab does not contain EdgeRunnerAgentV5.");
+        }
+
+        return agent;
+    }
+
+    private static EdgeRunnerAgentV5ScoreMax EnsureOnlyScoreMaxAgent(GameObject player)
+    {
+        EdgeRunnerAgentV5ScoreMax scoreMaxAgent = null;
+        EdgeRunnerAgentV5[] agents = player.GetComponents<EdgeRunnerAgentV5>();
+
+        for (int i = 0; i < agents.Length; i++)
+        {
+            EdgeRunnerAgentV5 agent = agents[i];
+
+            if (agent == null)
+            {
+                continue;
+            }
+
+            if (agent is EdgeRunnerAgentV5ScoreMax candidate)
+            {
+                if (scoreMaxAgent == null)
+                {
+                    scoreMaxAgent = candidate;
+                }
+                else
+                {
+                    Object.DestroyImmediate(candidate);
+                }
+
+                continue;
+            }
+
+            if (agent.GetType() == typeof(EdgeRunnerAgentV5))
+            {
+                Object.DestroyImmediate(agent);
+            }
+        }
+
+        if (scoreMaxAgent == null)
+        {
+            scoreMaxAgent = player.AddComponent<EdgeRunnerAgentV5ScoreMax>();
+        }
+
+        return scoreMaxAgent;
+    }
+
+    private static EdgeRunnerAgentV5ScoreMax RequireScoreMaxAgent(GameObject player)
+    {
+        EdgeRunnerAgentV5ScoreMax agent = player.GetComponent<EdgeRunnerAgentV5ScoreMax>();
+
+        if (agent == null)
+        {
+            throw new System.InvalidOperationException("ScoreMax player instance does not contain EdgeRunnerAgentV5ScoreMax.");
         }
 
         return agent;
@@ -324,6 +1482,42 @@ public static class BuildER_V5_FinalVariants
         if (vectorObservationSize != null)
         {
             vectorObservationSize.intValue = EdgeRunnerAgentV5.DefaultExpectedObservationSize;
+        }
+
+        SerializedProperty branchSizes = serializedObject.FindProperty("m_BrainParameters.m_ActionSpec.BranchSizes");
+
+        if (branchSizes != null)
+        {
+            int[] expectedBranches = { 3, 2, 2 };
+            branchSizes.arraySize = expectedBranches.Length;
+
+            for (int i = 0; i < expectedBranches.Length; i++)
+            {
+                branchSizes.GetArrayElementAtIndex(i).intValue = expectedBranches[i];
+            }
+        }
+
+        serializedObject.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static void ConfigureScoreMaxBehavior(GameObject player, BehaviorType behaviorType)
+    {
+        BehaviorParameters behavior = player.GetComponent<BehaviorParameters>();
+
+        if (behavior == null)
+        {
+            behavior = player.AddComponent<BehaviorParameters>();
+        }
+
+        behavior.BehaviorName = "EdgeRunnerV5ScoreMax";
+        behavior.BehaviorType = behaviorType;
+
+        SerializedObject serializedObject = new SerializedObject(behavior);
+        SerializedProperty vectorObservationSize = serializedObject.FindProperty("m_BrainParameters.VectorObservationSize");
+
+        if (vectorObservationSize != null)
+        {
+            vectorObservationSize.intValue = EdgeRunnerAgentV5ScoreMax.DefaultExpectedObservationSize;
         }
 
         SerializedProperty branchSizes = serializedObject.FindProperty("m_BrainParameters.m_ActionSpec.BranchSizes");
@@ -471,6 +1665,20 @@ public static class BuildER_V5_FinalVariants
         return manager;
     }
 
+    private static ScoreAttackManager CreateScoreMaxManager(Transform parent, bool randomize, int maxCoins, int maxEnemies)
+    {
+        ScoreAttackManager manager = CreateScoreAttackManager(parent, randomize, maxCoins, maxEnemies);
+
+        SetFloat(manager, "coinReward", 2.0f);
+        SetFloat(manager, "enemyKillReward", 4.0f);
+        SetFloat(manager, "finalCompletionReward", 10.0f);
+        SetFloat(manager, "prematureGoalPenalty", -1.0f);
+        SetFloat(manager, "enemySideHitPenalty", -6.0f);
+        SetBool(manager, "debugLogs", false);
+
+        return manager;
+    }
+
     private static void ConfigureScoreAttackRandomCoinPlacement(ScoreAttackManager manager, Transform goal)
     {
         SetObjectReference(manager, "goal", goal);
@@ -482,6 +1690,26 @@ public static class BuildER_V5_FinalVariants
         SetFloat(manager, "minCoinDistanceFromAndroid", 2.0f);
         SetFloat(manager, "minCoinDistanceFromGoal", 2.5f);
         SetInt(manager, "maxCoinPlacementAttempts", 30);
+    }
+
+    private static GameObject CreateFinalGoal(string name, Vector3 position, Vector2 triggerSize)
+    {
+        GameObject goalPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(GoalPrefabPath);
+        GameObject goal = goalPrefab != null
+            ? PrefabUtility.InstantiatePrefab(goalPrefab) as GameObject
+            : new GameObject(name);
+
+        if (goal == null)
+        {
+            throw new System.InvalidOperationException("Failed to create final goal.");
+        }
+
+        goal.name = name;
+        goal.tag = "Goal";
+        goal.transform.position = position;
+        goal.transform.localScale = Vector3.one;
+        ConfigureGoalTrigger(goal, triggerSize);
+        return goal;
     }
 
     private static GameObject CreateScoreAttackGoal(Vector3 position, ScoreAttackManager manager)
@@ -519,6 +1747,33 @@ public static class BuildER_V5_FinalVariants
 
         goalLock.SetManager(manager);
         return goal;
+    }
+
+    private static void ConfigureGoalTrigger(GameObject goal, Vector2 triggerSize)
+    {
+        Collider2D[] colliders = goal.GetComponents<Collider2D>();
+
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            if (colliders[i] is BoxCollider2D)
+            {
+                continue;
+            }
+
+            colliders[i].enabled = false;
+        }
+
+        BoxCollider2D boxCollider = goal.GetComponent<BoxCollider2D>();
+
+        if (boxCollider == null)
+        {
+            boxCollider = goal.AddComponent<BoxCollider2D>();
+        }
+
+        boxCollider.enabled = true;
+        boxCollider.isTrigger = true;
+        boxCollider.size = triggerSize;
+        boxCollider.offset = new Vector2(0f, triggerSize.y * 0.5f - 1.1f);
     }
 
     private static void CreateScoreAttackCoin(Transform parent, string name, Vector3 position, Sprite sprite, ScoreAttackManager manager)

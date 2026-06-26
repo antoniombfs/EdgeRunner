@@ -1,6 +1,6 @@
 # EdgeRunner V5 Final Variants Plan
 
-Objetivo de entrega: consolidar tres variantes principais sem destruir historico nem quebrar a demo manual.
+Objetivo de entrega: consolidar duas variantes finais principais sem destruir historico nem quebrar a demo manual.
 
 ## 1. GoalRunner
 
@@ -222,9 +222,108 @@ Comando inicial:
 mlagents-learn Assets\EdgeRunner\ML\Config\V5\edgerunner_v5_scoreattack_intro.yaml --run-id=ER_V5_ScoreAttackIntro01 --initialize-from=ER_V5_GoalRunnerRandom01 --force
 ```
 
+## 4. ScoreMax
+
+### Objetivo final
+
+ScoreMax e a variante final de pontuacao maxima:
+
+- apanhar todas as moedas;
+- matar todos os Androids por stomp;
+- so depois chegar ao Goal;
+- maximizar objetivos completos antes de terminar o nivel.
+
+Esta variante nao usa `EdgeRunnerAgentV5` diretamente como agente final, porque as 55 observacoes da V5 base nao descrevem a missao de score. Tambem nao usa `EdgeRunnerAgentV5EnemyAware`, porque essa linha foi pensada para evitar inimigos com observation space 63.
+
+### Agente
+
+- `EdgeRunnerAgentV5ScoreMax`
+- Behavior Name: `EdgeRunnerV5ScoreMax`
+- Observation Space Size: `83`
+- Actions/Branches: `[3,2,2]`
+
+O agente reutiliza a navegacao da V5 e acrescenta 28 observacoes especificas:
+
+- estado da missao: moedas restantes, Androids restantes e Goal desbloqueado;
+- moeda viva mais proxima;
+- Android vivo mais proximo;
+- Goal;
+- proximo objetivo recomendado;
+- rays simples para Android/stomp (`front_low`, `front_mid`, `down_forward`, `back_mid`).
+
+### Next Objective
+
+O `ScoreAttackManager` expoe dados para o agente ScoreMax:
+
+- `CoinsRemaining`;
+- `EnemiesRemaining`;
+- `ObjectivesComplete`;
+- Goal;
+- listas de moedas e Androids;
+- moeda viva mais proxima;
+- Android vivo mais proximo;
+- proximo objetivo recomendado.
+
+Regra de curriculo para o proximo objetivo:
+
+1. se ainda houver moedas vivas, seguir a moeda viva mais proxima;
+2. se nao houver moedas e ainda houver Androids vivos, seguir o Android vivo mais proximo;
+3. quando tudo estiver completo, seguir o Goal.
+
+A logica de jogo continua a aceitar qualquer ordem real: matar Android antes de moedas e valido, mas o Goal so desbloqueia quando moedas e Androids chegam a zero.
+
+### Rewards
+
+ScoreMax usa recompensas mais fortes de objetivo:
+
+- moeda: `+2.0`;
+- stomp em Android: `+4.0`;
+- Goal final completo: `+10.0`;
+- contacto lateral com Android: `-6.0`;
+- queda: `-5.0`;
+- Goal bloqueado: `-1.0`;
+- step penalty pequeno;
+- progresso controlado para o proximo objetivo.
+
+ScoreMax nao forca sprint. O agente pode aprender a usar sprint, mas essa decisao nao e imposta como no SpeedRunner.
+
+### Curriculo ScoreMax
+
+Menus:
+
+- `EdgeRunner > Training > V5 > Build ScoreMaxCoinIntro`
+- `EdgeRunner > Training > V5 > Build ScoreMaxStompIntro`
+- `EdgeRunner > Training > V5 > Build ScoreMaxIntro`
+- `EdgeRunner > Training > V5 > Build ScoreMaxEasy`
+- `EdgeRunner > Training > V5 > Build ScoreMaxFinalRandom`
+
+Cenas:
+
+- `Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxCoinIntro.unity`
+- `Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxStompIntro.unity`
+- `Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxIntro.unity`
+- `Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxEasy.unity`
+- `Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxFinalRandom.unity`
+
+YAMLs:
+
+- `Assets/EdgeRunner/ML/Config/V5/edgerunner_v5_scoremax_coin_intro.yaml`
+- `Assets/EdgeRunner/ML/Config/V5/edgerunner_v5_scoremax_stomp_intro.yaml`
+- `Assets/EdgeRunner/ML/Config/V5/edgerunner_v5_scoremax_intro.yaml`
+- `Assets/EdgeRunner/ML/Config/V5/edgerunner_v5_scoremax_easy.yaml`
+- `Assets/EdgeRunner/ML/Config/V5/edgerunner_v5_scoremax_final_random.yaml`
+
+Curriculo recomendado:
+
+```text
+ScoreMaxCoinIntro -> ScoreMaxStompIntro -> ScoreMaxIntro -> ScoreMaxEasy -> ScoreMaxFinalRandom
+```
+
+Nao usar `--initialize-from` com modelos `EdgeRunnerV5` de 55 observacoes, porque `EdgeRunnerV5ScoreMax` usa 83 observacoes.
+
 ## Estado EnemyAware
 
-EnemyAware nao e uma das tres variantes finais principais. Deve ficar como experiencia secundaria:
+EnemyAware nao e uma das duas variantes finais principais. Deve ficar como experiencia secundaria:
 
 - Behavior Name: `EdgeRunnerV5Enemies`
 - Observation Space Size: `63`
@@ -332,8 +431,100 @@ O Goal tambem passou a ser tratado como zona de chegada ampla nas cenas GoalRunn
 
 Assim os niveis continuam a ter gaps medios, variacao vertical controlada e necessidade de saltar, mas evitam landing zones minimas, sequencias do tipo Gap -> plataforma curta -> Gap e falhas por o agente saltar por cima do Goal.
 
+## Cenas finais por segmentos
+
+Para a entrega final foram adicionados builders separados para niveis com aspeto mais proximo de platformer completo, sem substituir os builders curriculares existentes.
+
+### SpeedRunnerFinalRandom
+
+Menu:
+
+`EdgeRunner > Training > V5 > Build SpeedRunnerFinalRandom`
+
+Cena:
+
+`Assets/EdgeRunner/Scenes/Training/ER_V5_SpeedRunnerFinalRandom.unity`
+
+Objetivo:
+
+- chegar ao Goal o mais rapido possivel;
+- sem moedas obrigatorias;
+- sem Androids obrigatorios;
+- Goal numa plataforma final ampla.
+
+A cena e gerada por blocos/segmentos:
+
+- `StartFlat`;
+- `FlatRun`;
+- `MediumGap`;
+- `SafeDrop`;
+- `PlatformChain`;
+- `RecoveryPlatform`;
+- `FinalGoalPlatform`.
+
+O builder cria um layout left-to-right com gaps medios, safe drops suaves, plataformas separadas por gaps claros, plataformas de aterragem largas e plataformas de recuperacao depois de trechos mais dificeis. `StepUp` e `Staircase` ficam fora do SpeedRunnerFinalRandom por agora, porque retangulos colados com diferenca de altura criavam paredes verticais onde a V5 base podia ficar presa.
+
+Para evitar costuras fisicas no meio do chao, trechos que parecem plataforma continua sao criados como uma unica plataforma/collider. O SpeedRunnerFinalRandom nao deve criar pecas encostadas no mesmo Y; plataformas separadas continuam separadas apenas quando ha um gap real.
+
+Como esta variante e focada em tempo, o builder configura a instancia do `EdgeRunnerAgentV5` com modo SpeedRunner:
+
+- `enableSpeedRunnerMode = true`;
+- `forceSprintInSpeedRunner = true`;
+- `speedRunnerSprintReward = 0.0015`;
+- `debugSpeedRunnerSprint = false`.
+
+O comportamento normal da V5 continua igual por defeito, porque estas flags ficam desligadas no agente base. A cena SpeedRunnerFinalRandom tambem adiciona `DemoSprintVisual` e `TrailRenderer` ao `Player_V5` instanciado para mostrar visualmente quando o sprint esta ativo.
+
+### ScoreMaxFinalRandom
+
+Menu:
+
+`EdgeRunner > Training > V5 > Build ScoreMaxFinalRandom`
+
+Cena:
+
+`Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxFinalRandom.unity`
+
+Objetivo:
+
+- apanhar todas as moedas;
+- matar todos os Androids por stomp;
+- so depois chegar ao Goal bloqueado;
+- usar a logica `ScoreAttackManager`, `ScoreAttackCoin`, `ScoreAttackAndroid` e `ScoreAttackGoalLock` ja existente.
+
+A cena usa segmentos estaveis e zonas de objetivos:
+
+- `FlatRun_CoinLine`;
+- `MediumGap_AndroidLanding_A`;
+- `SafeDrop_CoinPocket`;
+- `PlatformChain_CoinArc`;
+- `AndroidPlatform_FinalApproach`;
+- `RecoveryPlatform`;
+- `FinalLockedGoalPlatform`.
+
+As moedas sao colocadas acima das plataformas com margem segura de borda e espacamento minimo. Os Androids ficam em plataformas largas, afastados das bordas e longe do Goal final. O Goal so deve contar como sucesso depois de `coinsRemaining == 0` e `enemiesRemaining == 0`.
+
+Para a versao final random, `Staircase` e sequencias de `StepUp/StepDown` foram removidas/reduzidas. O layout privilegia plataformas planas, gaps medios, safe drops suaves, platform chains controladas e recuperacoes largas. Os limites de episodio da instancia `ScoreMaxFinalRandom` tambem foram alargados para dar mais margem antes de `NoProgress`, `Stuck` e `Timeout`.
+
+### Parametros dos niveis finais
+
+Os builders finais usam:
+
+- `minPlatformWidth = 4.8`;
+- `minLandingPlatformWidth = 5.0`;
+- `minRecoveryPlatformWidth = 5.0`;
+- `minGapWidth = 2.8`;
+- `maxGapWidth = 3.2` no SpeedRunnerFinalRandom;
+- `maxGapWidth = 3.0` no ScoreMaxFinalRandom;
+- `maxVerticalStep = 1.2`;
+- `finalGoalPlatformWidth = 10.0`;
+- `goalTriggerSize = 2.5 x 7.0`;
+- `safeEdgeMargin = 1.0`.
+
+Estas regras existem para que o treino avalie navegacao, timing e decisao, e nao artefactos injustos de geracao procedural como micro-gaps, landings demasiado curtas, Goal imediatamente depois de gap ou objetivos colados a bordas.
+
 ## Limites e riscos
 
-- ScoreAttack usa mecanicas reais, mas ainda usa o observation space 55 do V5 base. Para treino robusto de moedas/Androids, pode ser necessario criar uma variante futura com observacoes explicitas de objetivos.
-- GoalRunner e SpeedRunner sao mais seguros para entrega porque reutilizam diretamente a V5 base ja validada.
+- ScoreAttack fica como base mecanica validada; ScoreMax e a variante final com observacoes explicitas de objetivos.
+- SpeedRunner continua a ser a variante mais segura para entrega porque reutiliza diretamente a V5 base ja validada.
 - Nao treinar ate `max_steps` se uma fase ja atingir sucesso consistente; guardar modelo e avancar no curriculo.

@@ -160,7 +160,14 @@ public class EdgeRunnerAgentV5 : Agent
 
     [Header("Demo Mode")]
     [SerializeField] private bool disableTrainingEpisodeEndsInDemo = false;
+    [SerializeField] private bool disableTrainingEpisodeEndsInHeuristic = false;
     [SerializeField] private bool disableAgentMovementInDemo = false;
+
+    [Header("SpeedRunner Mode")]
+    [SerializeField] private bool enableSpeedRunnerMode = false;
+    [SerializeField] private bool forceSprintInSpeedRunner = false;
+    [SerializeField] private float speedRunnerSprintReward = 0.0f;
+    [SerializeField] private bool debugSpeedRunnerSprint = false;
 
     [Header("Goal Detection")]
     [SerializeField] private float goalReachDistance = 0.75f;
@@ -171,6 +178,7 @@ public class EdgeRunnerAgentV5 : Agent
     [SerializeField] private bool debugJump = false;
     [SerializeField] private bool debugHeuristicInput = false;
     [SerializeField] private bool debugEpisodeStackTraces = false;
+    [SerializeField] private bool debugEpisodeResetReason = false;
 
     private Vector3 startPosition;
     private Quaternion startRotation;
@@ -509,6 +517,14 @@ public class EdgeRunnerAgentV5 : Agent
             _ => 0f
         };
 
+        if (enableSpeedRunnerMode &&
+            forceSprintInSpeedRunner &&
+            allowSprint &&
+            Mathf.Abs(moveX) > 0.1f)
+        {
+            sprintAction = SprintAction;
+        }
+
         bool sprintRequested =
             sprintAction == SprintAction &&
             allowSprint &&
@@ -533,6 +549,7 @@ public class EdgeRunnerAgentV5 : Agent
 
         ApplyDistanceProgressReward();
         ApplyLocomotionReward(direction, moveX, grounded);
+        ApplySpeedRunnerSprintReward(direction, moveX, sprintRequested, activeMoveSpeed);
 
         bool jumpRequested = jumpAction == JumpAction;
         bool jumpPressedThisStep = jumpRequested && lastJumpAction == NoJumpAction;
@@ -1117,9 +1134,43 @@ public class EdgeRunnerAgentV5 : Agent
         episodeEnding = true;
         lastEpisodeEndFrame = Time.frameCount;
 
+        LogEpisodeResetReason(reason);
         NotifyEvaluationEpisodeEnded(reason);
         EndEpisode();
         return true;
+    }
+
+    private void LogEpisodeResetReason(EdgeRunnerEpisodeEndReason reason)
+    {
+        if (!debugEpisodeResetReason)
+        {
+            return;
+        }
+
+        Vector2 currentVelocity = rb != null ? rb.linearVelocity : Vector2.zero;
+        Debug.Log(
+            $"[SCOREMAX RESET] reason={FormatScoreMaxResetReason(reason)} " +
+            $"time={episodeTime:F2} noProgress={timeSinceDistanceProgress:F2}/{noProgressTimeLimit:F2} " +
+            $"stuck={timeSinceBestXProgress:F2}/{stuckTimeLimit:F2} " +
+            $"maxTime={maxEpisodeTime:F2} position={transform.position} velocity={currentVelocity}",
+            this);
+    }
+
+    private static string FormatScoreMaxResetReason(EdgeRunnerEpisodeEndReason reason)
+    {
+        switch (reason)
+        {
+            case EdgeRunnerEpisodeEndReason.Success:
+                return "GoalSuccess";
+            case EdgeRunnerEpisodeEndReason.Fell:
+                return "DeathZone";
+            case EdgeRunnerEpisodeEndReason.EnemyHit:
+                return "EnemySideHit";
+            case EdgeRunnerEpisodeEndReason.Timeout:
+                return "MaxEpisodeTime";
+            default:
+                return reason.ToString();
+        }
     }
 
     private void LogEpisodeStackTrace(string header)
@@ -1141,7 +1192,8 @@ public class EdgeRunnerAgentV5 : Agent
 
     private bool TryIgnoreTrainingEpisodeEndInDemo(EdgeRunnerEpisodeEndReason reason)
     {
-        if (!disableTrainingEpisodeEndsInDemo)
+        if (!disableTrainingEpisodeEndsInDemo &&
+            !(disableTrainingEpisodeEndsInHeuristic && IsBehaviorHeuristicOnly()))
         {
             return false;
         }
@@ -1176,7 +1228,19 @@ public class EdgeRunnerAgentV5 : Agent
         }
 
         warned = true;
-        Debug.LogWarning($"[DEMO MODE] Ignored training episode end: {reason}", this);
+        string mode = disableTrainingEpisodeEndsInHeuristic && IsBehaviorHeuristicOnly()
+            ? "HEURISTIC MODE"
+            : "DEMO MODE";
+        Debug.LogWarning($"[{mode}] Ignored training episode end: {reason}", this);
+    }
+
+    private bool IsBehaviorHeuristicOnly()
+    {
+        Unity.MLAgents.Policies.BehaviorParameters behaviorParameters =
+            GetComponent<Unity.MLAgents.Policies.BehaviorParameters>();
+
+        return behaviorParameters != null &&
+               behaviorParameters.BehaviorType == Unity.MLAgents.Policies.BehaviorType.HeuristicOnly;
     }
 
     private void LogDemoManualMovementDisabledOnce()
@@ -1312,6 +1376,36 @@ public class EdgeRunnerAgentV5 : Agent
         if (hasHorizontalGoalDirection && forwardVelocity > minUsefulForwardVelocity)
         {
             AddReward(Mathf.Clamp01(forwardVelocity / GetMaxHorizontalSpeed()) * forwardVelocityReward);
+        }
+    }
+
+    private void ApplySpeedRunnerSprintReward(
+        float direction,
+        float moveX,
+        bool sprintRequested,
+        float activeMoveSpeed)
+    {
+        if (!enableSpeedRunnerMode || !sprintRequested)
+        {
+            return;
+        }
+
+        bool movingTowardGoal = HasMeaningfulHorizontalGoalDirection() &&
+            moveX * direction > minUsefulMoveInput;
+
+        if (movingTowardGoal && speedRunnerSprintReward != 0f)
+        {
+            AddReward(speedRunnerSprintReward);
+        }
+
+        if (debugSpeedRunnerSprint && Time.time >= nextDebugActionLogTime)
+        {
+            nextDebugActionLogTime = Time.time + Mathf.Max(0.05f, debugActionLogInterval);
+            Debug.Log(
+                "[SPEEDRUNNER SPRINT] " +
+                $"forced={forceSprintInSpeedRunner} moveX={moveX:F1} " +
+                $"towardGoal={movingTowardGoal} speed={activeMoveSpeed:F2} reward={speedRunnerSprintReward:F4}",
+                this);
         }
     }
 

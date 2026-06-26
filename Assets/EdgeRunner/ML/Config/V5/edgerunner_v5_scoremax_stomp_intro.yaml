@@ -1,0 +1,39 @@
+engine_settings:
+  time_scale: 10
+  target_frame_rate: -1
+  capture_frame_rate: 60
+  no_graphics: false
+
+# ScoreMaxStompIntro: 1 Android, sem moedas, Goal bloqueado ate stomp valido.
+# Behavior Name: EdgeRunnerV5ScoreMax
+# Observation Space Size no Unity: 83
+# Actions/Branches: [3,2,2]
+behaviors:
+  EdgeRunnerV5ScoreMax:
+    trainer_type: ppo
+
+    hyperparameters:
+      batch_size: 128
+      buffer_size: 4096
+      learning_rate: 1.0e-4
+      beta: 1.0e-3
+      epsilon: 0.15
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+
+    network_settings:
+      normalize: false
+      hidden_units: 256
+      num_layers: 2
+
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+
+    max_steps: 200000
+    time_horizon: 64
+    summary_freq: 500
+    checkpoint_interval: 10000
+    keep_checkpoints: 10

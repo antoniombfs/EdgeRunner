@@ -1,6 +1,14 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+public enum ScoreMaxObjectiveType
+{
+    None = 0,
+    Coin = 1,
+    Enemy = 2,
+    Goal = 3
+}
+
 public class ScoreAttackManager : MonoBehaviour
 {
     [Header("References")]
@@ -57,6 +65,9 @@ public class ScoreAttackManager : MonoBehaviour
     public bool ObjectivesComplete => CoinsRemaining == 0 && EnemiesRemaining == 0;
     public float CoinReward => coinReward;
     public float EnemyKillReward => enemyKillReward;
+    public Transform Goal => goal;
+    public IReadOnlyList<ScoreAttackCoin> Coins => coins;
+    public IReadOnlyList<ScoreAttackAndroid> Enemies => enemies;
 
     private void Start()
     {
@@ -382,6 +393,96 @@ public class ScoreAttackManager : MonoBehaviour
         }
 
         return true;
+    }
+
+    public bool TryGetNearestActiveCoin(Vector3 fromPosition, out ScoreAttackCoin nearestCoin, out float distance)
+    {
+        RegisterSceneObjects();
+
+        nearestCoin = null;
+        distance = float.PositiveInfinity;
+
+        for (int i = 0; i < coins.Count; i++)
+        {
+            ScoreAttackCoin coin = coins[i];
+
+            if (coin == null || !coin.IsAvailable || collectedCoins.Contains(coin))
+            {
+                continue;
+            }
+
+            float candidateDistance = Vector2.Distance(fromPosition, coin.transform.position);
+
+            if (candidateDistance < distance)
+            {
+                nearestCoin = coin;
+                distance = candidateDistance;
+            }
+        }
+
+        return nearestCoin != null;
+    }
+
+    public bool TryGetNearestActiveEnemy(Vector3 fromPosition, out ScoreAttackAndroid nearestEnemy, out float distance)
+    {
+        RegisterSceneObjects();
+
+        nearestEnemy = null;
+        distance = float.PositiveInfinity;
+
+        for (int i = 0; i < enemies.Count; i++)
+        {
+            ScoreAttackAndroid enemy = enemies[i];
+
+            if (enemy == null || !enemy.IsAlive || killedEnemies.Contains(enemy) || !enemy.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            float candidateDistance = Vector2.Distance(fromPosition, enemy.transform.position);
+
+            if (candidateDistance < distance)
+            {
+                nearestEnemy = enemy;
+                distance = candidateDistance;
+            }
+        }
+
+        return nearestEnemy != null;
+    }
+
+    public bool TryGetRecommendedNextObjective(
+        Vector3 fromPosition,
+        out Transform target,
+        out ScoreMaxObjectiveType objectiveType,
+        out float distance)
+    {
+        if (TryGetNearestActiveCoin(fromPosition, out ScoreAttackCoin nearestCoin, out distance))
+        {
+            target = nearestCoin.transform;
+            objectiveType = ScoreMaxObjectiveType.Coin;
+            return true;
+        }
+
+        if (TryGetNearestActiveEnemy(fromPosition, out ScoreAttackAndroid nearestEnemy, out distance))
+        {
+            target = nearestEnemy.transform;
+            objectiveType = ScoreMaxObjectiveType.Enemy;
+            return true;
+        }
+
+        if (goal != null)
+        {
+            target = goal;
+            objectiveType = ScoreMaxObjectiveType.Goal;
+            distance = Vector2.Distance(fromPosition, goal.position);
+            return true;
+        }
+
+        target = null;
+        objectiveType = ScoreMaxObjectiveType.None;
+        distance = 0f;
+        return false;
     }
 
     private void RegisterSceneObjects()

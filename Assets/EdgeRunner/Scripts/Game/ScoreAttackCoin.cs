@@ -11,6 +11,8 @@ public class ScoreAttackCoin : MonoBehaviour, IEdgeRunnerResettable
     private bool collected;
 
     public Vector3 InitialPosition { get; private set; }
+    public bool IsCollected => collected;
+    public bool IsAvailable => gameObject.activeInHierarchy && !collected && ownCollider != null && ownCollider.enabled;
 
     public void SetManager(ScoreAttackManager newManager)
     {
