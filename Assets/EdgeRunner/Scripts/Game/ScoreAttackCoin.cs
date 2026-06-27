@@ -59,6 +59,12 @@ public class ScoreAttackCoin : MonoBehaviour, IEdgeRunnerResettable
             return;
         }
 
+        if (agent is EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent &&
+            !objectAwareAgent.TryAcceptScoreAttackCoinCollection(this))
+        {
+            return;
+        }
+
         collected = true;
 
         if (manager != null)

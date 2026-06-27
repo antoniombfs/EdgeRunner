@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using Unity.MLAgents;
 using Unity.MLAgents.Policies;
@@ -8,6 +9,16 @@ using UnityEngine.SceneManagement;
 
 public static class BuildER_V5_ObjectAwareScene
 {
+    private const float LowCoinRunCoinY = 0.85f;
+    private const float LowCoinRunHeightThreshold = 0.45f;
+    private const float LowCoinRunJumpPenalty = -0.05f;
+    private const float HighCoinJumpCoinY = 2.55f;
+    private const float HighCoinJumpFirstCoinX = 3.5f;
+    private const float HighCoinJumpSecondCoinX = 12.5f;
+    private const float HighCoinJumpGoalX = 18f;
+    private const float HighCoinJumpMinimumCoinSpacing = 8.5f;
+    private const float HighCoinJumpSameJumpPenalty = -2f;
+
     private const string TraversalScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_TraversalBase.unity";
     private const string LowCoinRunScenePath =
@@ -77,8 +88,8 @@ public static class BuildER_V5_ObjectAwareScene
             manager,
             EdgeRunnerObjectAwarePhase.LowCoinRun,
             true);
-        CreateCoin(root.transform, "LowCoinRun_Coin_01", new Vector3(3.5f, 1.35f, 0f), sprite, manager);
-        CreateCoin(root.transform, "LowCoinRun_Coin_02", new Vector3(6f, 1.35f, 0f), sprite, manager);
+        CreateCoin(root.transform, "LowCoinRun_Coin_01", new Vector3(3.5f, LowCoinRunCoinY, 0f), sprite, manager);
+        CreateCoin(root.transform, "LowCoinRun_Coin_02", new Vector3(6f, LowCoinRunCoinY, 0f), sprite, manager);
         CreateDeathZone(7f, 30f, "DeathZone_ScoreMaxOA_LowCoinRun");
         CreateCamera(player.transform);
         ValidateCoinPhase(scene, player, EdgeRunnerObjectAwarePhase.LowCoinRun, 2);
@@ -96,19 +107,32 @@ public static class BuildER_V5_ObjectAwareScene
         Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         GameObject root = new GameObject("ER_V5_ScoreMaxOA_HighCoinJump");
         Sprite sprite = GetSharedSprite();
-        CreatePlatform(root.transform, "HighCoinJump_Platform", 7f, 0f, 18f, sprite);
+        CreatePlatform(root.transform, "HighCoinJump_Platform", 9f, 0f, 24f, sprite);
 
         ScoreAttackManager manager = CreateCoinManager(root.transform);
-        GameObject goal = CreateLockedGoal("Goal_ScoreMaxOA_HighCoinJump", new Vector3(11.5f, 1.2f, 0f), manager);
+        GameObject goal = CreateLockedGoal(
+            "Goal_ScoreMaxOA_HighCoinJump",
+            new Vector3(HighCoinJumpGoalX, 1.2f, 0f),
+            manager);
         GameObject player = CreateObjectAwarePlayer(new Vector3(0f, 1.15f, 0f), goal.transform);
         ConfigureCoinPhasePlayer(
             player,
             manager,
             EdgeRunnerObjectAwarePhase.HighCoinJump,
             false);
-        CreateCoin(root.transform, "HighCoinJump_Coin_01", new Vector3(3.5f, 2.55f, 0f), sprite, manager);
-        CreateCoin(root.transform, "HighCoinJump_Coin_02", new Vector3(6.5f, 2.55f, 0f), sprite, manager);
-        CreateDeathZone(7f, 30f, "DeathZone_ScoreMaxOA_HighCoinJump");
+        CreateCoin(
+            root.transform,
+            "HighCoinJump_Coin_01",
+            new Vector3(HighCoinJumpFirstCoinX, HighCoinJumpCoinY, 0f),
+            sprite,
+            manager);
+        CreateCoin(
+            root.transform,
+            "HighCoinJump_Coin_02",
+            new Vector3(HighCoinJumpSecondCoinX, HighCoinJumpCoinY, 0f),
+            sprite,
+            manager);
+        CreateDeathZone(9f, 36f, "DeathZone_ScoreMaxOA_HighCoinJump");
         CreateCamera(player.transform);
         ValidateCoinPhase(scene, player, EdgeRunnerObjectAwarePhase.HighCoinJump, 2);
         SaveAndKeepOpen(scene, HighCoinJumpScenePath, player, "HighCoinJump");
@@ -168,6 +192,10 @@ public static class BuildER_V5_ObjectAwareScene
         SetBool(agent, "debugObjectAwareNextObjective", false);
         SetBool(agent, "debugObjectAwareJumpContext", false);
         SetBool(agent, "debugObjectAwareGizmos", false);
+        SetBool(agent, "enforceLowCoinRunGroundCollection", false);
+        SetBool(agent, "requireGroundedBetweenHighCoins", false);
+        SetFloat(agent, "sameJumpSecondCoinPenalty", HighCoinJumpSameJumpPenalty);
+        SetBool(agent, "endEpisodeOnSameJumpSecondCoin", false);
 
         ConfigureBehavior(player);
         DecisionRequester requester = player.GetComponent<DecisionRequester>();
@@ -223,6 +251,33 @@ public static class BuildER_V5_ObjectAwareScene
                 $"{phaseName} has the wrong ObjectAware curriculum phase.");
         }
 
+        SerializedProperty contextualJumpMask = serializedAgent.FindProperty(
+            "enableContextualJumpMask");
+        SerializedProperty enforceGroundCollection = serializedAgent.FindProperty(
+            "enforceLowCoinRunGroundCollection");
+        SerializedProperty requireHighCoinLanding = serializedAgent.FindProperty(
+            "requireGroundedBetweenHighCoins");
+        SerializedProperty sameJumpPenalty = serializedAgent.FindProperty(
+            "sameJumpSecondCoinPenalty");
+        SerializedProperty endOnSameJump = serializedAgent.FindProperty(
+            "endEpisodeOnSameJumpSecondCoin");
+        bool isLowCoinRun = expectedPhase == EdgeRunnerObjectAwarePhase.LowCoinRun;
+        bool isHighCoinJump = expectedPhase == EdgeRunnerObjectAwarePhase.HighCoinJump;
+        if (contextualJumpMask == null ||
+            contextualJumpMask.boolValue != isLowCoinRun ||
+            enforceGroundCollection == null ||
+            enforceGroundCollection.boolValue != isLowCoinRun ||
+            requireHighCoinLanding == null ||
+            requireHighCoinLanding.boolValue != isHighCoinJump ||
+            sameJumpPenalty == null ||
+            Mathf.Abs(sameJumpPenalty.floatValue - HighCoinJumpSameJumpPenalty) > 0.0001f ||
+            endOnSameJump == null ||
+            endOnSameJump.boolValue != isHighCoinJump)
+        {
+            throw new System.InvalidOperationException(
+                $"{phaseName} has the wrong coin-phase curriculum flags.");
+        }
+
         if (CountSceneComponents<ScoreAttackManager>(scene) != 1 ||
             CountSceneComponents<ScoreAttackCoin>(scene) != expectedCoins ||
             CountSceneComponents<ScoreAttackGoalLock>(scene) != 1 ||
@@ -233,7 +288,239 @@ public static class BuildER_V5_ObjectAwareScene
                 "and no Androids.");
         }
 
+        if (isLowCoinRun)
+        {
+            ValidateLowCoinRunConfiguration(scene, player, agent);
+        }
+        else if (expectedPhase == EdgeRunnerObjectAwarePhase.HighCoinJump)
+        {
+            ValidateHighCoinJumpConfiguration(scene, player, agent);
+        }
+
         ValidateCommonSceneObjects(scene, phaseName);
+    }
+
+    private static void ValidateLowCoinRunConfiguration(
+        Scene scene,
+        GameObject player,
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent)
+    {
+        SerializedObject serializedAgent = new SerializedObject(agent);
+        SerializedProperty rewardShaping = serializedAgent.FindProperty(
+            "enableObjectAwareRewardShaping");
+        SerializedProperty missedCoinEnd = serializedAgent.FindProperty(
+            "enableMissedCoinEpisodeEnd");
+        SerializedProperty threshold = serializedAgent.FindProperty(
+            "lowCoinHeightThreshold");
+        SerializedProperty jumpPenalty = serializedAgent.FindProperty(
+            "lowCoinUnnecessaryJumpPenalty");
+
+        if (rewardShaping == null || !rewardShaping.boolValue ||
+            missedCoinEnd == null || !missedCoinEnd.boolValue ||
+            threshold == null ||
+            Mathf.Abs(threshold.floatValue - LowCoinRunHeightThreshold) > 0.0001f ||
+            jumpPenalty == null || jumpPenalty.floatValue > -0.03f)
+        {
+            throw new System.InvalidOperationException(
+                "LowCoinRun requires reward shaping, missed-coin reset, threshold 0.45, " +
+                "and an unnecessary-jump penalty of at least -0.03.");
+        }
+
+        ScoreAttackCoin[] coins = GetSceneComponents<ScoreAttackCoin>(scene);
+        ScoreAttackManager[] managers = GetSceneComponents<ScoreAttackManager>(scene);
+        ScoreAttackGoalLock[] goalLocks = GetSceneComponents<ScoreAttackGoalLock>(scene);
+        BoxCollider2D playerCollider = player.GetComponent<BoxCollider2D>();
+        BoxCollider2D platformCollider = null;
+        BoxCollider2D[] colliders = GetSceneComponents<BoxCollider2D>(scene);
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            if (colliders[i].gameObject.name == "LowCoinRun_Platform")
+            {
+                platformCollider = colliders[i];
+                break;
+            }
+        }
+
+        if (coins.Length != 2 || managers.Length != 1 || goalLocks.Length != 1 ||
+            playerCollider == null || platformCollider == null)
+        {
+            throw new System.InvalidOperationException(
+                "LowCoinRun requires two coins, one manager, one GoalLock, " +
+                "the player collider, and one continuous LowCoinRun platform.");
+        }
+
+        Physics2D.SyncTransforms();
+        float playerScaleY = Mathf.Abs(player.transform.lossyScale.y);
+        float playerHalfHeight = playerCollider.size.y * playerScaleY * 0.5f;
+        float playerGroundedCenterY =
+            platformCollider.bounds.max.y + playerHalfHeight -
+            playerCollider.offset.y * playerScaleY;
+        float playerGroundedTopY = playerGroundedCenterY + playerHalfHeight;
+        ScoreAttackCoin firstCoin = null;
+        ScoreAttackCoin secondCoin = null;
+
+        for (int i = 0; i < coins.Length; i++)
+        {
+            ScoreAttackCoin coin = coins[i];
+            CircleCollider2D coinCollider = coin.GetComponent<CircleCollider2D>();
+            float dy = coin.transform.position.y - playerGroundedCenterY;
+            float coinRadius = coinCollider != null
+                ? coinCollider.radius * Mathf.Abs(coin.transform.lossyScale.y)
+                : float.PositiveInfinity;
+            SerializedObject serializedCoin = new SerializedObject(coin);
+            SerializedProperty coinManager = serializedCoin.FindProperty("manager");
+
+            if (dy > threshold.floatValue + 0.0001f ||
+                coinCollider == null ||
+                coin.transform.position.y - coinRadius > playerGroundedTopY + 0.0001f ||
+                coinManager == null || coinManager.objectReferenceValue != managers[0])
+            {
+                throw new System.InvalidOperationException(
+                    $"{coin.name} is not a run-collectable low coin: " +
+                    $"grounded-center dy={dy:F3}, threshold={threshold.floatValue:F3}.");
+            }
+
+            if (coin.name == "LowCoinRun_Coin_01")
+            {
+                firstCoin = coin;
+            }
+            else if (coin.name == "LowCoinRun_Coin_02")
+            {
+                secondCoin = coin;
+            }
+        }
+
+        ScoreAttackGoalLock goalLock = goalLocks[0];
+        SerializedObject serializedGoalLock = new SerializedObject(goalLock);
+        SerializedProperty goalManager = serializedGoalLock.FindProperty("manager");
+        SerializedObject serializedManager = new SerializedObject(managers[0]);
+        SerializedProperty managerAgent = serializedManager.FindProperty("agent");
+        SerializedProperty managerGoal = serializedManager.FindProperty("goal");
+
+        if (firstCoin == null || secondCoin == null ||
+            firstCoin.transform.position.x >= secondCoin.transform.position.x ||
+            !goalLock.enabled || goalManager == null ||
+            goalManager.objectReferenceValue != managers[0] ||
+            managerAgent == null || managerAgent.objectReferenceValue != agent ||
+            managerGoal == null || managerGoal.objectReferenceValue != goalLock.transform)
+        {
+            throw new System.InvalidOperationException(
+                "LowCoinRun must select Coin_01 before Coin_02 and keep its GoalLock " +
+                "connected to the ObjectAware manager until both coins are collected.");
+        }
+
+        float pathMinX = Mathf.Min(player.transform.position.x, firstCoin.transform.position.x);
+        float pathMaxX = Mathf.Max(goalLock.transform.position.x, secondCoin.transform.position.x);
+        if (platformCollider.bounds.min.x > pathMinX ||
+            platformCollider.bounds.max.x < pathMaxX)
+        {
+            throw new System.InvalidOperationException(
+                "LowCoinRun strict no-jump mode requires one continuous platform " +
+                "from spawn through both coins and the Goal.");
+        }
+    }
+
+    private static void ValidateHighCoinJumpConfiguration(
+        Scene scene,
+        GameObject player,
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent)
+    {
+        SerializedObject serializedAgent = new SerializedObject(agent);
+        SerializedProperty threshold = serializedAgent.FindProperty(
+            "lowCoinHeightThreshold");
+        SerializedProperty jumpWindow = serializedAgent.FindProperty(
+            "highCoinJumpWindowX");
+        SerializedProperty jumpForce = serializedAgent.FindProperty("jumpForce");
+        ScoreAttackCoin[] coins = GetSceneComponents<ScoreAttackCoin>(scene);
+        BoxCollider2D playerCollider = player.GetComponent<BoxCollider2D>();
+        Rigidbody2D playerBody = player.GetComponent<Rigidbody2D>();
+        BoxCollider2D platformCollider = null;
+        BoxCollider2D[] colliders = GetSceneComponents<BoxCollider2D>(scene);
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            if (colliders[i].gameObject.name == "HighCoinJump_Platform")
+            {
+                platformCollider = colliders[i];
+                break;
+            }
+        }
+
+        if (threshold == null || jumpWindow == null || jumpForce == null ||
+            coins.Length != 2 || playerCollider == null || playerBody == null ||
+            platformCollider == null)
+        {
+            throw new System.InvalidOperationException(
+                "HighCoinJump is missing its classification settings, two coins, " +
+                "player physics, or continuous platform.");
+        }
+
+        Physics2D.SyncTransforms();
+        float playerScaleY = Mathf.Abs(player.transform.lossyScale.y);
+        float playerHalfHeight = playerCollider.size.y * playerScaleY * 0.5f;
+        float playerGroundedCenterY =
+            platformCollider.bounds.max.y + playerHalfHeight -
+            playerCollider.offset.y * playerScaleY;
+        float effectiveGravity =
+            Mathf.Abs(Physics2D.gravity.y) * Mathf.Max(0.0001f, playerBody.gravityScale);
+        float maximumJumpCenterY =
+            playerGroundedCenterY +
+            jumpForce.floatValue * jumpForce.floatValue / (2f * effectiveGravity);
+        ScoreAttackCoin firstCoin = null;
+        ScoreAttackCoin secondCoin = null;
+
+        for (int i = 0; i < coins.Length; i++)
+        {
+            ScoreAttackCoin coin = coins[i];
+            CircleCollider2D coinCollider = coin.GetComponent<CircleCollider2D>();
+            float dy = coin.transform.position.y - playerGroundedCenterY;
+            float coinRadius = coinCollider != null
+                ? coinCollider.radius * Mathf.Abs(coin.transform.lossyScale.y)
+                : 0f;
+            float minimumPlayerCenterForCollection =
+                coin.transform.position.y - playerHalfHeight - coinRadius;
+
+            if (dy <= threshold.floatValue ||
+                coinCollider == null ||
+                minimumPlayerCenterForCollection > maximumJumpCenterY)
+            {
+                throw new System.InvalidOperationException(
+                    $"{coin.name} must remain high but reachable with the normal jump: " +
+                    $"grounded-center dy={dy:F3}, threshold={threshold.floatValue:F3}.");
+            }
+
+            if (coin.name == "HighCoinJump_Coin_01")
+            {
+                firstCoin = coin;
+            }
+            else if (coin.name == "HighCoinJump_Coin_02")
+            {
+                secondCoin = coin;
+            }
+        }
+
+        ScoreAttackGoalLock[] goalLocks = GetSceneComponents<ScoreAttackGoalLock>(scene);
+        if (firstCoin == null || secondCoin == null || goalLocks.Length != 1)
+        {
+            throw new System.InvalidOperationException(
+                "HighCoinJump requires named Coin_01/Coin_02 and one GoalLock.");
+        }
+
+        float coinSpacing = secondCoin.transform.position.x - firstCoin.transform.position.x;
+        float firstCoinDistance = firstCoin.transform.position.x - player.transform.position.x;
+        float pathMinX = Mathf.Min(player.transform.position.x, firstCoin.transform.position.x);
+        float pathMaxX = Mathf.Max(goalLocks[0].transform.position.x, secondCoin.transform.position.x);
+        if (coinSpacing < HighCoinJumpMinimumCoinSpacing ||
+            firstCoinDistance <= jumpWindow.floatValue ||
+            jumpWindow.floatValue <= 0f ||
+            jumpWindow.floatValue >= coinSpacing ||
+            goalLocks[0].transform.position.x <= secondCoin.transform.position.x ||
+            platformCollider.bounds.min.x > pathMinX ||
+            platformCollider.bounds.max.x < pathMaxX)
+        {
+            throw new System.InvalidOperationException(
+                "HighCoinJump must require two separate jump windows on one safe platform, " +
+                "followed by a Goal beyond Coin_02.");
+        }
     }
 
     private static void ValidateObjectAwarePlayer(GameObject player, string phaseName)
@@ -318,14 +605,19 @@ public static class BuildER_V5_ObjectAwareScene
 
     private static int CountSceneComponents<T>(Scene scene) where T : Component
     {
-        int count = 0;
+        return GetSceneComponents<T>(scene).Length;
+    }
+
+    private static T[] GetSceneComponents<T>(Scene scene) where T : Component
+    {
+        List<T> components = new List<T>();
         GameObject[] roots = scene.GetRootGameObjects();
         for (int i = 0; i < roots.Length; i++)
         {
-            count += roots[i].GetComponentsInChildren<T>(true).Length;
+            components.AddRange(roots[i].GetComponentsInChildren<T>(true));
         }
 
-        return count;
+        return components.ToArray();
     }
 
     private static void ConfigureBehavior(GameObject player)
@@ -447,14 +739,32 @@ public static class BuildER_V5_ObjectAwareScene
         SetBool(agent, "enableObjectAwareRewardShaping", true);
         SetBool(agent, "enableMissedCoinEpisodeEnd", true);
         SetBool(agent, "enableContextualJumpMask", useContextualJumpMask);
+        SetBool(
+            agent,
+            "enforceLowCoinRunGroundCollection",
+            phase == EdgeRunnerObjectAwarePhase.LowCoinRun);
+        SetBool(
+            agent,
+            "requireGroundedBetweenHighCoins",
+            phase == EdgeRunnerObjectAwarePhase.HighCoinJump);
+        SetFloat(agent, "sameJumpSecondCoinPenalty", HighCoinJumpSameJumpPenalty);
+        SetBool(
+            agent,
+            "endEpisodeOnSameJumpSecondCoin",
+            phase == EdgeRunnerObjectAwarePhase.HighCoinJump);
         SetFloat(agent, "missedCoinPenalty", -2f);
         SetFloat(agent, "missedCoinForwardMargin", 2.5f);
-        SetFloat(agent, "lowCoinHeightThreshold", 0.45f);
+        SetFloat(agent, "lowCoinHeightThreshold", LowCoinRunHeightThreshold);
         SetFloat(agent, "lowCoinRunWindowX", 3f);
         SetFloat(agent, "highCoinJumpWindowX", 2.25f);
         SetFloat(agent, "lowCoinGroundApproachReward", 0.01f);
         SetFloat(agent, "lowCoinGroundedAlignmentReward", 0.005f);
-        SetFloat(agent, "lowCoinUnnecessaryJumpPenalty", -0.02f);
+        SetFloat(
+            agent,
+            "lowCoinUnnecessaryJumpPenalty",
+            phase == EdgeRunnerObjectAwarePhase.LowCoinRun
+                ? LowCoinRunJumpPenalty
+                : -0.02f);
         SetFloat(agent, "highCoinApproachReward", 0.01f);
         SetFloat(agent, "highCoinJumpCueReward", 0.04f);
         SetFloat(agent, "earlyJumpPenalty", -0.01f);
