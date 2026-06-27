@@ -32,6 +32,15 @@ mover ou substituir ficheiros. `results/` nao foi inspecionado nem alterado.
 - Primeira cena: `Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_TraversalBase.unity`.
 - Primeiro YAML: `Assets/EdgeRunner/ML/Config/ObjectAware/scoremax_oa_traversal_base.yaml`.
 - TraversalBase nao contem moedas nem Androids; valida locomocao, gaps e Goal no agente novo.
+- `ScoreMaxOA LowCoinRun`: duas moedas baixas apanhaveis a correr, sem Androids;
+  cena `Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_LowCoinRun.unity` e
+  YAML `Assets/EdgeRunner/ML/Config/ObjectAware/scoremax_oa_low_coin_run.yaml`.
+- `ScoreMaxOA HighCoinJump`: duas moedas altas para ensinar timing de salto, sem Androids;
+  cena `Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_HighCoinJump.unity` e
+  YAML `Assets/EdgeRunner/ML/Config/ObjectAware/scoremax_oa_high_coin_jump.yaml`.
+- LowCoinRun e HighCoinJump so devem ser treinadas depois de TraversalBase estar
+  validada e treinada; ambas mantem Behavior `EdgeRunnerV5ScoreMaxObjectAware`,
+  111 observacoes e actions `[3,2,2]`.
 - `ScoreMaxObjectAware` nao deve inicializar a partir de modelos ScoreMax antigos de
   83 observacoes, nem de qualquer outro modelo com contrato/semantica incompativel.
 - `SpeedRunnerObjectAware` permanece como futura variante de navegacao com percecao de objetos.

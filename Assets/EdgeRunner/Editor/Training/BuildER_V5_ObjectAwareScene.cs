@@ -8,8 +8,12 @@ using UnityEngine.SceneManagement;
 
 public static class BuildER_V5_ObjectAwareScene
 {
-    private const string ScenePath =
+    private const string TraversalScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_TraversalBase.unity";
+    private const string LowCoinRunScenePath =
+        "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_LowCoinRun.unity";
+    private const string HighCoinJumpScenePath =
+        "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_HighCoinJump.unity";
     private const string PlayerPrefabPath =
         "Assets/EdgeRunner/Prefabs/Agent/Player_V5.prefab";
     private const string GroundPrefabPath =
@@ -24,8 +28,7 @@ public static class BuildER_V5_ObjectAwareScene
     {
         EnsureFolder("Assets/EdgeRunner/Scenes/Training");
 
-        if (!Application.isBatchMode &&
-            !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
+        if (!CanReplaceOpenScenes())
         {
             return;
         }
@@ -45,31 +48,76 @@ public static class BuildER_V5_ObjectAwareScene
         CreateCamera(player.transform);
         ValidateTraversalBase(scene, player);
 
-        Selection.activeGameObject = player;
-        EditorSceneManager.MarkSceneDirty(scene);
-        if (!EditorSceneManager.SaveScene(scene, ScenePath))
-        {
-            throw new System.InvalidOperationException(
-                $"ObjectAware TraversalBase could not be saved at {ScenePath}.");
-        }
-
-        AssetDatabase.SaveAssets();
-        AssetDatabase.Refresh();
-
-        SceneAsset savedScene = AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath);
-        if (savedScene != null)
-        {
-            EditorGUIUtility.PingObject(savedScene);
-        }
-
-        Debug.Log(
-            $"[OBJECT AWARE BUILDER] Created and opened {ScenePath} with " +
-            $"{EdgeRunnerAgentV5ScoreMaxObjectAware.DefaultExpectedObservationSize} observations.");
+        SaveAndKeepOpen(scene, TraversalScenePath, player, "TraversalBase");
     }
 
     public static void BuildTraversalBaseBatch()
     {
         BuildTraversalBase();
+    }
+
+    [MenuItem("EdgeRunner/Training/ObjectAware/Build ScoreMaxOA LowCoinRun")]
+    public static void BuildLowCoinRun()
+    {
+        if (!CanReplaceOpenScenes())
+        {
+            return;
+        }
+
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        GameObject root = new GameObject("ER_V5_ScoreMaxOA_LowCoinRun");
+        Sprite sprite = GetSharedSprite();
+        CreatePlatform(root.transform, "LowCoinRun_Platform", 7f, 0f, 18f, sprite);
+
+        ScoreAttackManager manager = CreateCoinManager(root.transform);
+        GameObject goal = CreateLockedGoal("Goal_ScoreMaxOA_LowCoinRun", new Vector3(11.5f, 1.2f, 0f), manager);
+        GameObject player = CreateObjectAwarePlayer(new Vector3(0f, 1.15f, 0f), goal.transform);
+        ConfigureCoinPhasePlayer(
+            player,
+            manager,
+            EdgeRunnerObjectAwarePhase.LowCoinRun,
+            true);
+        CreateCoin(root.transform, "LowCoinRun_Coin_01", new Vector3(3.5f, 1.35f, 0f), sprite, manager);
+        CreateCoin(root.transform, "LowCoinRun_Coin_02", new Vector3(6f, 1.35f, 0f), sprite, manager);
+        CreateDeathZone(7f, 30f, "DeathZone_ScoreMaxOA_LowCoinRun");
+        CreateCamera(player.transform);
+        ValidateCoinPhase(scene, player, EdgeRunnerObjectAwarePhase.LowCoinRun, 2);
+        SaveAndKeepOpen(scene, LowCoinRunScenePath, player, "LowCoinRun");
+    }
+
+    [MenuItem("EdgeRunner/Training/ObjectAware/Build ScoreMaxOA HighCoinJump")]
+    public static void BuildHighCoinJump()
+    {
+        if (!CanReplaceOpenScenes())
+        {
+            return;
+        }
+
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        GameObject root = new GameObject("ER_V5_ScoreMaxOA_HighCoinJump");
+        Sprite sprite = GetSharedSprite();
+        CreatePlatform(root.transform, "HighCoinJump_Platform", 7f, 0f, 18f, sprite);
+
+        ScoreAttackManager manager = CreateCoinManager(root.transform);
+        GameObject goal = CreateLockedGoal("Goal_ScoreMaxOA_HighCoinJump", new Vector3(11.5f, 1.2f, 0f), manager);
+        GameObject player = CreateObjectAwarePlayer(new Vector3(0f, 1.15f, 0f), goal.transform);
+        ConfigureCoinPhasePlayer(
+            player,
+            manager,
+            EdgeRunnerObjectAwarePhase.HighCoinJump,
+            false);
+        CreateCoin(root.transform, "HighCoinJump_Coin_01", new Vector3(3.5f, 2.55f, 0f), sprite, manager);
+        CreateCoin(root.transform, "HighCoinJump_Coin_02", new Vector3(6.5f, 2.55f, 0f), sprite, manager);
+        CreateDeathZone(7f, 30f, "DeathZone_ScoreMaxOA_HighCoinJump");
+        CreateCamera(player.transform);
+        ValidateCoinPhase(scene, player, EdgeRunnerObjectAwarePhase.HighCoinJump, 2);
+        SaveAndKeepOpen(scene, HighCoinJumpScenePath, player, "HighCoinJump");
+    }
+
+    public static void BuildCoinPhasesBatch()
+    {
+        BuildLowCoinRun();
+        BuildHighCoinJump();
     }
 
     private static GameObject CreateObjectAwarePlayer(Vector3 position, Transform goal)
@@ -142,28 +190,83 @@ public static class BuildER_V5_ObjectAwareScene
 
     private static void ValidateTraversalBase(Scene scene, GameObject player)
     {
-        EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent =
-            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
-        if (objectAwareAgent == null || !objectAwareAgent.enabled)
+        ValidateObjectAwarePlayer(player, "TraversalBase");
+
+        if (SceneContainsComponent<ScoreAttackManager>(scene) ||
+            SceneContainsComponent<ScoreAttackCoin>(scene) ||
+            SceneContainsComponent<ScoreAttackAndroid>(scene) ||
+            SceneContainsComponent<ScoreAttackGoalLock>(scene))
         {
             throw new System.InvalidOperationException(
-                "TraversalBase requires an enabled EdgeRunnerAgentV5ScoreMaxObjectAware.");
+                "TraversalBase must not contain ScoreAttack managers, objectives, or a locked Goal.");
+        }
+
+        ValidateCommonSceneObjects(scene, "TraversalBase");
+    }
+
+    private static void ValidateCoinPhase(
+        Scene scene,
+        GameObject player,
+        EdgeRunnerObjectAwarePhase expectedPhase,
+        int expectedCoins)
+    {
+        string phaseName = expectedPhase.ToString();
+        ValidateObjectAwarePlayer(player, phaseName);
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        SerializedObject serializedAgent = new SerializedObject(agent);
+        SerializedProperty phase = serializedAgent.FindProperty("objectAwarePhase");
+
+        if (phase == null || phase.enumValueIndex != (int)expectedPhase)
+        {
+            throw new System.InvalidOperationException(
+                $"{phaseName} has the wrong ObjectAware curriculum phase.");
+        }
+
+        if (CountSceneComponents<ScoreAttackManager>(scene) != 1 ||
+            CountSceneComponents<ScoreAttackCoin>(scene) != expectedCoins ||
+            CountSceneComponents<ScoreAttackGoalLock>(scene) != 1 ||
+            CountSceneComponents<ScoreAttackAndroid>(scene) != 0)
+        {
+            throw new System.InvalidOperationException(
+                $"{phaseName} must contain one manager, {expectedCoins} coins, one locked Goal, " +
+                "and no Androids.");
+        }
+
+        ValidateCommonSceneObjects(scene, phaseName);
+    }
+
+    private static void ValidateObjectAwarePlayer(GameObject player, string phaseName)
+    {
+        EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        if (player.name != "Player_V5_ScoreMaxObjectAware" ||
+            objectAwareAgent == null ||
+            !objectAwareAgent.enabled)
+        {
+            throw new System.InvalidOperationException(
+                $"{phaseName} requires Player_V5_ScoreMaxObjectAware with its agent enabled.");
         }
 
         if (player.GetComponent<EdgeRunnerAgentV5ScoreMax>() != null)
         {
             throw new System.InvalidOperationException(
-                "TraversalBase must not contain the legacy 83-observation ScoreMax agent.");
+                $"{phaseName} must not contain the legacy 83-observation ScoreMax agent.");
         }
 
         EdgeRunnerAgentV5[] agents = player.GetComponents<EdgeRunnerAgentV5>();
         if (agents.Length != 1 || agents[0] != objectAwareAgent)
         {
             throw new System.InvalidOperationException(
-                "TraversalBase must contain exactly one ObjectAware Agent component.");
+                $"{phaseName} must contain exactly one ObjectAware Agent component.");
         }
 
         BehaviorParameters behavior = player.GetComponent<BehaviorParameters>();
+        if (behavior == null)
+        {
+            throw new System.InvalidOperationException($"{phaseName} is missing BehaviorParameters.");
+        }
+
         SerializedObject serializedBehavior = new SerializedObject(behavior);
         SerializedProperty observationSize = serializedBehavior.FindProperty(
             "m_BrainParameters.VectorObservationSize");
@@ -178,7 +281,7 @@ public static class BuildER_V5_ObjectAwareScene
             branchSizes.GetArrayElementAtIndex(0).intValue == 3 &&
             branchSizes.GetArrayElementAtIndex(1).intValue == 2 &&
             branchSizes.GetArrayElementAtIndex(2).intValue == 2;
-        bool validBehavior = behavior != null &&
+        bool validBehavior =
             behavior.BehaviorName == "EdgeRunnerV5ScoreMaxObjectAware" &&
             behavior.BehaviorType == BehaviorType.Default &&
             observationSize != null &&
@@ -193,32 +296,36 @@ public static class BuildER_V5_ObjectAwareScene
         if (!validBehavior)
         {
             throw new System.InvalidOperationException(
-                "TraversalBase BehaviorParameters must be ObjectAware, 111 observations, " +
-                "branches [3,2,2], Default, and Model None.");
+                $"{phaseName} must use ObjectAware, 111 observations, branches [3,2,2], " +
+                "Default, and Model None.");
         }
+    }
 
-        if (SceneContainsComponent<ScoreAttackManager>(scene) ||
-            SceneContainsComponent<ScoreAttackCoin>(scene) ||
-            SceneContainsComponent<ScoreAttackAndroid>(scene) ||
-            SceneContainsComponent<ScoreAttackGoalLock>(scene))
+    private static void ValidateCommonSceneObjects(Scene scene, string phaseName)
+    {
+        if (CountSceneComponents<DeathZone>(scene) != 1 ||
+            CountSceneComponents<Camera>(scene) != 1)
         {
             throw new System.InvalidOperationException(
-                "TraversalBase must not contain ScoreAttack managers, objectives, or a locked Goal.");
+                $"{phaseName} must contain exactly one DeathZone and one Camera.");
         }
     }
 
     private static bool SceneContainsComponent<T>(Scene scene) where T : Component
     {
+        return CountSceneComponents<T>(scene) > 0;
+    }
+
+    private static int CountSceneComponents<T>(Scene scene) where T : Component
+    {
+        int count = 0;
         GameObject[] roots = scene.GetRootGameObjects();
         for (int i = 0; i < roots.Length; i++)
         {
-            if (roots[i].GetComponentInChildren<T>(true) != null)
-            {
-                return true;
-            }
+            count += roots[i].GetComponentsInChildren<T>(true).Length;
         }
 
-        return false;
+        return count;
     }
 
     private static void ConfigureBehavior(GameObject player)
@@ -268,6 +375,167 @@ public static class BuildER_V5_ObjectAwareScene
         }
 
         serializedBehavior.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static bool CanReplaceOpenScenes()
+    {
+        EnsureFolder("Assets/EdgeRunner/Scenes/Training");
+        return Application.isBatchMode ||
+            EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo();
+    }
+
+    private static void SaveAndKeepOpen(
+        Scene scene,
+        string scenePath,
+        GameObject player,
+        string phaseName)
+    {
+        Selection.activeGameObject = player;
+        EditorSceneManager.MarkSceneDirty(scene);
+        if (!EditorSceneManager.SaveScene(scene, scenePath))
+        {
+            throw new System.InvalidOperationException(
+                $"ObjectAware {phaseName} could not be saved at {scenePath}.");
+        }
+
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+
+        SceneAsset savedScene = AssetDatabase.LoadAssetAtPath<SceneAsset>(scenePath);
+        if (savedScene != null)
+        {
+            EditorGUIUtility.PingObject(savedScene);
+        }
+
+        Debug.Log(
+            $"[OBJECT AWARE BUILDER] Created and opened {scenePath} with " +
+            $"{EdgeRunnerAgentV5ScoreMaxObjectAware.DefaultExpectedObservationSize} observations.");
+    }
+
+    private static ScoreAttackManager CreateCoinManager(Transform parent)
+    {
+        GameObject managerObject = new GameObject("ScoreMaxOA_CoinManager");
+        managerObject.transform.SetParent(parent, false);
+        ScoreAttackManager manager = managerObject.AddComponent<ScoreAttackManager>();
+        SetBool(manager, "resetOnStart", true);
+        SetBool(manager, "randomizeObjectPositionsOnReset", false);
+        SetInt(manager, "minActiveCoins", 2);
+        SetInt(manager, "maxActiveCoins", 2);
+        SetInt(manager, "minActiveEnemies", 0);
+        SetInt(manager, "maxActiveEnemies", 0);
+        SetFloat(manager, "coinReward", 2f);
+        SetFloat(manager, "finalCompletionReward", 10f);
+        SetFloat(manager, "prematureGoalPenalty", -2f);
+        SetBool(manager, "endEpisodeOnPrematureGoal", false);
+        SetBool(manager, "debugLogs", false);
+        return manager;
+    }
+
+    private static void ConfigureCoinPhasePlayer(
+        GameObject player,
+        ScoreAttackManager manager,
+        EdgeRunnerObjectAwarePhase phase,
+        bool useContextualJumpMask)
+    {
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        SetObjectReference(agent, "scoreAttackManager", manager);
+        SetObjectReference(manager, "agent", agent);
+        SetInt(agent, "groundLayer", LayerMask.GetMask("Ground"));
+        SetBool(agent, "maskUselessJumps", false);
+        SetInt(agent, "objectAwarePhase", (int)phase);
+        SetBool(agent, "enableObjectAwareRewardShaping", true);
+        SetBool(agent, "enableMissedCoinEpisodeEnd", true);
+        SetBool(agent, "enableContextualJumpMask", useContextualJumpMask);
+        SetFloat(agent, "missedCoinPenalty", -2f);
+        SetFloat(agent, "missedCoinForwardMargin", 2.5f);
+        SetFloat(agent, "lowCoinHeightThreshold", 0.45f);
+        SetFloat(agent, "lowCoinRunWindowX", 3f);
+        SetFloat(agent, "highCoinJumpWindowX", 2.25f);
+        SetFloat(agent, "lowCoinGroundApproachReward", 0.01f);
+        SetFloat(agent, "lowCoinGroundedAlignmentReward", 0.005f);
+        SetFloat(agent, "lowCoinUnnecessaryJumpPenalty", -0.02f);
+        SetFloat(agent, "highCoinApproachReward", 0.01f);
+        SetFloat(agent, "highCoinJumpCueReward", 0.04f);
+        SetFloat(agent, "earlyJumpPenalty", -0.01f);
+        SetFloat(agent, "jumpSpamPenalty", -0.01f);
+
+        // Coin phases learn from nextObjective rather than the locked Goal.
+        SetFloat(agent, "goalReward", 0f);
+        SetFloat(agent, "progressRewardScale", 0f);
+        SetFloat(agent, "maxProgressRewardPerStep", 0f);
+        SetFloat(agent, "milestoneReward", 0f);
+        SetFloat(agent, "backtrackPenalty", 0f);
+        SetFloat(agent, "jumpPenalty", 0f);
+        SetFloat(agent, "idleJumpPenalty", 0f);
+        SetFloat(agent, "flatGroundJumpPenalty", 0f);
+        SetFloat(agent, "earlyGapJumpPenalty", 0f);
+        SetFloat(agent, "uselessJumpPenalty", 0f);
+        SetFloat(agent, "gapJumpReward", 0f);
+        SetFloat(agent, "gapLandingReward", 0f);
+        SetFloat(agent, "lowMomentumJumpPenalty", 0f);
+        SetFloat(agent, "forwardActionReward", 0f);
+        SetFloat(agent, "forwardVelocityReward", 0f);
+        SetFloat(agent, "wrongDirectionActionPenalty", 0f);
+        SetFloat(agent, "distanceProgressRewardScale", 0f);
+        SetFloat(agent, "maxDistanceProgressReward", 0f);
+        SetFloat(agent, "distanceRegressionPenaltyScale", 0f);
+        SetFloat(agent, "maxDistanceRegressionPenalty", 0f);
+        SetFloat(agent, "stepPenalty", -0.001f);
+        SetFloat(agent, "idlePenalty", -0.001f);
+        SetFloat(agent, "noProgressTimeLimit", 15f);
+        SetFloat(agent, "stuckTimeLimit", 15f);
+        SetFloat(agent, "maxEpisodeTime", 60f);
+
+        SetBool(agent, "debugObjectAwareObservationCount", false);
+        SetBool(agent, "debugObjectAwareNextObjective", false);
+        SetBool(agent, "debugObjectAwareJumpContext", false);
+        SetBool(agent, "debugObjectAwareGizmos", false);
+    }
+
+    private static GameObject CreateLockedGoal(
+        string name,
+        Vector3 position,
+        ScoreAttackManager manager)
+    {
+        GameObject goal = CreateGoal(position);
+        goal.name = name;
+        goal.tag = "Goal";
+        goal.transform.localScale = new Vector3(1.2f, 2.4f, 1f);
+        ScoreAttackGoalLock goalLock = goal.GetComponent<ScoreAttackGoalLock>();
+        if (goalLock == null)
+        {
+            goalLock = goal.AddComponent<ScoreAttackGoalLock>();
+        }
+
+        goalLock.SetManager(manager);
+        SetObjectReference(manager, "goal", goal.transform);
+        return goal;
+    }
+
+    private static void CreateCoin(
+        Transform parent,
+        string name,
+        Vector3 position,
+        Sprite sprite,
+        ScoreAttackManager manager)
+    {
+        GameObject coin = new GameObject(name);
+        coin.transform.SetParent(parent, false);
+        coin.transform.position = position;
+        coin.transform.localScale = new Vector3(0.55f, 0.55f, 1f);
+
+        SpriteRenderer renderer = coin.AddComponent<SpriteRenderer>();
+        renderer.sprite = sprite;
+        renderer.color = new Color(1f, 0.85f, 0.15f, 1f);
+        renderer.sortingOrder = 8;
+
+        CircleCollider2D collider = coin.AddComponent<CircleCollider2D>();
+        collider.isTrigger = true;
+        collider.radius = 0.45f;
+
+        ScoreAttackCoin coinScript = coin.AddComponent<ScoreAttackCoin>();
+        coinScript.SetManager(manager);
     }
 
     private static void CreatePlatform(
@@ -326,19 +594,22 @@ public static class BuildER_V5_ObjectAwareScene
         return goal;
     }
 
-    private static void CreateDeathZone(float centerX, float width)
+    private static void CreateDeathZone(
+        float centerX,
+        float width,
+        string name = "DeathZone_ScoreMaxOA_TraversalBase")
     {
         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(DeathZonePrefabPath);
         GameObject deathZone = prefab != null
             ? PrefabUtility.InstantiatePrefab(prefab) as GameObject
-            : new GameObject("DeathZone_ScoreMaxOA_TraversalBase");
+            : new GameObject(name);
 
         if (deathZone == null)
         {
             throw new System.InvalidOperationException("DeathZone could not be created.");
         }
 
-        deathZone.name = "DeathZone_ScoreMaxOA_TraversalBase";
+        deathZone.name = name;
         deathZone.transform.position = new Vector3(centerX, -7f, 0f);
         deathZone.transform.localScale = new Vector3(width, 1f, 1f);
 
@@ -421,6 +692,34 @@ public static class BuildER_V5_ObjectAwareScene
         }
 
         property.boolValue = value;
+        serializedObject.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static void SetInt(Object target, string propertyName, int value)
+    {
+        SerializedObject serializedObject = new SerializedObject(target);
+        SerializedProperty property = serializedObject.FindProperty(propertyName);
+        if (property == null)
+        {
+            throw new System.InvalidOperationException(
+                $"Serialized property '{propertyName}' was not found on {target.name}.");
+        }
+
+        property.intValue = value;
+        serializedObject.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static void SetFloat(Object target, string propertyName, float value)
+    {
+        SerializedObject serializedObject = new SerializedObject(target);
+        SerializedProperty property = serializedObject.FindProperty(propertyName);
+        if (property == null)
+        {
+            throw new System.InvalidOperationException(
+                $"Serialized property '{propertyName}' was not found on {target.name}.");
+        }
+
+        property.floatValue = value;
         serializedObject.ApplyModifiedPropertiesWithoutUndo();
     }
 
