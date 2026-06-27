@@ -1,0 +1,39 @@
+engine_settings:
+  time_scale: 10
+  target_frame_rate: -1
+  capture_frame_rate: 60
+  no_graphics: false
+
+# ObjectAware TraversalBase: locomocao e gaps, sem moedas nem Androids.
+# Behavior Name: EdgeRunnerV5ScoreMaxObjectAware
+# Observation Space Size no Unity: 111
+# Actions/Branches: [3,2,2]
+behaviors:
+  EdgeRunnerV5ScoreMaxObjectAware:
+    trainer_type: ppo
+
+    hyperparameters:
+      batch_size: 128
+      buffer_size: 4096
+      learning_rate: 1.0e-4
+      beta: 5.0e-4
+      epsilon: 0.15
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+
+    network_settings:
+      normalize: false
+      hidden_units: 256
+      num_layers: 2
+
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+
+    max_steps: 300000
+    time_horizon: 64
+    summary_freq: 500
+    checkpoint_interval: 10000
+    keep_checkpoints: 10
