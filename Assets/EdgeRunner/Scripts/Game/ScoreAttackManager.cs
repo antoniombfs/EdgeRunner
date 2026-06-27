@@ -27,6 +27,7 @@ public class ScoreAttackManager : MonoBehaviour
     [Header("Episode")]
     [SerializeField] private bool resetOnStart = true;
     [SerializeField] private bool randomizeObjectPositionsOnReset = false;
+    [SerializeField] private bool requireEnemiesForGoal = true;
     [SerializeField] private int minActiveCoins = 1;
     [SerializeField] private int maxActiveCoins = 3;
     [SerializeField] private int minActiveEnemies = 1;
@@ -73,7 +74,8 @@ public class ScoreAttackManager : MonoBehaviour
     public int PrematureGoalTouches { get; private set; }
     public int CoinsRemaining => Mathf.Max(0, activeCoinCount - CoinsCollected);
     public int EnemiesRemaining => Mathf.Max(0, activeEnemyCount - EnemiesKilled);
-    public bool ObjectivesComplete => CoinsRemaining == 0 && EnemiesRemaining == 0;
+    public bool ObjectivesComplete =>
+        CoinsRemaining == 0 && (!requireEnemiesForGoal || EnemiesRemaining == 0);
     public float CoinReward => coinReward;
     public float EnemyKillReward => enemyKillReward;
     public Transform Goal => goal;

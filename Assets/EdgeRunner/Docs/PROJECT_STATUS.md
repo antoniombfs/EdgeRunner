@@ -38,6 +38,18 @@ mover ou substituir ficheiros. `results/` nao foi inspecionado nem alterado.
 - `ScoreMaxOA HighCoinJump`: duas moedas altas para ensinar timing de salto, sem Androids;
   cena `Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_HighCoinJump.unity` e
   YAML `Assets/EdgeRunner/ML/Config/ObjectAware/scoremax_oa_high_coin_jump.yaml`.
+- `ScoreMaxOA StaticAndroidAvoid`: um Android estatico funciona como perigo opcional;
+  o objetivo principal continua a ser o Goal, contacto lateral termina o episodio e
+  stomp e permitido sem ser obrigatorio. Cena
+  `Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_StaticAndroidAvoid.unity` e YAML
+  `Assets/EdgeRunner/ML/Config/ObjectAware/scoremax_oa_static_android_avoid.yaml`.
+  Esta fase deve ser treinada a partir de `TraversalBase02`.
+- `ScoreMaxOA StaticAndroidStomp`: um Android estatico e objetivo obrigatorio;
+  o agente deve aproxima-lo, mata-lo por stomp e so depois seguir para o Goal bloqueado.
+  Cena `Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_StaticAndroidStomp.unity`
+  e YAML `Assets/EdgeRunner/ML/Config/ObjectAware/scoremax_oa_static_android_stomp.yaml`.
+  Deve ser treinada preferencialmente a partir de `TraversalBase02`, nao de
+  `StaticAndroidAvoid01`, para nao herdar a politica de simplesmente saltar por cima.
 - LowCoinRun e HighCoinJump so devem ser treinadas depois de TraversalBase estar
   validada e treinada; ambas mantem Behavior `EdgeRunnerV5ScoreMaxObjectAware`,
   111 observacoes e actions `[3,2,2]`.

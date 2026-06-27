@@ -18,6 +18,20 @@ public static class BuildER_V5_ObjectAwareScene
     private const float HighCoinJumpGoalX = 18f;
     private const float HighCoinJumpMinimumCoinSpacing = 8.5f;
     private const float HighCoinJumpSameJumpPenalty = -2f;
+    private const float StaticAndroidAvoidAndroidX = 6.5f;
+    private const float StaticAndroidAvoidGoalX = 13.5f;
+    private const float StaticAndroidAvoidSideHitPenalty = -6f;
+    private const float StaticAndroidAvoidStompReward = 0.5f;
+    private const float StaticAndroidStompAndroidX = 6.5f;
+    private const float StaticAndroidStompGoalX = 13.5f;
+    private const float StaticAndroidStompReward = 5f;
+    private const float StaticAndroidStompSideHitPenalty = -6f;
+    private const float StaticAndroidStompMissedPenalty = -3f;
+    private const float StaticAndroidStompLockedGoalPenalty = -2f;
+    private const float StaticAndroidStompApproachReward = 0.01f;
+    private const float StaticAndroidStompWindowReward = 0.05f;
+    private const float StaticAndroidStompWindowRange = 3.5f;
+    private const float StaticAndroidStompMissedForwardMargin = 2.5f;
 
     private const string TraversalScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_TraversalBase.unity";
@@ -25,6 +39,10 @@ public static class BuildER_V5_ObjectAwareScene
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_LowCoinRun.unity";
     private const string HighCoinJumpScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_HighCoinJump.unity";
+    private const string StaticAndroidAvoidScenePath =
+        "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_StaticAndroidAvoid.unity";
+    private const string StaticAndroidStompScenePath =
+        "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_StaticAndroidStomp.unity";
     private const string PlayerPrefabPath =
         "Assets/EdgeRunner/Prefabs/Agent/Player_V5.prefab";
     private const string GroundPrefabPath =
@@ -33,6 +51,8 @@ public static class BuildER_V5_ObjectAwareScene
         "Assets/EdgeRunner/Prefabs/Environment/Goal.prefab";
     private const string DeathZonePrefabPath =
         "Assets/EdgeRunner/Prefabs/Environment/DeathZone.prefab";
+    private const string AndroidEnemyPrefabPath =
+        "Assets/EdgeRunner/Prefabs/Demo/DemoAndroidEnemy.prefab";
 
     [MenuItem("EdgeRunner/Training/ObjectAware/Build ScoreMaxOA TraversalBase")]
     public static void BuildTraversalBase()
@@ -136,6 +156,84 @@ public static class BuildER_V5_ObjectAwareScene
         CreateCamera(player.transform);
         ValidateCoinPhase(scene, player, EdgeRunnerObjectAwarePhase.HighCoinJump, 2);
         SaveAndKeepOpen(scene, HighCoinJumpScenePath, player, "HighCoinJump");
+    }
+
+    [MenuItem("EdgeRunner/Training/ObjectAware/Build ScoreMaxOA StaticAndroidAvoid")]
+    public static void BuildStaticAndroidAvoid()
+    {
+        if (!CanReplaceOpenScenes())
+        {
+            return;
+        }
+
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        BuildStaticAndroidAvoidContents(scene, out GameObject player);
+        SaveAndKeepOpen(scene, StaticAndroidAvoidScenePath, player, "StaticAndroidAvoid");
+    }
+
+    private static void BuildStaticAndroidAvoidContents(Scene scene, out GameObject player)
+    {
+        GameObject root = new GameObject("ER_V5_ScoreMaxOA_StaticAndroidAvoid");
+        Sprite sprite = GetSharedSprite();
+        CreatePlatform(root.transform, "StaticAndroidAvoid_Platform", 7f, 0f, 18f, sprite);
+
+        ScoreAttackManager manager = CreateStaticAndroidAvoidManager(root.transform);
+        GameObject goal = CreateGoal(new Vector3(StaticAndroidAvoidGoalX, 1.2f, 0f));
+        goal.name = "Goal_ScoreMaxOA_StaticAndroidAvoid";
+        goal.tag = "Goal";
+        goal.transform.localScale = new Vector3(1.2f, 2.4f, 1f);
+        SetObjectReference(manager, "goal", goal.transform);
+
+        player = CreateObjectAwarePlayer(new Vector3(0f, 1.15f, 0f), goal.transform);
+        ConfigureStaticAndroidAvoidPlayer(player, manager);
+        GameObject android = CreateStaticAndroid(
+            root.transform,
+            "StaticAndroidAvoid_Android_01",
+            new Vector3(StaticAndroidAvoidAndroidX, 1.02f, 0f),
+            sprite,
+            manager);
+
+        CreateDeathZone(7f, 26f, "DeathZone_ScoreMaxOA_StaticAndroidAvoid");
+        CreateCamera(player.transform);
+        ValidateStaticAndroidAvoid(scene, player, manager, android, goal);
+    }
+
+    [MenuItem("EdgeRunner/Training/ObjectAware/Build ScoreMaxOA StaticAndroidStomp")]
+    public static void BuildStaticAndroidStomp()
+    {
+        if (!CanReplaceOpenScenes())
+        {
+            return;
+        }
+
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        BuildStaticAndroidStompContents(scene, out GameObject player);
+        SaveAndKeepOpen(scene, StaticAndroidStompScenePath, player, "StaticAndroidStomp");
+    }
+
+    private static void BuildStaticAndroidStompContents(Scene scene, out GameObject player)
+    {
+        GameObject root = new GameObject("ER_V5_ScoreMaxOA_StaticAndroidStomp");
+        Sprite sprite = GetSharedSprite();
+        CreatePlatform(root.transform, "StaticAndroidStomp_Platform", 7f, 0f, 18f, sprite);
+
+        ScoreAttackManager manager = CreateStaticAndroidStompManager(root.transform);
+        GameObject goal = CreateLockedGoal(
+            "Goal_ScoreMaxOA_StaticAndroidStomp",
+            new Vector3(StaticAndroidStompGoalX, 1.2f, 0f),
+            manager);
+        player = CreateObjectAwarePlayer(new Vector3(0f, 1.15f, 0f), goal.transform);
+        ConfigureStaticAndroidStompPlayer(player, manager);
+        GameObject android = CreateStaticAndroid(
+            root.transform,
+            "StaticAndroidStomp_Android_01",
+            new Vector3(StaticAndroidStompAndroidX, 1.02f, 0f),
+            sprite,
+            manager);
+
+        CreateDeathZone(7f, 26f, "DeathZone_ScoreMaxOA_StaticAndroidStomp");
+        CreateCamera(player.transform);
+        ValidateStaticAndroidStomp(scene, player, manager, android, goal);
     }
 
     public static void BuildCoinPhasesBatch()
@@ -523,6 +621,314 @@ public static class BuildER_V5_ObjectAwareScene
         }
     }
 
+    private static void ValidateStaticAndroidAvoid(
+        Scene scene,
+        GameObject player,
+        ScoreAttackManager manager,
+        GameObject android,
+        GameObject goal)
+    {
+        const string phaseName = "StaticAndroidAvoid";
+        ValidateObjectAwarePlayer(player, phaseName);
+
+        if (CountSceneComponents<ScoreAttackManager>(scene) != 1 ||
+            CountSceneComponents<ScoreAttackCoin>(scene) != 0 ||
+            CountSceneComponents<ScoreAttackAndroid>(scene) != 1 ||
+            CountSceneComponents<ScoreAttackGoalLock>(scene) != 0 ||
+            CountSceneComponents<DemoAndroidPatrol>(scene) != 0)
+        {
+            throw new System.InvalidOperationException(
+                "StaticAndroidAvoid requires one static Android, zero coins, one manager, " +
+                "no patrol, and no GoalLock.");
+        }
+
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        ScoreAttackAndroid androidComponent = android != null
+            ? android.GetComponent<ScoreAttackAndroid>()
+            : null;
+        Rigidbody2D androidBody = android != null ? android.GetComponent<Rigidbody2D>() : null;
+        Collider2D androidCollider = android != null ? android.GetComponent<Collider2D>() : null;
+        BoxCollider2D platform = null;
+        BoxCollider2D[] colliders = GetSceneComponents<BoxCollider2D>(scene);
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            if (colliders[i].gameObject.name == "StaticAndroidAvoid_Platform")
+            {
+                platform = colliders[i];
+                break;
+            }
+        }
+
+        if (agent == null || manager == null || androidComponent == null ||
+            androidBody == null || androidBody.bodyType != RigidbodyType2D.Kinematic ||
+            androidCollider == null || !androidCollider.isTrigger || platform == null ||
+            goal == null)
+        {
+            throw new System.InvalidOperationException(
+                "StaticAndroidAvoid is missing its agent, static Android physics, platform, or Goal.");
+        }
+
+        SerializedObject serializedAgent = new SerializedObject(agent);
+        SerializedProperty phase = serializedAgent.FindProperty("objectAwarePhase");
+        SerializedProperty assignedManager = serializedAgent.FindProperty("scoreAttackManager");
+        SerializedProperty objectAwareGoal = serializedAgent.FindProperty("objectAwareGoal");
+        SerializedProperty rewardShaping = serializedAgent.FindProperty(
+            "enableObjectAwareRewardShaping");
+        SerializedProperty missedCoinEnd = serializedAgent.FindProperty(
+            "enableMissedCoinEpisodeEnd");
+        SerializedProperty contextualJumpMask = serializedAgent.FindProperty(
+            "enableContextualJumpMask");
+        SerializedProperty debugObservationCount = serializedAgent.FindProperty(
+            "debugObjectAwareObservationCount");
+        SerializedProperty debugNextObjective = serializedAgent.FindProperty(
+            "debugObjectAwareNextObjective");
+        SerializedProperty debugJumpContext = serializedAgent.FindProperty(
+            "debugObjectAwareJumpContext");
+        SerializedProperty debugGizmos = serializedAgent.FindProperty(
+            "debugObjectAwareGizmos");
+
+        if (phase == null ||
+            phase.enumValueIndex != (int)EdgeRunnerObjectAwarePhase.StaticAndroidAvoid ||
+            assignedManager == null || assignedManager.objectReferenceValue != manager ||
+            objectAwareGoal == null || objectAwareGoal.objectReferenceValue != goal.transform ||
+            rewardShaping == null || rewardShaping.boolValue ||
+            missedCoinEnd == null || missedCoinEnd.boolValue ||
+            contextualJumpMask == null || contextualJumpMask.boolValue ||
+            debugObservationCount == null || debugObservationCount.boolValue ||
+            debugNextObjective == null || debugNextObjective.boolValue ||
+            debugJumpContext == null || debugJumpContext.boolValue ||
+            debugGizmos == null || debugGizmos.boolValue)
+        {
+            throw new System.InvalidOperationException(
+                "StaticAndroidAvoid has the wrong ObjectAware phase, references, or debug flags.");
+        }
+
+        SerializedObject serializedManager = new SerializedObject(manager);
+        SerializedProperty managerAgent = serializedManager.FindProperty("agent");
+        SerializedProperty requireEnemies = serializedManager.FindProperty(
+            "requireEnemiesForGoal");
+        SerializedProperty randomize = serializedManager.FindProperty(
+            "randomizeObjectPositionsOnReset");
+        SerializedProperty minCoins = serializedManager.FindProperty("minActiveCoins");
+        SerializedProperty maxCoins = serializedManager.FindProperty("maxActiveCoins");
+        SerializedProperty minEnemies = serializedManager.FindProperty("minActiveEnemies");
+        SerializedProperty maxEnemies = serializedManager.FindProperty("maxActiveEnemies");
+        SerializedProperty stompReward = serializedManager.FindProperty("enemyKillReward");
+        SerializedProperty sideHitPenalty = serializedManager.FindProperty("enemySideHitPenalty");
+        SerializedProperty finalReward = serializedManager.FindProperty("finalCompletionReward");
+
+        if (managerAgent == null || managerAgent.objectReferenceValue != agent ||
+            requireEnemies == null || requireEnemies.boolValue ||
+            randomize == null || randomize.boolValue ||
+            minCoins == null || minCoins.intValue != 0 ||
+            maxCoins == null || maxCoins.intValue != 0 ||
+            minEnemies == null || minEnemies.intValue != 1 ||
+            maxEnemies == null || maxEnemies.intValue != 1 ||
+            stompReward == null ||
+            Mathf.Abs(stompReward.floatValue - StaticAndroidAvoidStompReward) > 0.0001f ||
+            sideHitPenalty == null ||
+            Mathf.Abs(sideHitPenalty.floatValue - StaticAndroidAvoidSideHitPenalty) > 0.0001f ||
+            finalReward == null || Mathf.Abs(finalReward.floatValue) > 0.0001f)
+        {
+            throw new System.InvalidOperationException(
+                "StaticAndroidAvoid manager must reset one optional Android with stomp=0.5, " +
+                "sideHit=-6, and no manager Goal reward.");
+        }
+
+        SerializedObject serializedAndroid = new SerializedObject(androidComponent);
+        SerializedProperty androidManager = serializedAndroid.FindProperty("manager");
+        float pathMinX = Mathf.Min(player.transform.position.x, android.transform.position.x);
+        float pathMaxX = Mathf.Max(goal.transform.position.x, android.transform.position.x);
+        bool layoutValid =
+            Mathf.Abs(android.transform.position.x - StaticAndroidAvoidAndroidX) <= 0.0001f &&
+            Mathf.Abs(goal.transform.position.x - StaticAndroidAvoidGoalX) <= 0.0001f &&
+            player.transform.position.x < android.transform.position.x &&
+            android.transform.position.x < goal.transform.position.x &&
+            platform.bounds.min.x <= pathMinX &&
+            platform.bounds.max.x >= pathMaxX;
+
+        if (androidManager == null || androidManager.objectReferenceValue != manager || !layoutValid)
+        {
+            throw new System.InvalidOperationException(
+                "StaticAndroidAvoid Android/Goal ordering or manager reference is invalid.");
+        }
+
+        ValidateCommonSceneObjects(scene, phaseName);
+    }
+
+    private static void ValidateStaticAndroidStomp(
+        Scene scene,
+        GameObject player,
+        ScoreAttackManager manager,
+        GameObject android,
+        GameObject goal)
+    {
+        const string phaseName = "StaticAndroidStomp";
+        ValidateObjectAwarePlayer(player, phaseName);
+
+        ScoreAttackGoalLock[] goalLocks = GetSceneComponents<ScoreAttackGoalLock>(scene);
+        if (CountSceneComponents<ScoreAttackManager>(scene) != 1 ||
+            CountSceneComponents<ScoreAttackCoin>(scene) != 0 ||
+            CountSceneComponents<ScoreAttackAndroid>(scene) != 1 ||
+            goalLocks.Length != 1 ||
+            CountSceneComponents<DemoAndroidPatrol>(scene) != 0)
+        {
+            throw new System.InvalidOperationException(
+                "StaticAndroidStomp requires one static Android, zero coins, one manager, " +
+                "one GoalLock, and no patrol.");
+        }
+
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        ScoreAttackAndroid androidComponent = android != null
+            ? android.GetComponent<ScoreAttackAndroid>()
+            : null;
+        Rigidbody2D androidBody = android != null ? android.GetComponent<Rigidbody2D>() : null;
+        Collider2D androidCollider = android != null ? android.GetComponent<Collider2D>() : null;
+        BoxCollider2D platform = null;
+        BoxCollider2D[] colliders = GetSceneComponents<BoxCollider2D>(scene);
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            if (colliders[i].gameObject.name == "StaticAndroidStomp_Platform")
+            {
+                platform = colliders[i];
+                break;
+            }
+        }
+
+        if (agent == null || manager == null || androidComponent == null ||
+            androidBody == null || androidBody.bodyType != RigidbodyType2D.Kinematic ||
+            androidCollider == null || !androidCollider.isTrigger || platform == null ||
+            goal == null)
+        {
+            throw new System.InvalidOperationException(
+                "StaticAndroidStomp is missing its agent, static Android physics, platform, or Goal.");
+        }
+
+        SerializedObject serializedAgent = new SerializedObject(agent);
+        SerializedProperty phase = serializedAgent.FindProperty("objectAwarePhase");
+        SerializedProperty assignedManager = serializedAgent.FindProperty("scoreAttackManager");
+        SerializedProperty objectAwareGoal = serializedAgent.FindProperty("objectAwareGoal");
+        SerializedProperty rewardShaping = serializedAgent.FindProperty(
+            "enableObjectAwareRewardShaping");
+        SerializedProperty missedCoinEnd = serializedAgent.FindProperty(
+            "enableMissedCoinEpisodeEnd");
+        SerializedProperty contextualJumpMask = serializedAgent.FindProperty(
+            "enableContextualJumpMask");
+        SerializedProperty approachReward = serializedAgent.FindProperty("enemyApproachReward");
+        SerializedProperty stompWindowReward = serializedAgent.FindProperty(
+            "enemyStompWindowReward");
+        SerializedProperty stompWindowRange = serializedAgent.FindProperty(
+            "enemyStompWindowHorizontalRange");
+        SerializedProperty missedEnemyPenalty = serializedAgent.FindProperty(
+            "missedEnemyPenalty");
+        SerializedProperty missedEnemyMargin = serializedAgent.FindProperty(
+            "missedEnemyForwardMargin");
+        SerializedProperty endOnMissedEnemy = serializedAgent.FindProperty(
+            "endEpisodeOnMissedEnemy");
+        SerializedProperty jumpSpam = serializedAgent.FindProperty("jumpSpamPenalty");
+        SerializedProperty debugObservationCount = serializedAgent.FindProperty(
+            "debugObjectAwareObservationCount");
+        SerializedProperty debugNextObjective = serializedAgent.FindProperty(
+            "debugObjectAwareNextObjective");
+        SerializedProperty debugJumpContext = serializedAgent.FindProperty(
+            "debugObjectAwareJumpContext");
+        SerializedProperty debugGizmos = serializedAgent.FindProperty(
+            "debugObjectAwareGizmos");
+
+        if (phase == null ||
+            phase.enumValueIndex != (int)EdgeRunnerObjectAwarePhase.StaticAndroidStomp ||
+            assignedManager == null || assignedManager.objectReferenceValue != manager ||
+            objectAwareGoal == null || objectAwareGoal.objectReferenceValue != goal.transform ||
+            rewardShaping == null || !rewardShaping.boolValue ||
+            missedCoinEnd == null || missedCoinEnd.boolValue ||
+            contextualJumpMask == null || contextualJumpMask.boolValue ||
+            approachReward == null ||
+            Mathf.Abs(approachReward.floatValue - StaticAndroidStompApproachReward) > 0.0001f ||
+            stompWindowReward == null ||
+            Mathf.Abs(stompWindowReward.floatValue - StaticAndroidStompWindowReward) > 0.0001f ||
+            stompWindowRange == null ||
+            Mathf.Abs(stompWindowRange.floatValue - StaticAndroidStompWindowRange) > 0.0001f ||
+            missedEnemyPenalty == null ||
+            Mathf.Abs(missedEnemyPenalty.floatValue - StaticAndroidStompMissedPenalty) > 0.0001f ||
+            missedEnemyMargin == null ||
+            Mathf.Abs(missedEnemyMargin.floatValue - StaticAndroidStompMissedForwardMargin) > 0.0001f ||
+            endOnMissedEnemy == null || !endOnMissedEnemy.boolValue ||
+            jumpSpam == null || Mathf.Abs(jumpSpam.floatValue + 0.01f) > 0.0001f ||
+            debugObservationCount == null || debugObservationCount.boolValue ||
+            debugNextObjective == null || debugNextObjective.boolValue ||
+            debugJumpContext == null || debugJumpContext.boolValue ||
+            debugGizmos == null || debugGizmos.boolValue)
+        {
+            throw new System.InvalidOperationException(
+                "StaticAndroidStomp has the wrong phase, shaping, missed-enemy rule, or debug flags.");
+        }
+
+        SerializedObject serializedManager = new SerializedObject(manager);
+        SerializedProperty managerAgent = serializedManager.FindProperty("agent");
+        SerializedProperty requireEnemies = serializedManager.FindProperty(
+            "requireEnemiesForGoal");
+        SerializedProperty randomize = serializedManager.FindProperty(
+            "randomizeObjectPositionsOnReset");
+        SerializedProperty minCoins = serializedManager.FindProperty("minActiveCoins");
+        SerializedProperty maxCoins = serializedManager.FindProperty("maxActiveCoins");
+        SerializedProperty minEnemies = serializedManager.FindProperty("minActiveEnemies");
+        SerializedProperty maxEnemies = serializedManager.FindProperty("maxActiveEnemies");
+        SerializedProperty stompReward = serializedManager.FindProperty("enemyKillReward");
+        SerializedProperty sideHitPenalty = serializedManager.FindProperty("enemySideHitPenalty");
+        SerializedProperty finalReward = serializedManager.FindProperty("finalCompletionReward");
+        SerializedProperty lockedGoalPenalty = serializedManager.FindProperty(
+            "prematureGoalPenalty");
+        SerializedProperty endOnLockedGoal = serializedManager.FindProperty(
+            "endEpisodeOnPrematureGoal");
+
+        if (managerAgent == null || managerAgent.objectReferenceValue != agent ||
+            requireEnemies == null || !requireEnemies.boolValue ||
+            randomize == null || randomize.boolValue ||
+            minCoins == null || minCoins.intValue != 0 ||
+            maxCoins == null || maxCoins.intValue != 0 ||
+            minEnemies == null || minEnemies.intValue != 1 ||
+            maxEnemies == null || maxEnemies.intValue != 1 ||
+            stompReward == null ||
+            Mathf.Abs(stompReward.floatValue - StaticAndroidStompReward) > 0.0001f ||
+            sideHitPenalty == null ||
+            Mathf.Abs(sideHitPenalty.floatValue - StaticAndroidStompSideHitPenalty) > 0.0001f ||
+            finalReward == null || Mathf.Abs(finalReward.floatValue - 10f) > 0.0001f ||
+            lockedGoalPenalty == null ||
+            Mathf.Abs(lockedGoalPenalty.floatValue - StaticAndroidStompLockedGoalPenalty) > 0.0001f ||
+            endOnLockedGoal == null || !endOnLockedGoal.boolValue)
+        {
+            throw new System.InvalidOperationException(
+                "StaticAndroidStomp manager must require the Android, reward stomp=5, " +
+                "penalize sideHit=-6/lockedGoal=-2, and end on locked Goal.");
+        }
+
+        SerializedObject serializedAndroid = new SerializedObject(androidComponent);
+        SerializedProperty androidManager = serializedAndroid.FindProperty("manager");
+        SerializedObject serializedGoalLock = new SerializedObject(goalLocks[0]);
+        SerializedProperty goalLockManager = serializedGoalLock.FindProperty("manager");
+        float pathMinX = Mathf.Min(player.transform.position.x, android.transform.position.x);
+        float pathMaxX = Mathf.Max(goal.transform.position.x, android.transform.position.x);
+        bool layoutValid =
+            Mathf.Abs(android.transform.position.x - StaticAndroidStompAndroidX) <= 0.0001f &&
+            Mathf.Abs(goal.transform.position.x - StaticAndroidStompGoalX) <= 0.0001f &&
+            player.transform.position.x < android.transform.position.x &&
+            android.transform.position.x < goal.transform.position.x &&
+            platform.bounds.min.x <= pathMinX &&
+            platform.bounds.max.x >= pathMaxX;
+
+        if (androidManager == null || androidManager.objectReferenceValue != manager ||
+            goalLockManager == null || goalLockManager.objectReferenceValue != manager ||
+            !layoutValid)
+        {
+            throw new System.InvalidOperationException(
+                "StaticAndroidStomp Android/Goal ordering or manager references are invalid.");
+        }
+
+        ValidateCommonSceneObjects(scene, phaseName);
+    }
+
     private static void ValidateObjectAwarePlayer(GameObject player, string phaseName)
     {
         EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent =
@@ -723,6 +1129,50 @@ public static class BuildER_V5_ObjectAwareScene
         return manager;
     }
 
+    private static ScoreAttackManager CreateStaticAndroidAvoidManager(Transform parent)
+    {
+        GameObject managerObject = new GameObject("ScoreMaxOA_StaticAndroidAvoid_Manager");
+        managerObject.transform.SetParent(parent, false);
+        ScoreAttackManager manager = managerObject.AddComponent<ScoreAttackManager>();
+        SetBool(manager, "resetOnStart", true);
+        SetBool(manager, "randomizeObjectPositionsOnReset", false);
+        SetBool(manager, "requireEnemiesForGoal", false);
+        SetInt(manager, "minActiveCoins", 0);
+        SetInt(manager, "maxActiveCoins", 0);
+        SetInt(manager, "minActiveEnemies", 1);
+        SetInt(manager, "maxActiveEnemies", 1);
+        SetFloat(manager, "coinReward", 0f);
+        SetFloat(manager, "enemyKillReward", StaticAndroidAvoidStompReward);
+        SetFloat(manager, "enemySideHitPenalty", StaticAndroidAvoidSideHitPenalty);
+        SetFloat(manager, "finalCompletionReward", 0f);
+        SetFloat(manager, "prematureGoalPenalty", 0f);
+        SetBool(manager, "endEpisodeOnPrematureGoal", false);
+        SetBool(manager, "debugLogs", false);
+        return manager;
+    }
+
+    private static ScoreAttackManager CreateStaticAndroidStompManager(Transform parent)
+    {
+        GameObject managerObject = new GameObject("ScoreMaxOA_StaticAndroidStomp_Manager");
+        managerObject.transform.SetParent(parent, false);
+        ScoreAttackManager manager = managerObject.AddComponent<ScoreAttackManager>();
+        SetBool(manager, "resetOnStart", true);
+        SetBool(manager, "randomizeObjectPositionsOnReset", false);
+        SetBool(manager, "requireEnemiesForGoal", true);
+        SetInt(manager, "minActiveCoins", 0);
+        SetInt(manager, "maxActiveCoins", 0);
+        SetInt(manager, "minActiveEnemies", 1);
+        SetInt(manager, "maxActiveEnemies", 1);
+        SetFloat(manager, "coinReward", 0f);
+        SetFloat(manager, "enemyKillReward", StaticAndroidStompReward);
+        SetFloat(manager, "enemySideHitPenalty", StaticAndroidStompSideHitPenalty);
+        SetFloat(manager, "finalCompletionReward", 10f);
+        SetFloat(manager, "prematureGoalPenalty", StaticAndroidStompLockedGoalPenalty);
+        SetBool(manager, "endEpisodeOnPrematureGoal", true);
+        SetBool(manager, "debugLogs", false);
+        return manager;
+    }
+
     private static void ConfigureCoinPhasePlayer(
         GameObject player,
         ScoreAttackManager manager,
@@ -803,6 +1253,119 @@ public static class BuildER_V5_ObjectAwareScene
         SetBool(agent, "debugObjectAwareGizmos", false);
     }
 
+    private static void ConfigureStaticAndroidAvoidPlayer(
+        GameObject player,
+        ScoreAttackManager manager)
+    {
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        SetObjectReference(agent, "scoreAttackManager", manager);
+        SetObjectReference(manager, "agent", agent);
+        SetInt(agent, "groundLayer", LayerMask.GetMask("Ground"));
+        SetBool(agent, "maskUselessJumps", false);
+        SetInt(agent, "objectAwarePhase", (int)EdgeRunnerObjectAwarePhase.StaticAndroidAvoid);
+        SetBool(agent, "enableObjectAwareRewardShaping", false);
+        SetBool(agent, "enableMissedCoinEpisodeEnd", false);
+        SetBool(agent, "enableContextualJumpMask", false);
+        SetBool(agent, "enforceLowCoinRunGroundCollection", false);
+        SetBool(agent, "requireGroundedBetweenHighCoins", false);
+        SetBool(agent, "endEpisodeOnSameJumpSecondCoin", false);
+        SetFloat(agent, "androidContextWindowX", 3.5f);
+        SetFloat(agent, "androidVerticalTolerance", 1.5f);
+
+        SetFloat(agent, "goalReward", 10f);
+        SetFloat(agent, "stepPenalty", -0.0003f);
+        SetFloat(agent, "progressRewardScale", 0.05f);
+        SetFloat(agent, "maxProgressRewardPerStep", 0.05f);
+        SetFloat(agent, "milestoneReward", 0.02f);
+        SetFloat(agent, "backtrackPenalty", -0.006f);
+        SetFloat(agent, "jumpPenalty", -0.0002f);
+        SetFloat(agent, "idleJumpPenalty", -0.01f);
+        SetFloat(agent, "flatGroundJumpPenalty", 0f);
+        SetFloat(agent, "earlyGapJumpPenalty", 0f);
+        SetFloat(agent, "uselessJumpPenalty", 0f);
+        SetFloat(agent, "gapJumpReward", 0f);
+        SetFloat(agent, "gapLandingReward", 0f);
+        SetFloat(agent, "lowMomentumJumpPenalty", 0f);
+        SetFloat(agent, "forwardActionReward", 0.003f);
+        SetFloat(agent, "forwardVelocityReward", 0.002f);
+        SetFloat(agent, "idlePenalty", -0.002f);
+        SetFloat(agent, "wrongDirectionActionPenalty", -0.006f);
+        SetFloat(agent, "distanceProgressRewardScale", 0.08f);
+        SetFloat(agent, "maxDistanceProgressReward", 0.08f);
+        SetFloat(agent, "distanceRegressionPenaltyScale", 0.04f);
+        SetFloat(agent, "maxDistanceRegressionPenalty", -0.04f);
+        SetFloat(agent, "noProgressTimeLimit", 10f);
+        SetFloat(agent, "stuckTimeLimit", 10f);
+        SetFloat(agent, "maxEpisodeTime", 45f);
+
+        SetBool(agent, "debugObjectAwareObservationCount", false);
+        SetBool(agent, "debugObjectAwareNextObjective", false);
+        SetBool(agent, "debugObjectAwareJumpContext", false);
+        SetBool(agent, "debugObjectAwareGizmos", false);
+    }
+
+    private static void ConfigureStaticAndroidStompPlayer(
+        GameObject player,
+        ScoreAttackManager manager)
+    {
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        SetObjectReference(agent, "scoreAttackManager", manager);
+        SetObjectReference(manager, "agent", agent);
+        SetInt(agent, "groundLayer", LayerMask.GetMask("Ground"));
+        SetBool(agent, "maskUselessJumps", false);
+        SetInt(agent, "objectAwarePhase", (int)EdgeRunnerObjectAwarePhase.StaticAndroidStomp);
+        SetBool(agent, "enableObjectAwareRewardShaping", true);
+        SetBool(agent, "enableMissedCoinEpisodeEnd", false);
+        SetBool(agent, "enableContextualJumpMask", false);
+        SetBool(agent, "enforceLowCoinRunGroundCollection", false);
+        SetBool(agent, "requireGroundedBetweenHighCoins", false);
+        SetBool(agent, "endEpisodeOnSameJumpSecondCoin", false);
+        SetFloat(agent, "androidContextWindowX", StaticAndroidStompWindowRange);
+        SetFloat(agent, "androidVerticalTolerance", 1.5f);
+        SetFloat(agent, "enemyApproachReward", StaticAndroidStompApproachReward);
+        SetFloat(agent, "enemyStompWindowReward", StaticAndroidStompWindowReward);
+        SetFloat(agent, "enemyStompWindowHorizontalRange", StaticAndroidStompWindowRange);
+        SetFloat(agent, "missedEnemyPenalty", StaticAndroidStompMissedPenalty);
+        SetFloat(agent, "missedEnemyForwardMargin", StaticAndroidStompMissedForwardMargin);
+        SetBool(agent, "endEpisodeOnMissedEnemy", true);
+        SetFloat(agent, "jumpSpamPenalty", -0.01f);
+
+        // The Android is the curriculum objective until stomped; disable Goal progress
+        // shaping so the policy is not rewarded for simply running past it.
+        SetFloat(agent, "goalReward", 0f);
+        SetFloat(agent, "progressRewardScale", 0f);
+        SetFloat(agent, "maxProgressRewardPerStep", 0f);
+        SetFloat(agent, "milestoneReward", 0f);
+        SetFloat(agent, "backtrackPenalty", 0f);
+        SetFloat(agent, "jumpPenalty", 0f);
+        SetFloat(agent, "idleJumpPenalty", 0f);
+        SetFloat(agent, "flatGroundJumpPenalty", 0f);
+        SetFloat(agent, "earlyGapJumpPenalty", 0f);
+        SetFloat(agent, "uselessJumpPenalty", 0f);
+        SetFloat(agent, "gapJumpReward", 0f);
+        SetFloat(agent, "gapLandingReward", 0f);
+        SetFloat(agent, "lowMomentumJumpPenalty", 0f);
+        SetFloat(agent, "forwardActionReward", 0f);
+        SetFloat(agent, "forwardVelocityReward", 0f);
+        SetFloat(agent, "wrongDirectionActionPenalty", 0f);
+        SetFloat(agent, "distanceProgressRewardScale", 0f);
+        SetFloat(agent, "maxDistanceProgressReward", 0f);
+        SetFloat(agent, "distanceRegressionPenaltyScale", 0f);
+        SetFloat(agent, "maxDistanceRegressionPenalty", 0f);
+        SetFloat(agent, "stepPenalty", -0.001f);
+        SetFloat(agent, "idlePenalty", -0.001f);
+        SetFloat(agent, "noProgressTimeLimit", 15f);
+        SetFloat(agent, "stuckTimeLimit", 15f);
+        SetFloat(agent, "maxEpisodeTime", 60f);
+
+        SetBool(agent, "debugObjectAwareObservationCount", false);
+        SetBool(agent, "debugObjectAwareNextObjective", false);
+        SetBool(agent, "debugObjectAwareJumpContext", false);
+        SetBool(agent, "debugObjectAwareGizmos", false);
+    }
+
     private static GameObject CreateLockedGoal(
         string name,
         Vector3 position,
@@ -846,6 +1409,123 @@ public static class BuildER_V5_ObjectAwareScene
 
         ScoreAttackCoin coinScript = coin.AddComponent<ScoreAttackCoin>();
         coinScript.SetManager(manager);
+    }
+
+    private static GameObject CreateStaticAndroid(
+        Transform parent,
+        string name,
+        Vector3 position,
+        Sprite fallbackSprite,
+        ScoreAttackManager manager)
+    {
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(AndroidEnemyPrefabPath);
+        GameObject android = prefab != null
+            ? PrefabUtility.InstantiatePrefab(prefab) as GameObject
+            : CreateFallbackAndroid(fallbackSprite);
+        if (android == null)
+        {
+            throw new System.InvalidOperationException("Static Android could not be created.");
+        }
+
+        android.name = name;
+        android.transform.SetParent(parent, false);
+        android.transform.position = position;
+        android.transform.localScale = new Vector3(0.95f, 1.2f, 1f);
+
+        Collider2D collider = android.GetComponent<Collider2D>();
+        if (collider == null)
+        {
+            collider = android.AddComponent<BoxCollider2D>();
+        }
+
+        collider.enabled = true;
+        collider.isTrigger = true;
+
+        Rigidbody2D body = android.GetComponent<Rigidbody2D>();
+        if (body == null)
+        {
+            body = android.AddComponent<Rigidbody2D>();
+        }
+
+        body.bodyType = RigidbodyType2D.Kinematic;
+        body.gravityScale = 0f;
+        body.freezeRotation = true;
+
+        DisableDemoAndroidScripts(android);
+        RemoveAndroidPatrol(android);
+
+        ScoreAttackAndroid androidComponent = android.GetComponent<ScoreAttackAndroid>();
+        if (androidComponent == null)
+        {
+            androidComponent = android.AddComponent<ScoreAttackAndroid>();
+        }
+
+        androidComponent.enabled = true;
+        androidComponent.SetManager(manager);
+        SetFloat(androidComponent, "stompHeightOffset", 0.10f);
+        SetFloat(androidComponent, "stompTopTolerance", 0.45f);
+        SetBool(androidComponent, "debugLogs", false);
+        return android;
+    }
+
+    private static GameObject CreateFallbackAndroid(Sprite sprite)
+    {
+        GameObject android = new GameObject("StaticAndroidAvoid_Fallback");
+        SpriteRenderer renderer = android.AddComponent<SpriteRenderer>();
+        renderer.sprite = sprite;
+        renderer.color = new Color(0.58f, 0.64f, 0.68f, 1f);
+        renderer.sortingOrder = 7;
+        android.AddComponent<BoxCollider2D>();
+        android.AddComponent<Rigidbody2D>();
+        return android;
+    }
+
+    private static void RemoveAndroidPatrol(GameObject android)
+    {
+        DemoAndroidPatrol[] patrols = android.GetComponentsInChildren<DemoAndroidPatrol>(true);
+        for (int i = 0; i < patrols.Length; i++)
+        {
+            if (patrols[i] != null)
+            {
+                Object.DestroyImmediate(patrols[i]);
+            }
+        }
+    }
+
+    private static void DisableDemoAndroidScripts(GameObject android)
+    {
+        DemoEnemyHazard[] hazards = android.GetComponentsInChildren<DemoEnemyHazard>(true);
+        for (int i = 0; i < hazards.Length; i++)
+        {
+            hazards[i].enabled = false;
+        }
+
+        StompableAndroidEnemy[] stompEnemies =
+            android.GetComponentsInChildren<StompableAndroidEnemy>(true);
+        for (int i = 0; i < stompEnemies.Length; i++)
+        {
+            stompEnemies[i].enabled = false;
+        }
+
+        StompableAndroidStompZone[] stompZones =
+            android.GetComponentsInChildren<StompableAndroidStompZone>(true);
+        for (int i = 0; i < stompZones.Length; i++)
+        {
+            stompZones[i].enabled = false;
+        }
+
+        StompableAndroidSideHazard[] sideHazards =
+            android.GetComponentsInChildren<StompableAndroidSideHazard>(true);
+        for (int i = 0; i < sideHazards.Length; i++)
+        {
+            sideHazards[i].enabled = false;
+        }
+
+        EdgeRunnerEnemyMarker marker = android.GetComponent<EdgeRunnerEnemyMarker>();
+        if (marker != null)
+        {
+            marker.SetAffectsAgent(false);
+        }
     }
 
     private static void CreatePlatform(
