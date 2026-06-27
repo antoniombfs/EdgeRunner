@@ -27,6 +27,39 @@ public class EdgeRunnerAgentV5ScoreMax : EdgeRunnerAgentV5
     [SerializeField] private float maxProgressToNextObjectiveReward = 0.025f;
     [SerializeField] private float maxRegressionFromNextObjectivePenalty = -0.015f;
 
+    [Header("ScoreMax Coin Tutorial")]
+    [SerializeField] private float missedCoinPenalty = 0f;
+    [SerializeField] private bool endEpisodeOnMissedCoinIntro = false;
+    [SerializeField] private float missedCoinForwardMargin = 2f;
+    [SerializeField] private float coinJumpCueReward = 0f;
+    [SerializeField] private float coinJumpCueHorizontalRange = 1.5f;
+    [SerializeField] private float coinJumpCueMinVerticalOffset = 0.15f;
+    [SerializeField] private bool detectAnyMissedObjectiveBehind = false;
+
+    [Header("ScoreMax Enemy Tutorial")]
+    [SerializeField] private float missedEnemyPenalty = 0f;
+    [SerializeField] private bool endEpisodeOnMissedEnemyEasy = false;
+    [SerializeField] private float missedEnemyForwardMargin = 2.5f;
+    [SerializeField] private bool requireCoinsCompleteBeforeMissedEnemyCheck = true;
+    [SerializeField] private float enemyStompCueReward = 0f;
+    [SerializeField] private float enemyStompCueHorizontalRange = 2.25f;
+
+    [Header("ScoreMax Contextual Shaping")]
+    [SerializeField] private bool enableScoreMaxContextualShaping = false;
+    [SerializeField] private float scoreMaxUselessJumpPenalty = -0.003f;
+    [SerializeField] private float lowCoinHeightThreshold = 0.45f;
+    [SerializeField] private float lowCoinApproachRange = 3.0f;
+    [SerializeField] private float groundCoinApproachReward = 0f;
+    [SerializeField] private float lowCoinUnnecessaryJumpPenalty = 0f;
+    [SerializeField] private float contextualCoinJumpRange = 2.25f;
+    [SerializeField] private float contextualEnemyJumpRange = 2.75f;
+    [SerializeField] private float contextualGapProbeDistance = 1.25f;
+    [SerializeField] private float contextualGapProbeDepth = 2.0f;
+    [SerializeField] private float enemyStompAlignmentReward = 0.08f;
+    [SerializeField] private float enemyStompAlignmentHorizontalTolerance = 0.9f;
+    [SerializeField] private float enemyStompAlignmentMinHeight = 0.35f;
+    [SerializeField] private float enemyStompAlignmentMaxUpwardVelocity = 0.1f;
+
     [Header("ScoreMax Enemy Rays")]
     [SerializeField] private float enemyRayRange = 6f;
     [SerializeField] private float frontLowRayHeight = 0.35f;
@@ -37,9 +70,11 @@ public class EdgeRunnerAgentV5ScoreMax : EdgeRunnerAgentV5
     [Header("ScoreMax Debug")]
     [SerializeField] private bool debugScoreMaxObservations = false;
     [SerializeField] private bool debugScoreMaxObservationCount = false;
+    [SerializeField] private bool debugScoreMaxObjectives = false;
     [SerializeField] private bool debugScoreMaxHeuristicInput = false;
     [SerializeField] private bool debugScoreMaxGroundCheck = false;
     [SerializeField] private bool debugScoreMaxRewards = false;
+    [SerializeField] private bool debugScoreMaxNextObjective = false;
     [SerializeField] private float debugScoreMaxLogInterval = 1.0f;
 
     private static readonly FieldInfo BaseRigidbodyField =
@@ -62,11 +97,20 @@ public class EdgeRunnerAgentV5ScoreMax : EdgeRunnerAgentV5
         typeof(VectorSensor).GetField("m_Observations", BindingFlags.Instance | BindingFlags.NonPublic);
 
     private float previousNextObjectiveDistance = -1f;
+    private Transform previousNextObjectiveTarget;
+    private ScoreMaxObjectiveType previousNextObjectiveType = ScoreMaxObjectiveType.None;
+    private Transform rewardedCoinJumpCueTarget;
+    private Transform rewardedEnemyStompCueTarget;
+    private Transform rewardedEnemyStompAlignmentTarget;
     private float nextScoreMaxDebugLogTime;
+    private float nextScoreMaxObjectiveDebugLogTime;
     private float nextScoreMaxHeuristicDebugLogTime;
     private float nextScoreMaxGroundDebugLogTime;
+    private float nextScoreMaxNextObjectiveDebugLogTime;
     private bool loggedScoreMaxObservationCountThisEpisode;
     private bool warnedScoreMaxObservationMismatchThisEpisode;
+    private bool missedCoinIntroPenaltyApplied;
+    private bool missedEnemyEasyPenaltyApplied;
 
     public override void Initialize()
     {
@@ -79,7 +123,14 @@ public class EdgeRunnerAgentV5ScoreMax : EdgeRunnerAgentV5
         ResolveScoreMaxReferences();
         base.OnEpisodeBegin();
         ResolveScoreMaxReferences();
-        previousNextObjectiveDistance = GetCurrentNextObjectiveDistance();
+        previousNextObjectiveDistance = -1f;
+        previousNextObjectiveTarget = null;
+        previousNextObjectiveType = ScoreMaxObjectiveType.None;
+        rewardedCoinJumpCueTarget = null;
+        rewardedEnemyStompCueTarget = null;
+        rewardedEnemyStompAlignmentTarget = null;
+        missedCoinIntroPenaltyApplied = false;
+        missedEnemyEasyPenaltyApplied = false;
         loggedScoreMaxObservationCountThisEpisode = false;
         warnedScoreMaxObservationMismatchThisEpisode = false;
     }
@@ -122,20 +173,26 @@ public class EdgeRunnerAgentV5ScoreMax : EdgeRunnerAgentV5
                 $"complete={objectivesComplete} expectedObs={DefaultExpectedObservationSize}",
                 this);
         }
+
+        LogScoreMaxObjectiveDebug(coinsRemaining, enemiesRemaining, objectivesComplete);
+        LogScoreMaxNextObjectiveDebug(coinsRemaining, enemiesRemaining);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
         base.WriteDiscreteActionMask(actionMask);
 
-        if (actionMask == null || !IsScoreMaxHeuristicOnly())
+        if (actionMask == null)
         {
             return;
         }
 
-        // ScoreMax needs manual jumps for stomp/collectible testing even when
-        // the base V5 gap mask considers the jump unnecessary.
-        actionMask.SetActionEnabled(1, 1, true);
+        if (IsScoreMaxHeuristicOnly() || ShouldAllowScoreMaxObjectiveJump())
+        {
+            // ScoreMax needs jumps for coins and stomps even when the base V5
+            // gap mask considers the jump unnecessary.
+            actionMask.SetActionEnabled(1, 1, true);
+        }
     }
 
     public override void Heuristic(in ActionBuffers actionsOut)
@@ -162,11 +219,16 @@ public class EdgeRunnerAgentV5ScoreMax : EdgeRunnerAgentV5
     public override void OnActionReceived(ActionBuffers actions)
     {
         ResolveScoreMaxReferences();
-        float beforeDistance = GetCurrentNextObjectiveDistance();
+        ApplyCoinJumpCueReward(actions);
+        ApplyEnemyStompCueReward(actions);
+        ApplyContextualJumpPenalty(actions);
 
         base.OnActionReceived(actions);
 
-        ApplyNextObjectiveProgressReward(beforeDistance);
+        ApplyEnemyStompAlignmentReward();
+        ApplyNextObjectiveProgressReward(actions);
+        ApplyMissedCoinIntroRule();
+        ApplyMissedEnemyEasyRule();
     }
 
     private void ResolveScoreMaxReferences()
@@ -290,6 +352,101 @@ public class EdgeRunnerAgentV5ScoreMax : EdgeRunnerAgentV5
         }
 
         return -1;
+    }
+
+    private void LogScoreMaxObjectiveDebug(
+        int coinsRemaining,
+        int enemiesRemaining,
+        bool objectivesComplete)
+    {
+        if (!debugScoreMaxObjectives || Time.time < nextScoreMaxObjectiveDebugLogTime)
+        {
+            return;
+        }
+
+        nextScoreMaxObjectiveDebugLogTime = Time.time + Mathf.Max(0.05f, debugScoreMaxLogInterval);
+        ScoreAttackCoin nearestCoin = null;
+        ScoreAttackAndroid nearestEnemy = null;
+        Transform nextObjective = null;
+        ScoreMaxObjectiveType objectiveType = ScoreMaxObjectiveType.None;
+        float coinDistance = -1f;
+        float enemyDistance = -1f;
+        float nextDistance = -1f;
+        bool hasCoin = scoreMaxManager != null &&
+                       scoreMaxManager.TryGetNearestActiveCoin(transform.position, out nearestCoin, out coinDistance);
+        bool hasEnemy = scoreMaxManager != null &&
+                        scoreMaxManager.TryGetNearestActiveEnemy(transform.position, out nearestEnemy, out enemyDistance);
+        bool hasNextObjective = scoreMaxManager != null &&
+                                scoreMaxManager.TryGetRecommendedNextObjective(
+                                    transform.position,
+                                    out nextObjective,
+                                    out objectiveType,
+                                    out nextDistance);
+
+        Vector2 coinDelta = hasCoin ? (Vector2)(nearestCoin.transform.position - transform.position) : Vector2.zero;
+        Vector2 enemyDelta = hasEnemy ? (Vector2)(nearestEnemy.transform.position - transform.position) : Vector2.zero;
+        Vector2 nextDelta = hasNextObjective ? (Vector2)(nextObjective.position - transform.position) : Vector2.zero;
+
+        Debug.Log(
+            $"[SCOREMAX OBJ] coins={coinsRemaining} enemies={enemiesRemaining} goalUnlocked={objectivesComplete}\n" +
+            $"nearestCoin exists={hasCoin} dx={coinDelta.x:F2} dy={coinDelta.y:F2} dist={(hasCoin ? coinDistance : -1f):F2}\n" +
+            $"nearestEnemy exists={hasEnemy} dx={enemyDelta.x:F2} dy={enemyDelta.y:F2} dist={(hasEnemy ? enemyDistance : -1f):F2}\n" +
+            $"nextObjective type={FormatScoreMaxObjectiveType(objectiveType)} dx={nextDelta.x:F2} dy={nextDelta.y:F2} dist={(hasNextObjective ? nextDistance : -1f):F2}",
+            this);
+    }
+
+    private bool ShouldAllowScoreMaxObjectiveJump()
+    {
+        ResolveScoreMaxReferences();
+
+        if (scoreMaxManager == null ||
+            !CanScoreMaxJumpFromGroundOrCoyote() ||
+            !scoreMaxManager.TryGetRecommendedNextObjective(
+                transform.position,
+                out Transform target,
+                out ScoreMaxObjectiveType objectiveType,
+                out _))
+        {
+            return false;
+        }
+
+        if (target == null)
+        {
+            return false;
+        }
+
+        Vector2 delta = target.position - transform.position;
+
+        if (objectiveType == ScoreMaxObjectiveType.Coin)
+        {
+            float minimumJumpHeight = enableScoreMaxContextualShaping
+                ? Mathf.Max(lowCoinHeightThreshold, coinJumpCueMinVerticalOffset)
+                : 0.15f;
+            return delta.y > minimumJumpHeight;
+        }
+
+        if (objectiveType == ScoreMaxObjectiveType.Enemy)
+        {
+            return delta.x >= -0.5f && delta.y > -0.75f;
+        }
+
+        return false;
+    }
+
+    private bool CanScoreMaxJumpFromGroundOrCoyote()
+    {
+        return IsScoreMaxGroundedForDebug() || GetBaseCoyoteTimer() > 0f;
+    }
+
+    private static string FormatScoreMaxObjectiveType(ScoreMaxObjectiveType objectiveType)
+    {
+        return objectiveType switch
+        {
+            ScoreMaxObjectiveType.Coin => "coin",
+            ScoreMaxObjectiveType.Enemy => "enemy",
+            ScoreMaxObjectiveType.Goal => "goal",
+            _ => "none"
+        };
     }
 
     private bool IsScoreMaxHeuristicOnly()
@@ -541,63 +698,585 @@ public class EdgeRunnerAgentV5ScoreMax : EdgeRunnerAgentV5
         return true;
     }
 
-    private float GetCurrentNextObjectiveDistance()
+    private bool TryGetCurrentNextObjectiveState(
+        out Transform target,
+        out ScoreMaxObjectiveType objectiveType,
+        out float distance)
     {
+        target = null;
+        objectiveType = ScoreMaxObjectiveType.None;
+        distance = -1f;
+
         if (scoreMaxManager == null ||
             !scoreMaxManager.TryGetRecommendedNextObjective(
                 transform.position,
-                out _,
-                out _,
-                out float distance))
+                out target,
+                out objectiveType,
+                out distance))
         {
-            return -1f;
+            return false;
         }
 
-        return distance;
+        if (objectiveType == ScoreMaxObjectiveType.Goal && !scoreMaxManager.ObjectivesComplete)
+        {
+            target = null;
+            objectiveType = ScoreMaxObjectiveType.None;
+            distance = -1f;
+            return false;
+        }
+
+        return target != null && distance >= 0f;
     }
 
-    private void ApplyNextObjectiveProgressReward(float beforeDistance)
+    private void LogScoreMaxNextObjectiveDebug(int coinsRemaining, int enemiesRemaining)
     {
-        if (scoreMaxManager == null || beforeDistance < 0f)
+        if (!debugScoreMaxNextObjective || Time.time < nextScoreMaxNextObjectiveDebugLogTime)
         {
-            previousNextObjectiveDistance = GetCurrentNextObjectiveDistance();
             return;
         }
 
-        float afterDistance = GetCurrentNextObjectiveDistance();
+        nextScoreMaxNextObjectiveDebugLogTime =
+            Time.time + Mathf.Max(0.05f, debugScoreMaxLogInterval);
 
-        if (afterDistance < 0f)
+        if (!TryGetCurrentNextObjectiveState(
+                out Transform target,
+                out ScoreMaxObjectiveType objectiveType,
+                out float distance))
         {
-            previousNextObjectiveDistance = afterDistance;
+            Debug.Log(
+                $"[SCOREMAX NEXT OBJECTIVE] type=none coinsRemaining={coinsRemaining} " +
+                $"enemiesRemaining={enemiesRemaining}",
+                this);
             return;
         }
 
-        float delta = beforeDistance - afterDistance;
+        Vector2 delta = target.position - transform.position;
+        bool isAhead = delta.x * GetScoreMaxForwardDirection() >= 0f;
+        string coinClassification = objectiveType == ScoreMaxObjectiveType.Coin
+            ? $" coinClass={(IsLowCoinDelta(delta.y) ? "low" : "jump")}"
+            : string.Empty;
+        Debug.Log(
+            $"[SCOREMAX NEXT OBJECTIVE] type={FormatScoreMaxObjectiveType(objectiveType)} " +
+            $"dx={delta.x:F2} dy={delta.y:F2} dist={distance:F2} " +
+            $"position={(isAhead ? "ahead" : "behind")}{coinClassification} " +
+            $"coinsRemaining={coinsRemaining} enemiesRemaining={enemiesRemaining}",
+            this);
+    }
+
+    private void ApplyContextualJumpPenalty(ActionBuffers actions)
+    {
+        if (!enableScoreMaxContextualShaping ||
+            scoreMaxUselessJumpPenalty >= 0f ||
+            !CanScoreMaxJumpFromGroundOrCoyote())
+        {
+            return;
+        }
+
+        ActionSegment<int> discreteActions = actions.DiscreteActions;
+        int jumpAction = discreteActions.Length > 1 ? discreteActions[1] : 0;
+        if (jumpAction != 1)
+        {
+            return;
+        }
+
+        bool usefulObjectiveJump = false;
+        bool lowCoinNearby = false;
+        if (TryGetCurrentNextObjectiveState(
+                out Transform target,
+                out ScoreMaxObjectiveType objectiveType,
+                out _))
+        {
+            Vector2 delta = target.position - transform.position;
+            float forwardDistance = delta.x * GetScoreMaxForwardDirection();
+
+            if (objectiveType == ScoreMaxObjectiveType.Coin)
+            {
+                lowCoinNearby =
+                    IsLowCoinDelta(delta.y) &&
+                    forwardDistance >= 0f &&
+                    forwardDistance <= lowCoinApproachRange;
+                usefulObjectiveJump =
+                    !IsLowCoinDelta(delta.y) &&
+                    forwardDistance >= 0f &&
+                    forwardDistance <= contextualCoinJumpRange &&
+                    delta.y > Mathf.Max(lowCoinHeightThreshold, coinJumpCueMinVerticalOffset);
+            }
+            else if (objectiveType == ScoreMaxObjectiveType.Enemy)
+            {
+                usefulObjectiveJump =
+                    forwardDistance >= 0f &&
+                    forwardDistance <= contextualEnemyJumpRange &&
+                    Mathf.Abs(delta.y) <= 1.5f;
+            }
+        }
+
+        if (usefulObjectiveJump || HasContextualGapAhead())
+        {
+            return;
+        }
+
+        if (lowCoinNearby && lowCoinUnnecessaryJumpPenalty < 0f)
+        {
+            AddReward(lowCoinUnnecessaryJumpPenalty);
+            if (debugScoreMaxRewards)
+            {
+                Debug.Log(
+                    $"[SCOREMAX LOW COIN JUMP] penalty={lowCoinUnnecessaryJumpPenalty:F3}",
+                    this);
+            }
+
+            return;
+        }
+
+        AddReward(scoreMaxUselessJumpPenalty);
+        if (debugScoreMaxRewards)
+        {
+            Debug.Log(
+                $"[SCOREMAX USELESS JUMP] penalty={scoreMaxUselessJumpPenalty:F3}",
+                this);
+        }
+    }
+
+    private bool HasContextualGapAhead()
+    {
+        if (scoreMaxRb == null)
+        {
+            return false;
+        }
+
+        float direction = GetScoreMaxForwardDirection();
+        Vector2 origin = scoreMaxRb.position + new Vector2(
+            direction * Mathf.Max(0.1f, contextualGapProbeDistance),
+            0.1f);
+        RaycastHit2D hit = Physics2D.Raycast(
+            origin,
+            Vector2.down,
+            Mathf.Max(0.2f, contextualGapProbeDepth),
+            GetBaseGroundLayer());
+        return hit.collider == null;
+    }
+
+    private void ApplyEnemyStompAlignmentReward()
+    {
+        if (!enableScoreMaxContextualShaping ||
+            enemyStompAlignmentReward <= 0f ||
+            scoreMaxRb == null ||
+            !TryGetCurrentNextObjectiveState(
+                out Transform target,
+                out ScoreMaxObjectiveType objectiveType,
+                out _))
+        {
+            return;
+        }
+
+        if (objectiveType != ScoreMaxObjectiveType.Enemy ||
+            target == null ||
+            rewardedEnemyStompAlignmentTarget == target)
+        {
+            return;
+        }
+
+        Vector2 delta = transform.position - target.position;
+        bool aboveEnemy = delta.y >= enemyStompAlignmentMinHeight;
+        bool horizontallyAligned =
+            Mathf.Abs(delta.x) <= enemyStompAlignmentHorizontalTolerance;
+        bool descendingOrNearApex =
+            scoreMaxRb.linearVelocity.y <= enemyStompAlignmentMaxUpwardVelocity;
+
+        if (!aboveEnemy || !horizontallyAligned || !descendingOrNearApex)
+        {
+            return;
+        }
+
+        AddReward(enemyStompAlignmentReward);
+        rewardedEnemyStompAlignmentTarget = target;
+
+        if (debugScoreMaxRewards)
+        {
+            Debug.Log(
+                $"[SCOREMAX STOMP ALIGNMENT] reward={enemyStompAlignmentReward:F3} " +
+                $"enemy={target.name} dx={delta.x:F2} dy={delta.y:F2}",
+                this);
+        }
+    }
+
+    private void ApplyCoinJumpCueReward(ActionBuffers actions)
+    {
+        if (coinJumpCueReward <= 0f ||
+            scoreMaxManager == null ||
+            !CanScoreMaxJumpFromGroundOrCoyote())
+        {
+            return;
+        }
+
+        ActionSegment<int> discreteActions = actions.DiscreteActions;
+        int jumpAction = discreteActions.Length > 1 ? discreteActions[1] : 0;
+        if (jumpAction != 1 ||
+            !TryGetCurrentNextObjectiveState(
+                out Transform target,
+                out ScoreMaxObjectiveType objectiveType,
+                out _))
+        {
+            return;
+        }
+
+        if (objectiveType != ScoreMaxObjectiveType.Coin ||
+            target == null ||
+            rewardedCoinJumpCueTarget == target)
+        {
+            return;
+        }
+
+        Vector2 delta = target.position - transform.position;
+        float forwardDistance = delta.x * GetScoreMaxForwardDirection();
+        if (delta.y <= Mathf.Max(lowCoinHeightThreshold, coinJumpCueMinVerticalOffset) ||
+            forwardDistance < 0f ||
+            forwardDistance > coinJumpCueHorizontalRange)
+        {
+            return;
+        }
+
+        AddReward(coinJumpCueReward);
+        rewardedCoinJumpCueTarget = target;
+
+        if (debugScoreMaxRewards)
+        {
+            Debug.Log(
+                $"[SCOREMAX COIN JUMP CUE] reward={coinJumpCueReward:F3} " +
+                $"coin={target.name} dx={delta.x:F2} dy={delta.y:F2}",
+                this);
+        }
+    }
+
+    private void ApplyMissedCoinIntroRule()
+    {
+        if ((Mathf.Approximately(missedCoinPenalty, 0f) && !endEpisodeOnMissedCoinIntro) ||
+            scoreMaxManager == null ||
+            missedCoinIntroPenaltyApplied ||
+            scoreMaxManager.CoinsRemaining <= 0 ||
+            !TryGetCoinForMissedObjectiveCheck(out ScoreAttackCoin nearestCoin))
+        {
+            return;
+        }
+
+        Transform coinTransform = nearestCoin != null ? nearestCoin.transform : null;
+        if (coinTransform == null)
+        {
+            return;
+        }
+
+        float forwardDirection = GetScoreMaxForwardDirection();
+        float missedCoinDelta = (transform.position.x - coinTransform.position.x) * forwardDirection;
+        if (missedCoinDelta <= Mathf.Max(0f, missedCoinForwardMargin))
+        {
+            return;
+        }
+
+        missedCoinIntroPenaltyApplied = true;
+        if (!Mathf.Approximately(missedCoinPenalty, 0f))
+        {
+            AddReward(missedCoinPenalty);
+        }
+
+        if (debugScoreMaxRewards)
+        {
+            Debug.Log(
+                $"[SCOREMAX MISSED COIN] penalty={missedCoinPenalty:F3} " +
+                $"endEpisode={endEpisodeOnMissedCoinIntro} coin={coinTransform.name} " +
+                $"margin={missedCoinForwardMargin:F2} playerX={transform.position.x:F2} coinX={coinTransform.position.x:F2}",
+                this);
+        }
+
+        if (endEpisodeOnMissedCoinIntro)
+        {
+            EndEpisode();
+        }
+    }
+
+    private void ApplyEnemyStompCueReward(ActionBuffers actions)
+    {
+        if (enemyStompCueReward <= 0f ||
+            scoreMaxManager == null ||
+            scoreMaxManager.CoinsRemaining > 0 ||
+            !CanScoreMaxJumpFromGroundOrCoyote())
+        {
+            return;
+        }
+
+        ActionSegment<int> discreteActions = actions.DiscreteActions;
+        int jumpAction = discreteActions.Length > 1 ? discreteActions[1] : 0;
+        if (jumpAction != 1 ||
+            !TryGetCurrentNextObjectiveState(
+                out Transform target,
+                out ScoreMaxObjectiveType objectiveType,
+                out _))
+        {
+            return;
+        }
+
+        if (objectiveType != ScoreMaxObjectiveType.Enemy ||
+            target == null ||
+            rewardedEnemyStompCueTarget == target)
+        {
+            return;
+        }
+
+        Vector2 delta = target.position - transform.position;
+        float forwardDistance = delta.x * GetScoreMaxForwardDirection();
+        if (forwardDistance < 0f ||
+            forwardDistance > Mathf.Max(0f, enemyStompCueHorizontalRange) ||
+            Mathf.Abs(delta.y) > 1.5f)
+        {
+            return;
+        }
+
+        AddReward(enemyStompCueReward);
+        rewardedEnemyStompCueTarget = target;
+
+        if (debugScoreMaxRewards)
+        {
+            Debug.Log(
+                $"[SCOREMAX STOMP CUE] reward={enemyStompCueReward:F3} " +
+                $"enemy={target.name} dx={delta.x:F2} dy={delta.y:F2}",
+                this);
+        }
+    }
+
+    private void ApplyMissedEnemyEasyRule()
+    {
+        if ((Mathf.Approximately(missedEnemyPenalty, 0f) && !endEpisodeOnMissedEnemyEasy) ||
+            scoreMaxManager == null ||
+            missedEnemyEasyPenaltyApplied ||
+            (requireCoinsCompleteBeforeMissedEnemyCheck && scoreMaxManager.CoinsRemaining > 0) ||
+            scoreMaxManager.EnemiesRemaining <= 0 ||
+            !TryGetEnemyForMissedObjectiveCheck(out ScoreAttackAndroid nearestEnemy))
+        {
+            return;
+        }
+
+        Transform enemyTransform = nearestEnemy != null ? nearestEnemy.transform : null;
+        if (enemyTransform == null)
+        {
+            return;
+        }
+
+        float forwardDirection = GetScoreMaxForwardDirection();
+        float missedEnemyDelta = (transform.position.x - enemyTransform.position.x) * forwardDirection;
+        if (missedEnemyDelta <= Mathf.Max(0f, missedEnemyForwardMargin))
+        {
+            return;
+        }
+
+        missedEnemyEasyPenaltyApplied = true;
+        if (!Mathf.Approximately(missedEnemyPenalty, 0f))
+        {
+            AddReward(missedEnemyPenalty);
+        }
+
+        if (debugScoreMaxRewards)
+        {
+            Debug.Log(
+                $"[SCOREMAX MISSED ENEMY] penalty={missedEnemyPenalty:F3} " +
+                $"endEpisode={endEpisodeOnMissedEnemyEasy} enemy={enemyTransform.name} " +
+                $"margin={missedEnemyForwardMargin:F2} playerX={transform.position.x:F2} " +
+                $"enemyX={enemyTransform.position.x:F2}",
+                this);
+        }
+
+        if (endEpisodeOnMissedEnemyEasy)
+        {
+            EndEpisode();
+        }
+    }
+
+    private bool TryGetCoinForMissedObjectiveCheck(out ScoreAttackCoin coin)
+    {
+        coin = null;
+        if (scoreMaxManager == null)
+        {
+            return false;
+        }
+
+        if (!detectAnyMissedObjectiveBehind)
+        {
+            return scoreMaxManager.TryGetNearestActiveCoin(transform.position, out coin, out _);
+        }
+
+        float forwardDirection = GetScoreMaxForwardDirection();
+        float greatestMissedDistance = float.NegativeInfinity;
+        IReadOnlyList<ScoreAttackCoin> coins = scoreMaxManager.Coins;
+
+        for (int i = 0; i < coins.Count; i++)
+        {
+            ScoreAttackCoin candidate = coins[i];
+            if (candidate == null || !candidate.IsAvailable)
+            {
+                continue;
+            }
+
+            float missedDistance =
+                (transform.position.x - candidate.transform.position.x) * forwardDirection;
+            if (missedDistance > greatestMissedDistance)
+            {
+                greatestMissedDistance = missedDistance;
+                coin = candidate;
+            }
+        }
+
+        return coin != null;
+    }
+
+    private bool TryGetEnemyForMissedObjectiveCheck(out ScoreAttackAndroid enemy)
+    {
+        enemy = null;
+        if (scoreMaxManager == null)
+        {
+            return false;
+        }
+
+        if (!detectAnyMissedObjectiveBehind)
+        {
+            return scoreMaxManager.TryGetNearestActiveEnemy(transform.position, out enemy, out _);
+        }
+
+        float forwardDirection = GetScoreMaxForwardDirection();
+        float greatestMissedDistance = float.NegativeInfinity;
+        IReadOnlyList<ScoreAttackAndroid> enemies = scoreMaxManager.Enemies;
+
+        for (int i = 0; i < enemies.Count; i++)
+        {
+            ScoreAttackAndroid candidate = enemies[i];
+            if (candidate == null || !candidate.IsAlive || !candidate.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            float missedDistance =
+                (transform.position.x - candidate.transform.position.x) * forwardDirection;
+            if (missedDistance > greatestMissedDistance)
+            {
+                greatestMissedDistance = missedDistance;
+                enemy = candidate;
+            }
+        }
+
+        return enemy != null;
+    }
+
+    private void ApplyNextObjectiveProgressReward(ActionBuffers actions)
+    {
+        if (!TryGetCurrentNextObjectiveState(
+                out Transform currentTarget,
+                out ScoreMaxObjectiveType currentObjectiveType,
+                out float currentDistance))
+        {
+            previousNextObjectiveDistance = -1f;
+            previousNextObjectiveTarget = null;
+            previousNextObjectiveType = ScoreMaxObjectiveType.None;
+            return;
+        }
+
+        bool objectiveChanged =
+            previousNextObjectiveTarget != currentTarget ||
+            previousNextObjectiveType != currentObjectiveType;
+        if (previousNextObjectiveDistance < 0f || objectiveChanged)
+        {
+            previousNextObjectiveDistance = currentDistance;
+            previousNextObjectiveTarget = currentTarget;
+            previousNextObjectiveType = currentObjectiveType;
+
+            if (debugScoreMaxRewards && Time.time >= nextScoreMaxDebugLogTime)
+            {
+                nextScoreMaxDebugLogTime = Time.time + Mathf.Max(0.05f, debugScoreMaxLogInterval);
+                Debug.Log(
+                    $"[SCOREMAX PROGRESS] objective={FormatScoreMaxObjectiveType(currentObjectiveType)} " +
+                    $"reset=True prev={currentDistance:F2} current={currentDistance:F2} delta=0.000 reward=0.000",
+                    this);
+            }
+
+            return;
+        }
+
+        float previousDistance = previousNextObjectiveDistance;
+        float delta = previousDistance - currentDistance;
+        float reward = 0f;
 
         if (delta > 0f)
         {
-            AddReward(Mathf.Clamp(
+            reward = Mathf.Clamp(
                 delta * progressToNextObjectiveRewardScale,
                 0f,
-                maxProgressToNextObjectiveReward));
+                maxProgressToNextObjectiveReward);
         }
         else if (delta < 0f)
         {
-            AddReward(Mathf.Clamp(
+            reward = Mathf.Clamp(
                 delta * progressToNextObjectiveRewardScale,
                 maxRegressionFromNextObjectivePenalty,
-                0f));
+                0f);
+        }
+
+        float groundCoinReward = CalculateGroundCoinApproachReward(
+            actions,
+            currentTarget,
+            currentObjectiveType,
+            delta);
+        reward += groundCoinReward;
+
+        if (!Mathf.Approximately(reward, 0f))
+        {
+            AddReward(reward);
         }
 
         if (debugScoreMaxRewards && Time.time >= nextScoreMaxDebugLogTime)
         {
             nextScoreMaxDebugLogTime = Time.time + Mathf.Max(0.05f, debugScoreMaxLogInterval);
             Debug.Log(
-                $"[SCOREMAX NEXT OBJECTIVE] before={beforeDistance:F2} after={afterDistance:F2} delta={delta:F3}",
+                $"[SCOREMAX PROGRESS] objective={FormatScoreMaxObjectiveType(currentObjectiveType)} " +
+                $"prev={previousDistance:F2} current={currentDistance:F2} delta={delta:F3} " +
+                $"groundCoinReward={groundCoinReward:F3} reward={reward:F3}",
                 this);
         }
 
-        previousNextObjectiveDistance = afterDistance;
+        previousNextObjectiveDistance = currentDistance;
+        previousNextObjectiveTarget = currentTarget;
+        previousNextObjectiveType = currentObjectiveType;
+    }
+
+    private float CalculateGroundCoinApproachReward(
+        ActionBuffers actions,
+        Transform target,
+        ScoreMaxObjectiveType objectiveType,
+        float progressDelta)
+    {
+        if (!enableScoreMaxContextualShaping ||
+            groundCoinApproachReward <= 0f ||
+            objectiveType != ScoreMaxObjectiveType.Coin ||
+            target == null ||
+            progressDelta <= 0f ||
+            !IsScoreMaxGroundedForDebug())
+        {
+            return 0f;
+        }
+
+        ActionSegment<int> discreteActions = actions.DiscreteActions;
+        int jumpAction = discreteActions.Length > 1 ? discreteActions[1] : 0;
+        Vector2 objectiveDelta = target.position - transform.position;
+        float forwardDistance = objectiveDelta.x * GetScoreMaxForwardDirection();
+        if (jumpAction == 1 ||
+            !IsLowCoinDelta(objectiveDelta.y) ||
+            forwardDistance <= 0f ||
+            forwardDistance > lowCoinApproachRange)
+        {
+            return 0f;
+        }
+
+        return groundCoinApproachReward * Mathf.Clamp01(progressDelta / 0.1f);
+    }
+
+    private bool IsLowCoinDelta(float deltaY)
+    {
+        return deltaY <= Mathf.Max(0f, lowCoinHeightThreshold);
     }
 
     private float GetScoreMaxForwardDirection()
@@ -635,6 +1314,21 @@ public class EdgeRunnerAgentV5ScoreMax : EdgeRunnerAgentV5
         maxEnemyCountForObservation = Mathf.Max(1f, maxEnemyCountForObservation);
         maxProgressToNextObjectiveReward = Mathf.Max(0f, maxProgressToNextObjectiveReward);
         maxRegressionFromNextObjectivePenalty = Mathf.Min(0f, maxRegressionFromNextObjectivePenalty);
+        scoreMaxUselessJumpPenalty = Mathf.Min(0f, scoreMaxUselessJumpPenalty);
+        lowCoinHeightThreshold = Mathf.Max(0f, lowCoinHeightThreshold);
+        lowCoinApproachRange = Mathf.Max(0f, lowCoinApproachRange);
+        groundCoinApproachReward = Mathf.Max(0f, groundCoinApproachReward);
+        lowCoinUnnecessaryJumpPenalty = Mathf.Min(0f, lowCoinUnnecessaryJumpPenalty);
+        contextualCoinJumpRange = Mathf.Max(0f, contextualCoinJumpRange);
+        contextualEnemyJumpRange = Mathf.Max(0f, contextualEnemyJumpRange);
+        contextualGapProbeDistance = Mathf.Max(0.1f, contextualGapProbeDistance);
+        contextualGapProbeDepth = Mathf.Max(0.2f, contextualGapProbeDepth);
+        enemyStompAlignmentHorizontalTolerance =
+            Mathf.Max(0f, enemyStompAlignmentHorizontalTolerance);
+        missedCoinForwardMargin = Mathf.Max(0f, missedCoinForwardMargin);
+        coinJumpCueHorizontalRange = Mathf.Max(0f, coinJumpCueHorizontalRange);
+        missedEnemyForwardMargin = Mathf.Max(0f, missedEnemyForwardMargin);
+        enemyStompCueHorizontalRange = Mathf.Max(0f, enemyStompCueHorizontalRange);
         enemyRayRange = Mathf.Max(0.1f, enemyRayRange);
         debugScoreMaxLogInterval = Mathf.Max(0.05f, debugScoreMaxLogInterval);
     }

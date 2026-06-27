@@ -18,6 +18,7 @@ public static class BuildER_V5_FinalVariants
     private const string ScoreMaxStompIntroScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxStompIntro.unity";
     private const string ScoreMaxIntroScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxIntro.unity";
     private const string ScoreMaxEasyScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxEasy.unity";
+    private const string ScoreMaxRandomWarmupScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxRandomWarmup.unity";
     private const string ScoreMaxFinalRandomScenePath = "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxFinalRandom.unity";
 
     private const string PlayerPrefabPath = "Assets/EdgeRunner/Prefabs/Agent/Player_V5.prefab";
@@ -36,6 +37,7 @@ public static class BuildER_V5_FinalVariants
     private const float FinalMaxVerticalStep = 1.2f;
     private const float FinalGoalPlatformWidth = 10.0f;
     private const float FinalSafeEdgeMargin = 1.0f;
+    private const float ScoreMaxFinalCoinCollectionRadius = 0.52f;
     private const bool ScoreMaxMergeSameHeightPlatforms = true;
     private const float ScoreMaxPlatformMergeYTolerance = 0.05f;
     private const float ScoreMaxPlatformMergeGapTolerance = 0.25f;
@@ -100,6 +102,12 @@ public static class BuildER_V5_FinalVariants
     public static void BuildScoreMaxEasyFromMenu()
     {
         BuildScoreMaxEasyScene();
+    }
+
+    [MenuItem("EdgeRunner/Training/V5/Build ScoreMaxRandomWarmup")]
+    public static void BuildScoreMaxRandomWarmupFromMenu()
+    {
+        BuildScoreMaxRandomWarmupScene();
     }
 
     [MenuItem("EdgeRunner/Training/V5/Build ScoreMaxFinalRandom")]
@@ -255,14 +263,15 @@ public static class BuildER_V5_FinalVariants
         Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         GameObject root = new GameObject("ER_V5_ScoreMaxCoinIntro");
         ScoreAttackManager manager = CreateScoreMaxManager(root.transform, false, 1, 0);
-        GameObject goal = CreateScoreAttackGoal(new Vector3(10f, 1.1f, 0f), manager);
+        GameObject goal = CreateScoreAttackGoal(new Vector3(12f, 1.1f, 0f), manager);
         GameObject player = CreateScoreMaxPlayer(new Vector3(0f, 1.15f, 0f));
 
         ConfigureScoreMaxPlayer(player, goal.transform, manager);
+        ConfigureScoreMaxCoinIntroDiagnostics(player);
         CreateCamera(player.transform);
-        CreatePlatformWithTop(root.transform, "ScoreMaxCoinIntro_Platform", 5f, 0f, new Vector2(24f, 0.4f), sprite);
-        CreateScoreAttackCoin(root.transform, "ScoreMaxCoinIntro_Coin_01", new Vector3(4f, 1.55f, 0f), sprite, manager);
-        CreateDeathZone("DeathZone_ScoreMaxCoinIntro", 5f, 34f);
+        CreatePlatformWithTop(root.transform, "ScoreMaxCoinIntro_Platform", 7f, 0f, new Vector2(30f, 0.4f), sprite);
+        CreateScoreAttackCoin(root.transform, "ScoreMaxCoinIntro_Coin_01", new Vector3(3.5f, 1.35f, 0f), sprite, manager);
+        CreateDeathZone("DeathZone_ScoreMaxCoinIntro", 7f, 40f);
         CreateEvaluationManager("ScoreMaxCoinIntro_Evaluation", player, "ScoreMaxCoinIntro", "Eval50");
 
         Selection.activeObject = player;
@@ -322,20 +331,81 @@ public static class BuildER_V5_FinalVariants
         Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         GameObject root = new GameObject("ER_V5_ScoreMaxEasy");
         ScoreAttackManager manager = CreateScoreMaxManager(root.transform, false, 2, 1);
-        GameObject goal = CreateScoreAttackGoal(new Vector3(13f, 1.1f, 0f), manager);
+        GameObject goal = CreateScoreAttackGoal(new Vector3(15f, 1.1f, 0f), manager);
         GameObject player = CreateScoreMaxPlayer(new Vector3(0f, 1.15f, 0f));
 
         ConfigureScoreMaxPlayer(player, goal.transform, manager);
+        ConfigureScoreMaxEasyTutorial(player);
         CreateCamera(player.transform);
-        CreatePlatformWithTop(root.transform, "ScoreMaxEasy_Platform", 6.5f, 0f, new Vector2(30f, 0.4f), sprite);
-        CreateScoreAttackCoin(root.transform, "ScoreMaxEasy_Coin_01", new Vector3(3f, 1.55f, 0f), sprite, manager);
-        CreateScoreAttackCoin(root.transform, "ScoreMaxEasy_Coin_02", new Vector3(8.5f, 1.55f, 0f), sprite, manager);
-        CreateScoreAttackAndroid(root.transform, "ScoreMaxEasy_Android_01", new Vector3(6f, 1.02f, 0f), sprite, manager);
-        CreateDeathZone("DeathZone_ScoreMaxEasy", 6.5f, 40f);
+        CreatePlatformWithTop(root.transform, "ScoreMaxEasy_Platform", 7.5f, 0f, new Vector2(34f, 0.4f), sprite);
+        CreateScoreAttackCoin(root.transform, "ScoreMaxEasy_Coin_01", new Vector3(3.5f, 1.55f, 0f), sprite, manager);
+        CreateScoreAttackCoin(root.transform, "ScoreMaxEasy_Coin_02", new Vector3(6f, 1.55f, 0f), sprite, manager);
+        CreateScoreAttackAndroid(
+            root.transform,
+            "ScoreMaxEasy_Android_01",
+            new Vector3(10f, 1.02f, 0f),
+            sprite,
+            manager,
+            enablePatrol: false);
+        CreateDeathZone("DeathZone_ScoreMaxEasy", 7.5f, 44f);
         CreateEvaluationManager("ScoreMaxEasy_Evaluation", player, "ScoreMaxEasy", "Eval50");
 
         Selection.activeObject = player;
         SaveScene(scene, ScoreMaxEasyScenePath, "ScoreMaxEasy");
+    }
+
+    public static void BuildScoreMaxRandomWarmupScene()
+    {
+        EnsureFolders();
+
+        Sprite sprite = GetSharedSprite();
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        GameObject root = new GameObject("ER_V5_ScoreMaxRandomWarmup");
+        ScoreAttackManager manager = CreateScoreMaxManager(root.transform, true, 2, 1);
+        GameObject goal = CreateScoreAttackGoal(new Vector3(15f, 1.1f, 0f), manager);
+        ConfigureGoalTrigger(goal, new Vector2(2.5f, 7.0f));
+        ConfigureScoreMaxRandomWarmupManager(manager, goal.transform);
+
+        GameObject player = CreateScoreMaxPlayer(new Vector3(0f, 1.15f, 0f));
+        ConfigureScoreMaxPlayer(player, goal.transform, manager);
+        ConfigureScoreMaxRandomWarmupTutorial(player);
+        CreateCamera(player.transform);
+
+        CreatePlatformWithTop(
+            root.transform,
+            "ScoreMaxRandomWarmup_Platform",
+            8f,
+            0f,
+            new Vector2(38f, 0.4f),
+            sprite);
+        CreateScoreAttackCoin(
+            root.transform,
+            "ScoreMaxRandomWarmup_Coin_01",
+            new Vector3(3.5f, 1.5f, 0f),
+            sprite,
+            manager);
+        CreateScoreAttackCoin(
+            root.transform,
+            "ScoreMaxRandomWarmup_Coin_02",
+            new Vector3(6.5f, 1.5f, 0f),
+            sprite,
+            manager);
+        CreateScoreAttackAndroid(
+            root.transform,
+            "ScoreMaxRandomWarmup_Android_01",
+            new Vector3(10.75f, 1.02f, 0f),
+            sprite,
+            manager,
+            enablePatrol: false);
+        CreateDeathZone("DeathZone_ScoreMaxRandomWarmup", 8f, 48f);
+        CreateEvaluationManager(
+            "ScoreMaxRandomWarmup_Evaluation",
+            player,
+            "ScoreMaxRandomWarmup",
+            "Eval100");
+
+        Selection.activeObject = player;
+        SaveScene(scene, ScoreMaxRandomWarmupScenePath, "ScoreMaxRandomWarmup");
     }
 
     public static void BuildScoreMaxFinalRandomScene()
@@ -354,6 +424,7 @@ public static class BuildER_V5_FinalVariants
             manager);
         ConfigureGoalTrigger(goal, FinalGoalTriggerSize);
         SetObjectReference(manager, "goal", goal.transform);
+        ConfigureScoreMaxFinalRandomManager(manager);
 
         GameObject player = CreateScoreMaxPlayer(new Vector3(1f, 1.5f, 0f));
         ConfigureScoreMaxPlayer(player, goal.transform, manager);
@@ -892,25 +963,29 @@ public static class BuildER_V5_FinalVariants
             "ScoreMax_CoinLine_01",
             new Vector3(coinLine.SafeMinX + 1.0f, coinLine.TopY + 1.2f, 0f),
             sprite,
-            manager);
+            manager,
+            ScoreMaxFinalCoinCollectionRadius);
         CreateScoreAttackCoin(
             root,
             "ScoreMax_CoinLine_02",
             new Vector3(coinLine.SafeMinX + 3.2f, coinLine.TopY + 1.2f, 0f),
             sprite,
-            manager);
+            manager,
+            ScoreMaxFinalCoinCollectionRadius);
         CreateScoreAttackCoin(
             root,
             "ScoreMax_CoinArc_01",
             new Vector3(coinArc.CenterX, coinArc.TopY + 1.65f, 0f),
             sprite,
-            manager);
+            manager,
+            ScoreMaxFinalCoinCollectionRadius);
         CreateScoreAttackCoin(
             root,
             "ScoreMax_CoinPocket_01",
             new Vector3(coinPocket.CenterX, coinPocket.TopY + 1.2f, 0f),
             sprite,
-            manager);
+            manager,
+            ScoreMaxFinalCoinCollectionRadius);
 
         CreateScoreAttackAndroid(
             root,
@@ -1349,11 +1424,25 @@ public static class BuildER_V5_FinalVariants
         SetFloat(agent, "goalReward", 0.0f);
         SetFloat(agent, "deathPenalty", -5.0f);
         SetFloat(agent, "stepPenalty", -0.0015f);
-        SetFloat(agent, "distanceProgressRewardScale", 0.035f);
-        SetFloat(agent, "maxDistanceProgressReward", 0.035f);
-        SetFloat(agent, "progressRewardScale", 0.025f);
-        SetFloat(agent, "maxProgressRewardPerStep", 0.025f);
+        SetFloat(agent, "progressRewardScale", 0.0f);
+        SetFloat(agent, "maxProgressRewardPerStep", 0.0f);
+        SetFloat(agent, "milestoneReward", 0.0f);
+        SetFloat(agent, "backtrackPenalty", 0.0f);
+        SetFloat(agent, "jumpPenalty", 0.0f);
+        SetFloat(agent, "idleJumpPenalty", 0.0f);
+        SetFloat(agent, "flatGroundJumpPenalty", 0.0f);
+        SetFloat(agent, "earlyGapJumpPenalty", 0.0f);
+        SetFloat(agent, "uselessJumpPenalty", 0.0f);
+        SetFloat(agent, "gapJumpReward", 0.0f);
+        SetFloat(agent, "gapLandingReward", 0.0f);
+        SetFloat(agent, "lowMomentumJumpPenalty", 0.0f);
+        SetFloat(agent, "forwardActionReward", 0.0f);
         SetFloat(agent, "forwardVelocityReward", 0.0f);
+        SetFloat(agent, "wrongDirectionActionPenalty", 0.0f);
+        SetFloat(agent, "distanceProgressRewardScale", 0.0f);
+        SetFloat(agent, "maxDistanceProgressReward", 0.0f);
+        SetFloat(agent, "distanceRegressionPenaltyScale", 0.0f);
+        SetFloat(agent, "maxDistanceRegressionPenalty", 0.0f);
         SetFloat(agent, "idlePenalty", -0.001f);
         SetFloat(agent, "noProgressTimeLimit", 12.0f);
         SetFloat(agent, "stuckTimeLimit", 12.0f);
@@ -1369,11 +1458,12 @@ public static class BuildER_V5_FinalVariants
         SetObjectReference(agent, "scoreMaxManager", manager);
         SetObjectReference(agent, "scoreMaxGoal", goal);
         SetInt(agent, "scoreMaxEnemyRayMask", ~0);
-        SetFloat(agent, "progressToNextObjectiveRewardScale", 0.025f);
+        SetFloat(agent, "progressToNextObjectiveRewardScale", 0.020f);
         SetFloat(agent, "maxProgressToNextObjectiveReward", 0.025f);
         SetFloat(agent, "maxRegressionFromNextObjectivePenalty", -0.015f);
         SetBool(agent, "debugScoreMaxObservations", false);
         SetBool(agent, "debugScoreMaxObservationCount", false);
+        SetBool(agent, "debugScoreMaxObjectives", false);
         SetBool(agent, "debugScoreMaxHeuristicInput", false);
         SetBool(agent, "debugScoreMaxGroundCheck", false);
         SetBool(agent, "debugScoreMaxRewards", false);
@@ -1382,6 +1472,76 @@ public static class BuildER_V5_FinalVariants
 
         ConfigureScoreMaxBehavior(player, BehaviorType.Default);
         EnsureDecisionRequester(player, true);
+    }
+
+    private static void ConfigureScoreMaxCoinIntroDiagnostics(GameObject player)
+    {
+        EdgeRunnerAgentV5ScoreMax agent = RequireScoreMaxAgent(player);
+
+        SetBool(agent, "debugScoreMaxObjectives", true);
+        SetBool(agent, "debugScoreMaxRewards", true);
+        SetBool(agent, "maskUselessJumps", false);
+        SetFloat(agent, "missedCoinPenalty", -2.0f);
+        SetBool(agent, "endEpisodeOnMissedCoinIntro", true);
+        SetFloat(agent, "missedCoinForwardMargin", 2.0f);
+        SetFloat(agent, "coinJumpCueReward", 0.3f);
+        SetFloat(agent, "coinJumpCueHorizontalRange", 1.75f);
+        SetFloat(agent, "coinJumpCueMinVerticalOffset", 0.1f);
+    }
+
+    private static void ConfigureScoreMaxEasyTutorial(GameObject player)
+    {
+        EdgeRunnerAgentV5ScoreMax agent = RequireScoreMaxAgent(player);
+
+        SetFloat(agent, "missedCoinPenalty", -2.0f);
+        SetBool(agent, "endEpisodeOnMissedCoinIntro", true);
+        SetFloat(agent, "missedCoinForwardMargin", 2.5f);
+        SetFloat(agent, "missedEnemyPenalty", -3.0f);
+        SetBool(agent, "endEpisodeOnMissedEnemyEasy", true);
+        SetFloat(agent, "missedEnemyForwardMargin", 2.5f);
+        SetFloat(agent, "enemyStompCueReward", 0.3f);
+        SetFloat(agent, "enemyStompCueHorizontalRange", 2.25f);
+    }
+
+    private static void ConfigureScoreMaxRandomWarmupTutorial(GameObject player)
+    {
+        EdgeRunnerAgentV5ScoreMax agent = RequireScoreMaxAgent(player);
+
+        SetFloat(agent, "missedCoinPenalty", -2.0f);
+        SetBool(agent, "endEpisodeOnMissedCoinIntro", true);
+        SetFloat(agent, "missedCoinForwardMargin", 2.5f);
+        SetFloat(agent, "missedEnemyPenalty", -3.0f);
+        SetBool(agent, "endEpisodeOnMissedEnemyEasy", true);
+        SetFloat(agent, "missedEnemyForwardMargin", 2.5f);
+        SetFloat(agent, "coinJumpCueReward", 0.2f);
+        SetFloat(agent, "coinJumpCueHorizontalRange", 1.75f);
+        SetFloat(agent, "coinJumpCueMinVerticalOffset", 0.1f);
+        SetFloat(agent, "enemyStompCueReward", 0.3f);
+        SetFloat(agent, "enemyStompCueHorizontalRange", 2.25f);
+    }
+
+    private static void ConfigureScoreMaxRandomWarmupManager(
+        ScoreAttackManager manager,
+        Transform goal)
+    {
+        SetObjectReference(manager, "goal", goal);
+        SetInt(manager, "minActiveCoins", 2);
+        SetInt(manager, "maxActiveCoins", 2);
+        SetInt(manager, "minActiveEnemies", 1);
+        SetInt(manager, "maxActiveEnemies", 1);
+        SetBool(manager, "useOrderedCoinXSlots", true);
+        SetVector2(manager, "firstCoinXRange", new Vector2(3.0f, 4.5f));
+        SetVector2(manager, "secondCoinXRange", new Vector2(5.8f, 7.2f));
+        SetVector2(manager, "enemyRandomXRange", new Vector2(10.0f, 11.5f));
+        SetFloat(manager, "coinPlatformTopY", 0f);
+        SetFloat(manager, "coinVerticalOffset", 1.5f);
+        SetFloat(manager, "minCoinSpacing", 2.0f);
+        SetFloat(manager, "minCoinDistanceFromAndroid", 3.0f);
+        SetFloat(manager, "minCoinDistanceFromGoal", 4.0f);
+        SetFloat(manager, "prematureGoalPenalty", -2.0f);
+        SetBool(manager, "endEpisodeOnPrematureGoal", true);
+        SetBool(manager, "debugScoreMaxRandomWarmupPositions", false);
+        SetInt(manager, "maxCoinPlacementAttempts", 30);
     }
 
     private static void ConfigureScoreMaxFinalRandomEpisodeLimits(GameObject player)
@@ -1396,6 +1556,40 @@ public static class BuildER_V5_FinalVariants
         SetBool(agent, "debugScoreMaxObservationCount", true);
         SetBool(agent, "debugScoreMaxHeuristicInput", true);
         SetBool(agent, "debugScoreMaxGroundCheck", true);
+        SetFloat(agent, "missedCoinPenalty", -2.0f);
+        SetBool(agent, "endEpisodeOnMissedCoinIntro", true);
+        SetFloat(agent, "missedCoinForwardMargin", 2.5f);
+        SetBool(agent, "detectAnyMissedObjectiveBehind", true);
+        SetFloat(agent, "missedEnemyPenalty", -3.0f);
+        SetBool(agent, "endEpisodeOnMissedEnemyEasy", true);
+        SetFloat(agent, "missedEnemyForwardMargin", 2.5f);
+        SetBool(agent, "requireCoinsCompleteBeforeMissedEnemyCheck", false);
+        SetFloat(agent, "coinJumpCueReward", 0.04f);
+        SetFloat(agent, "coinJumpCueHorizontalRange", 2.25f);
+        SetFloat(agent, "coinJumpCueMinVerticalOffset", 0.45f);
+        SetFloat(agent, "enemyStompCueReward", 0.05f);
+        SetFloat(agent, "enemyStompCueHorizontalRange", 2.75f);
+        SetBool(agent, "enableScoreMaxContextualShaping", true);
+        SetFloat(agent, "scoreMaxUselessJumpPenalty", -0.01f);
+        SetFloat(agent, "lowCoinHeightThreshold", 0.45f);
+        SetFloat(agent, "lowCoinApproachRange", 3.0f);
+        SetFloat(agent, "groundCoinApproachReward", 0.01f);
+        SetFloat(agent, "lowCoinUnnecessaryJumpPenalty", -0.01f);
+        SetFloat(agent, "contextualCoinJumpRange", 2.25f);
+        SetFloat(agent, "contextualEnemyJumpRange", 2.75f);
+        SetFloat(agent, "enemyStompAlignmentReward", 0.08f);
+        SetFloat(agent, "enemyStompAlignmentHorizontalTolerance", 0.9f);
+        SetFloat(agent, "enemyStompAlignmentMinHeight", 0.35f);
+        SetFloat(agent, "enemyStompAlignmentMaxUpwardVelocity", 0.1f);
+        SetBool(agent, "debugScoreMaxNextObjective", false);
+    }
+
+    private static void ConfigureScoreMaxFinalRandomManager(ScoreAttackManager manager)
+    {
+        SetFloat(manager, "prematureGoalPenalty", -2.0f);
+        SetBool(manager, "endEpisodeOnPrematureGoal", true);
+        SetBool(manager, "preferForwardCoinObjectives", true);
+        SetFloat(manager, "forwardCoinObjectiveTolerance", 0.25f);
     }
 
     private static EdgeRunnerAgentV5 RequireAgent(GameObject player)
@@ -1776,7 +1970,13 @@ public static class BuildER_V5_FinalVariants
         boxCollider.offset = new Vector2(0f, triggerSize.y * 0.5f - 1.1f);
     }
 
-    private static void CreateScoreAttackCoin(Transform parent, string name, Vector3 position, Sprite sprite, ScoreAttackManager manager)
+    private static void CreateScoreAttackCoin(
+        Transform parent,
+        string name,
+        Vector3 position,
+        Sprite sprite,
+        ScoreAttackManager manager,
+        float collectionRadius = 0.45f)
     {
         GameObject coin = new GameObject(name);
         coin.transform.SetParent(parent, false);
@@ -1790,13 +1990,19 @@ public static class BuildER_V5_FinalVariants
 
         CircleCollider2D collider = coin.AddComponent<CircleCollider2D>();
         collider.isTrigger = true;
-        collider.radius = 0.45f;
+        collider.radius = Mathf.Max(0.05f, collectionRadius);
 
         ScoreAttackCoin coinScript = coin.AddComponent<ScoreAttackCoin>();
         coinScript.SetManager(manager);
     }
 
-    private static void CreateScoreAttackAndroid(Transform parent, string name, Vector3 position, Sprite fallbackSprite, ScoreAttackManager manager)
+    private static void CreateScoreAttackAndroid(
+        Transform parent,
+        string name,
+        Vector3 position,
+        Sprite fallbackSprite,
+        ScoreAttackManager manager,
+        bool enablePatrol = true)
     {
         GameObject enemyPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(AndroidEnemyPrefabPath);
         GameObject android = enemyPrefab != null
@@ -1835,6 +2041,10 @@ public static class BuildER_V5_FinalVariants
         rb.freezeRotation = true;
 
         DisableDemoEnemyScripts(android);
+        if (!enablePatrol)
+        {
+            RemoveAndroidPatrol(android);
+        }
 
         ScoreAttackAndroid androidScript = android.GetComponent<ScoreAttackAndroid>();
 
@@ -1845,6 +2055,25 @@ public static class BuildER_V5_FinalVariants
 
         androidScript.enabled = true;
         androidScript.SetManager(manager);
+
+        if (!enablePatrol)
+        {
+            SetFloat(androidScript, "stompHeightOffset", 0.10f);
+            SetFloat(androidScript, "stompTopTolerance", 0.45f);
+        }
+    }
+
+    private static void RemoveAndroidPatrol(GameObject android)
+    {
+        DemoAndroidPatrol[] patrols = android.GetComponentsInChildren<DemoAndroidPatrol>(true);
+
+        for (int i = 0; i < patrols.Length; i++)
+        {
+            if (patrols[i] != null)
+            {
+                Object.DestroyImmediate(patrols[i]);
+            }
+        }
     }
 
     private static GameObject CreateFallbackAndroid(Sprite sprite)

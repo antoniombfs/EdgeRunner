@@ -22,6 +22,7 @@ public class ScoreAttackManager : MonoBehaviour
     [SerializeField] private float prematureGoalPenalty = -2.0f;
     [SerializeField] private float enemySideHitPenalty = -6.0f;
     [SerializeField] private float repeatedPrematureGoalCooldown = 0.75f;
+    [SerializeField] private bool endEpisodeOnPrematureGoal = false;
 
     [Header("Episode")]
     [SerializeField] private bool resetOnStart = true;
@@ -43,6 +44,16 @@ public class ScoreAttackManager : MonoBehaviour
     [SerializeField] private float minCoinDistanceFromAndroid = 2.0f;
     [SerializeField] private float minCoinDistanceFromGoal = 2.5f;
     [SerializeField] private int maxCoinPlacementAttempts = 30;
+
+    [Header("Ordered Curriculum Coin Placement")]
+    [SerializeField] private bool useOrderedCoinXSlots = false;
+    [SerializeField] private Vector2 firstCoinXRange = new Vector2(3.0f, 4.5f);
+    [SerializeField] private Vector2 secondCoinXRange = new Vector2(5.8f, 7.2f);
+    [SerializeField] private bool debugScoreMaxRandomWarmupPositions = false;
+
+    [Header("ScoreMax Objective Selection")]
+    [SerializeField] private bool preferForwardCoinObjectives = false;
+    [SerializeField] private float forwardCoinObjectiveTolerance = 0.25f;
 
     [Header("Debug")]
     [SerializeField] private bool debugLogs = false;
@@ -139,6 +150,8 @@ public class ScoreAttackManager : MonoBehaviour
             enemies[i].ResetForNewEpisode(active, position);
         }
 
+        LogRandomWarmupPositions();
+
         if (debugLogs)
         {
             Debug.Log($"[SCORE ATTACK] ResetEpisode coins={activeCoinCount} enemies={activeEnemyCount}", this);
@@ -162,6 +175,11 @@ public class ScoreAttackManager : MonoBehaviour
 
     private List<Vector3> BuildCoinPositions(List<Vector3> enemyPositions)
     {
+        if (useOrderedCoinXSlots)
+        {
+            return BuildOrderedCoinPositions(enemyPositions);
+        }
+
         List<Vector3> positions = new List<Vector3>();
 
         for (int i = 0; i < activeCoinCount; i++)
@@ -182,6 +200,64 @@ public class ScoreAttackManager : MonoBehaviour
         }
 
         return positions;
+    }
+
+    private List<Vector3> BuildOrderedCoinPositions(List<Vector3> enemyPositions)
+    {
+        List<Vector3> positions = new List<Vector3>();
+
+        for (int i = 0; i < activeCoinCount; i++)
+        {
+            Vector2 range = i == 0
+                ? firstCoinXRange
+                : i == 1
+                    ? secondCoinXRange
+                    : coinRandomXRange;
+
+            if (TryFindValidCoinPositionInRange(range, positions, enemyPositions, out Vector3 position))
+            {
+                positions.Add(position);
+                continue;
+            }
+
+            activeCoinCount = positions.Count;
+            break;
+        }
+
+        return positions;
+    }
+
+    private bool TryFindValidCoinPositionInRange(
+        Vector2 range,
+        List<Vector3> placedCoins,
+        List<Vector3> enemyPositions,
+        out Vector3 position)
+    {
+        float minX = Mathf.Min(range.x, range.y);
+        float maxX = Mathf.Max(range.x, range.y);
+        int attempts = Mathf.Max(1, maxCoinPlacementAttempts);
+
+        for (int attempt = 0; attempt < attempts; attempt++)
+        {
+            position = new Vector3(Random.Range(minX, maxX), GetCoinPlacementY(), 0f);
+            if (IsValidCoinPosition(position, placedCoins, enemyPositions))
+            {
+                return true;
+            }
+        }
+
+        float step = Mathf.Max(0.1f, (maxX - minX) / 10f);
+        for (float x = minX; x <= maxX + 0.001f; x += step)
+        {
+            position = new Vector3(x, GetCoinPlacementY(), 0f);
+            if (IsValidCoinPosition(position, placedCoins, enemyPositions))
+            {
+                return true;
+            }
+        }
+
+        position = default;
+        return false;
     }
 
     private bool TryFindValidCoinPosition(
@@ -378,6 +454,11 @@ public class ScoreAttackManager : MonoBehaviour
                     this);
             }
 
+            if (endEpisodeOnPrematureGoal && targetAgent != null)
+            {
+                targetAgent.EndEpisode();
+            }
+
             return false;
         }
 
@@ -457,7 +538,11 @@ public class ScoreAttackManager : MonoBehaviour
         out ScoreMaxObjectiveType objectiveType,
         out float distance)
     {
-        if (TryGetNearestActiveCoin(fromPosition, out ScoreAttackCoin nearestCoin, out distance))
+        bool hasCoin = preferForwardCoinObjectives
+            ? TryGetRelevantActiveCoin(fromPosition, out ScoreAttackCoin nearestCoin, out distance)
+            : TryGetNearestActiveCoin(fromPosition, out nearestCoin, out distance);
+
+        if (hasCoin)
         {
             target = nearestCoin.transform;
             objectiveType = ScoreMaxObjectiveType.Coin;
@@ -485,6 +570,43 @@ public class ScoreAttackManager : MonoBehaviour
         return false;
     }
 
+    private bool TryGetRelevantActiveCoin(
+        Vector3 fromPosition,
+        out ScoreAttackCoin relevantCoin,
+        out float distance)
+    {
+        RegisterSceneObjects();
+
+        relevantCoin = null;
+        distance = float.PositiveInfinity;
+        float bestSelectionScore = float.PositiveInfinity;
+        float forwardDirection = goal != null && goal.position.x < fromPosition.x ? -1f : 1f;
+        float behindPreferenceCost = Mathf.Max(0f, forwardCoinObjectiveTolerance);
+
+        for (int i = 0; i < coins.Count; i++)
+        {
+            ScoreAttackCoin candidate = coins[i];
+            if (candidate == null || !candidate.IsAvailable || collectedCoins.Contains(candidate))
+            {
+                continue;
+            }
+
+            float candidateDistance = Vector2.Distance(fromPosition, candidate.transform.position);
+            float forwardDelta =
+                (candidate.transform.position.x - fromPosition.x) * forwardDirection;
+            bool isBehind = forwardDelta < -behindPreferenceCost;
+            float selectionScore = candidateDistance + (isBehind ? behindPreferenceCost : 0f);
+            if (selectionScore < bestSelectionScore)
+            {
+                bestSelectionScore = selectionScore;
+                relevantCoin = candidate;
+                distance = candidateDistance;
+            }
+        }
+
+        return relevantCoin != null;
+    }
+
     private void RegisterSceneObjects()
     {
         ScoreAttackCoin[] sceneCoins = FindObjectsByType<ScoreAttackCoin>(FindObjectsInactive.Include);
@@ -495,6 +617,11 @@ public class ScoreAttackManager : MonoBehaviour
             sceneCoins[i].SetManager(this);
         }
 
+        if (useOrderedCoinXSlots)
+        {
+            coins.Sort(CompareCoinsByName);
+        }
+
         ScoreAttackAndroid[] sceneEnemies = FindObjectsByType<ScoreAttackAndroid>(FindObjectsInactive.Include);
 
         for (int i = 0; i < sceneEnemies.Length; i++)
@@ -502,6 +629,37 @@ public class ScoreAttackManager : MonoBehaviour
             RegisterEnemy(sceneEnemies[i]);
             sceneEnemies[i].SetManager(this);
         }
+    }
+
+    private void LogRandomWarmupPositions()
+    {
+        if (!debugScoreMaxRandomWarmupPositions)
+        {
+            return;
+        }
+
+        string coin1X = coins.Count > 0 && coins[0] != null
+            ? coins[0].transform.position.x.ToString("F2")
+            : "missing";
+        string coin2X = coins.Count > 1 && coins[1] != null
+            ? coins[1].transform.position.x.ToString("F2")
+            : "missing";
+        string androidX = enemies.Count > 0 && enemies[0] != null
+            ? enemies[0].transform.position.x.ToString("F2")
+            : "missing";
+        string goalX = goal != null ? goal.position.x.ToString("F2") : "missing";
+
+        Debug.Log(
+            $"[SCOREMAX RANDOM WARMUP] coin1X={coin1X} coin2X={coin2X} " +
+            $"androidX={androidX} goalX={goalX}",
+            this);
+    }
+
+    private static int CompareCoinsByName(ScoreAttackCoin left, ScoreAttackCoin right)
+    {
+        string leftName = left != null ? left.name : string.Empty;
+        string rightName = right != null ? right.name : string.Empty;
+        return string.CompareOrdinal(leftName, rightName);
     }
 
     private void AddAgentReward(EdgeRunnerAgentV5 sourceAgent, float reward)
@@ -527,5 +685,6 @@ public class ScoreAttackManager : MonoBehaviour
         minCoinDistanceFromAndroid = Mathf.Max(0f, minCoinDistanceFromAndroid);
         minCoinDistanceFromGoal = Mathf.Max(0f, minCoinDistanceFromGoal);
         maxCoinPlacementAttempts = Mathf.Max(1, maxCoinPlacementAttempts);
+        forwardCoinObjectiveTolerance = Mathf.Max(0f, forwardCoinObjectiveTolerance);
     }
 }
