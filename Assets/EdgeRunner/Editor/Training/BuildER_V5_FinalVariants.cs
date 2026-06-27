@@ -1478,8 +1478,8 @@ public static class BuildER_V5_FinalVariants
     {
         EdgeRunnerAgentV5ScoreMax agent = RequireScoreMaxAgent(player);
 
-        SetBool(agent, "debugScoreMaxObjectives", true);
-        SetBool(agent, "debugScoreMaxRewards", true);
+        SetBool(agent, "debugScoreMaxObjectives", false);
+        SetBool(agent, "debugScoreMaxRewards", false);
         SetBool(agent, "maskUselessJumps", false);
         SetFloat(agent, "missedCoinPenalty", -2.0f);
         SetBool(agent, "endEpisodeOnMissedCoinIntro", true);
@@ -1552,10 +1552,10 @@ public static class BuildER_V5_FinalVariants
         SetFloat(agent, "stuckTimeLimit", 35.0f);
         SetFloat(agent, "maxEpisodeTime", 240.0f);
         SetBool(agent, "disableTrainingEpisodeEndsInHeuristic", true);
-        SetBool(agent, "debugEpisodeResetReason", true);
-        SetBool(agent, "debugScoreMaxObservationCount", true);
-        SetBool(agent, "debugScoreMaxHeuristicInput", true);
-        SetBool(agent, "debugScoreMaxGroundCheck", true);
+        SetBool(agent, "debugEpisodeResetReason", false);
+        SetBool(agent, "debugScoreMaxObservationCount", false);
+        SetBool(agent, "debugScoreMaxHeuristicInput", false);
+        SetBool(agent, "debugScoreMaxGroundCheck", false);
         SetFloat(agent, "missedCoinPenalty", -2.0f);
         SetBool(agent, "endEpisodeOnMissedCoinIntro", true);
         SetFloat(agent, "missedCoinForwardMargin", 2.5f);

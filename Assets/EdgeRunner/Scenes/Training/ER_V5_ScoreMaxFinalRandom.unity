@@ -3214,7 +3214,7 @@ MonoBehaviour:
   debugJump: 0
   debugHeuristicInput: 0
   debugEpisodeStackTraces: 0
-  debugEpisodeResetReason: 1
+  debugEpisodeResetReason: 0
   scoreMaxRb: {fileID: 1727649656}
   scoreMaxManager: {fileID: 175710605}
   scoreMaxGoal: {fileID: 1859537837}
@@ -3261,10 +3261,10 @@ MonoBehaviour:
   downForwardRayOffsetX: 1.2
   downForwardRayHeight: 1
   debugScoreMaxObservations: 0
-  debugScoreMaxObservationCount: 1
+  debugScoreMaxObservationCount: 0
   debugScoreMaxObjectives: 0
-  debugScoreMaxHeuristicInput: 1
-  debugScoreMaxGroundCheck: 1
+  debugScoreMaxHeuristicInput: 0
+  debugScoreMaxGroundCheck: 0
   debugScoreMaxRewards: 0
   debugScoreMaxNextObjective: 0
   debugScoreMaxLogInterval: 1

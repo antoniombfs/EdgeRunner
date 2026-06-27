@@ -24,9 +24,13 @@ public static class BuildER_V5_ObjectAwareScene
     {
         EnsureFolder("Assets/EdgeRunner/Scenes/Training");
 
-        Scene previousActiveScene = SceneManager.GetActiveScene();
-        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-        SceneManager.SetActiveScene(scene);
+        if (!Application.isBatchMode &&
+            !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
+        {
+            return;
+        }
+
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         GameObject root = new GameObject("ER_V5_ScoreMaxOA_TraversalBase");
         Sprite platformSprite = GetSharedSprite();
 
@@ -39,21 +43,27 @@ public static class BuildER_V5_ObjectAwareScene
         GameObject player = CreateObjectAwarePlayer(new Vector3(0f, 1.15f, 0f), goal.transform);
         CreateDeathZone(17.5f, 48f);
         CreateCamera(player.transform);
+        ValidateTraversalBase(scene, player);
 
+        Selection.activeGameObject = player;
         EditorSceneManager.MarkSceneDirty(scene);
-        EditorSceneManager.SaveScene(scene, ScenePath);
-        EditorSceneManager.CloseScene(scene, true);
-
-        if (previousActiveScene.IsValid() && previousActiveScene.isLoaded)
+        if (!EditorSceneManager.SaveScene(scene, ScenePath))
         {
-            SceneManager.SetActiveScene(previousActiveScene);
+            throw new System.InvalidOperationException(
+                $"ObjectAware TraversalBase could not be saved at {ScenePath}.");
         }
 
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
+        SceneAsset savedScene = AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath);
+        if (savedScene != null)
+        {
+            EditorGUIUtility.PingObject(savedScene);
+        }
+
         Debug.Log(
-            $"[OBJECT AWARE BUILDER] Created {ScenePath} with " +
+            $"[OBJECT AWARE BUILDER] Created and opened {ScenePath} with " +
             $"{EdgeRunnerAgentV5ScoreMaxObjectAware.DefaultExpectedObservationSize} observations.");
     }
 
@@ -128,6 +138,87 @@ public static class BuildER_V5_ObjectAwareScene
         }
 
         return player;
+    }
+
+    private static void ValidateTraversalBase(Scene scene, GameObject player)
+    {
+        EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        if (objectAwareAgent == null || !objectAwareAgent.enabled)
+        {
+            throw new System.InvalidOperationException(
+                "TraversalBase requires an enabled EdgeRunnerAgentV5ScoreMaxObjectAware.");
+        }
+
+        if (player.GetComponent<EdgeRunnerAgentV5ScoreMax>() != null)
+        {
+            throw new System.InvalidOperationException(
+                "TraversalBase must not contain the legacy 83-observation ScoreMax agent.");
+        }
+
+        EdgeRunnerAgentV5[] agents = player.GetComponents<EdgeRunnerAgentV5>();
+        if (agents.Length != 1 || agents[0] != objectAwareAgent)
+        {
+            throw new System.InvalidOperationException(
+                "TraversalBase must contain exactly one ObjectAware Agent component.");
+        }
+
+        BehaviorParameters behavior = player.GetComponent<BehaviorParameters>();
+        SerializedObject serializedBehavior = new SerializedObject(behavior);
+        SerializedProperty observationSize = serializedBehavior.FindProperty(
+            "m_BrainParameters.VectorObservationSize");
+        SerializedProperty continuousActions = serializedBehavior.FindProperty(
+            "m_BrainParameters.m_ActionSpec.m_NumContinuousActions");
+        SerializedProperty branchSizes = serializedBehavior.FindProperty(
+            "m_BrainParameters.m_ActionSpec.BranchSizes");
+        SerializedProperty model = serializedBehavior.FindProperty("m_Model");
+
+        bool validBranches = branchSizes != null &&
+            branchSizes.arraySize == 3 &&
+            branchSizes.GetArrayElementAtIndex(0).intValue == 3 &&
+            branchSizes.GetArrayElementAtIndex(1).intValue == 2 &&
+            branchSizes.GetArrayElementAtIndex(2).intValue == 2;
+        bool validBehavior = behavior != null &&
+            behavior.BehaviorName == "EdgeRunnerV5ScoreMaxObjectAware" &&
+            behavior.BehaviorType == BehaviorType.Default &&
+            observationSize != null &&
+            observationSize.intValue ==
+                EdgeRunnerAgentV5ScoreMaxObjectAware.DefaultExpectedObservationSize &&
+            continuousActions != null &&
+            continuousActions.intValue == 0 &&
+            validBranches &&
+            model != null &&
+            model.objectReferenceValue == null;
+
+        if (!validBehavior)
+        {
+            throw new System.InvalidOperationException(
+                "TraversalBase BehaviorParameters must be ObjectAware, 111 observations, " +
+                "branches [3,2,2], Default, and Model None.");
+        }
+
+        if (SceneContainsComponent<ScoreAttackManager>(scene) ||
+            SceneContainsComponent<ScoreAttackCoin>(scene) ||
+            SceneContainsComponent<ScoreAttackAndroid>(scene) ||
+            SceneContainsComponent<ScoreAttackGoalLock>(scene))
+        {
+            throw new System.InvalidOperationException(
+                "TraversalBase must not contain ScoreAttack managers, objectives, or a locked Goal.");
+        }
+    }
+
+    private static bool SceneContainsComponent<T>(Scene scene) where T : Component
+    {
+        GameObject[] roots = scene.GetRootGameObjects();
+        for (int i = 0; i < roots.Length; i++)
+        {
+            if (roots[i].GetComponentInChildren<T>(true) != null)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void ConfigureBehavior(GameObject player)

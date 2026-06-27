@@ -1001,10 +1001,10 @@ MonoBehaviour:
   downForwardRayHeight: 1
   debugScoreMaxObservations: 0
   debugScoreMaxObservationCount: 0
-  debugScoreMaxObjectives: 1
+  debugScoreMaxObjectives: 0
   debugScoreMaxHeuristicInput: 0
   debugScoreMaxGroundCheck: 0
-  debugScoreMaxRewards: 1
+  debugScoreMaxRewards: 0
   debugScoreMaxLogInterval: 1
 --- !u!1 &2131990776
 GameObject:
