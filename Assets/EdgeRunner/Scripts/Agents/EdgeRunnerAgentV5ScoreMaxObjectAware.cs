@@ -14,7 +14,8 @@ public enum EdgeRunnerObjectAwarePhase
     StaticAndroidAvoid = 3,
     StaticAndroidStomp = 4,
     MixedWarmup = 5,
-    MixedRandomWarmup = 6
+    MixedRandomWarmup = 6,
+    FinalRandom = 7
 }
 
 public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
@@ -43,6 +44,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     [SerializeField] private Rigidbody2D objectAwareRigidbody;
     [SerializeField] private Transform objectAwareGoal;
     [SerializeField] private ScoreMaxOAMixedRandomWarmupRandomizer mixedRandomWarmupRandomizer;
+    [SerializeField] private ScoreMaxOAFinalRandomizer finalRandomizer;
 
     [Header("ObjectAware Normalization")]
     [SerializeField] private float maxObjectiveDistance = 35f;
@@ -228,6 +230,10 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         {
             mixedRandomWarmupRandomizer?.RandomizeEpisode();
         }
+        else if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalRandom)
+        {
+            finalRandomizer?.RandomizeEpisode();
+        }
 
         RefreshObjectCache(true);
         loggedObservationCountThisEpisode = false;
@@ -368,6 +374,91 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
             return true;
         }
 
+        if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalRandom)
+        {
+            RefreshObjectCache(true);
+            ScoreAttackCoin lowCoin = FindFirstLiveOrderedCoin(true);
+            ScoreAttackCoin highCoin = FindFirstLiveOrderedCoin(false);
+
+            if (coin == lowCoin && IsLiveCoin(lowCoin))
+            {
+                bool grounded = IsCurrentlyGroundedForEvaluation();
+                if (requireGroundedLowCoin && !grounded)
+                {
+                    mixedRandomAirborneLowCoinAttempt = true;
+                    AddReward(airborneLowCoinPenalty);
+
+                    if (debugObjectAwareNextObjective)
+                    {
+                        Debug.LogWarning(
+                            $"[OBJECT AWARE LOW COIN BLOCK] target={coin.name} " +
+                            $"lowCoinRequiresGrounded={requireGroundedLowCoin} " +
+                            $"grounded={grounded} airborneLowCoinAttempt=true " +
+                            $"penalty={airborneLowCoinPenalty:F2}",
+                            this);
+                    }
+
+                    if (endEpisodeOnAirborneLowCoin)
+                    {
+                        objectAwareEpisodeEnding = true;
+                        EndEpisode();
+                    }
+
+                    return false;
+                }
+
+                bool hasAnotherLowCoin =
+                    FindFirstLiveOrderedCoin(true, coin) != null;
+                mixedRandomLowCoinCollectedThisEpisode = !hasAnotherLowCoin;
+                mixedRandomAwaitingGroundedAfterLowCoin =
+                    !hasAnotherLowCoin && requireGroundedBetweenLowAndHigh;
+                mixedRandomHasLandedAfterLowCoin =
+                    hasAnotherLowCoin || !requireGroundedBetweenLowAndHigh;
+                mixedRandomSameJumpHighCoinAttempt = false;
+                mixedRandomAirborneLowCoinAttempt = false;
+                mixedRandomLowCoinCollectionFrame = Time.frameCount;
+                return true;
+            }
+
+            if (IsLiveCoin(lowCoin))
+            {
+                if (IsOrderedCurriculumCoin(coin, false))
+                {
+                    return RejectOrderedHighCoinAttempt(coin, "low_coin_still_alive");
+                }
+
+                return false;
+            }
+
+            if (coin != highCoin)
+            {
+                return IsOrderedCurriculumCoin(coin, false)
+                    ? RejectOrderedHighCoinAttempt(coin, "high_coin_out_of_order")
+                    : false;
+            }
+
+            if (!mixedRandomLowCoinCollectedThisEpisode)
+            {
+                return RejectOrderedHighCoinAttempt(coin, "low_stage_not_completed");
+            }
+
+            UpdateMixedRandomLowHighLandingState();
+            if (MixedRandomHighCoinLockedUntilLanding())
+            {
+                return RejectOrderedHighCoinAttempt(coin, "landing_required");
+            }
+
+            bool hasAnotherHighCoin =
+                FindFirstLiveOrderedCoin(false, coin) != null;
+            mixedRandomAwaitingGroundedAfterLowCoin =
+                hasAnotherHighCoin && requireGroundedBetweenLowAndHigh;
+            mixedRandomHasLandedAfterLowCoin =
+                !hasAnotherHighCoin || !requireGroundedBetweenLowAndHigh;
+            mixedRandomSameJumpHighCoinAttempt = false;
+            mixedRandomLowCoinCollectionFrame = Time.frameCount;
+            return true;
+        }
+
         if (!UsesHighCoinLandingCurriculum())
         {
             return true;
@@ -431,15 +522,22 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
             return false;
         }
 
-        if (objectAwarePhase != EdgeRunnerObjectAwarePhase.MixedRandomWarmup)
+        if (objectAwarePhase == EdgeRunnerObjectAwarePhase.MixedRandomWarmup)
+        {
+            RefreshObjectCache(true);
+            ScoreAttackCoin lowCoin = FindCoinByName("MixedRandomWarmup_LowCoin");
+            ScoreAttackCoin highCoin = FindCoinByName("MixedRandomWarmup_HighCoin");
+            return !IsLiveCoin(lowCoin) && !IsLiveCoin(highCoin);
+        }
+
+        if (objectAwarePhase != EdgeRunnerObjectAwarePhase.FinalRandom)
         {
             return true;
         }
 
         RefreshObjectCache(true);
-        ScoreAttackCoin lowCoin = FindCoinByName("MixedRandomWarmup_LowCoin");
-        ScoreAttackCoin highCoin = FindCoinByName("MixedRandomWarmup_HighCoin");
-        return !IsLiveCoin(lowCoin) && !IsLiveCoin(highCoin);
+        return FindFirstLiveOrderedCoin(true) == null &&
+            FindFirstLiveOrderedCoin(false) == null;
     }
 
     public override void CollectObservations(VectorSensor sensor)
@@ -695,7 +793,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
             hasLandedAfterPreviousHighCoin = hasLandedAfterPreviousHighCoin,
             sameJumpCoinAttempt = sameJumpCoinAttempt,
             lowCoinRequiresGrounded =
-                objectAwarePhase == EdgeRunnerObjectAwarePhase.MixedRandomWarmup &&
+                UsesGroundedLowHighGateCurriculum() &&
                 requireGroundedLowCoin,
             hasLandedAfterLowCoin = mixedRandomHasLandedAfterLowCoin,
             highCoinLockedUntilLanding = highCoinLockedUntilLanding,
@@ -1060,6 +1158,32 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         TargetSnapshot android,
         TargetSnapshot goal)
     {
+        if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalRandom)
+        {
+            ScoreAttackCoin orderedLowCoin = FindFirstLiveOrderedCoin(true);
+            if (IsLiveCoin(orderedLowCoin))
+            {
+                return CreateTargetSnapshot(
+                    orderedLowCoin.transform,
+                    ObjectAwareObjectiveType.Coin);
+            }
+
+            ScoreAttackCoin orderedHighCoin = FindFirstLiveOrderedCoin(false);
+            if (IsLiveCoin(orderedHighCoin))
+            {
+                if (MixedRandomHighCoinLockedUntilLanding())
+                {
+                    return default;
+                }
+
+                return CreateTargetSnapshot(
+                    orderedHighCoin.transform,
+                    ObjectAwareObjectiveType.Coin);
+            }
+
+            return android.exists ? android : goal;
+        }
+
         string objectivePrefix =
             objectAwarePhase == EdgeRunnerObjectAwarePhase.MixedRandomWarmup
                 ? "MixedRandomWarmup"
@@ -1083,6 +1207,83 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         }
 
         return android.exists ? android : goal;
+    }
+
+    private ScoreAttackCoin FindFirstLiveOrderedCoin(
+        bool lowCoin,
+        ScoreAttackCoin excludedCoin = null)
+    {
+        if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalRandom)
+        {
+            string prefix = lowCoin
+                ? "FinalRandom_LowCoin_"
+                : "FinalRandom_HighCoin_";
+            for (int index = 1; index <= 2; index++)
+            {
+                ScoreAttackCoin candidate = FindCoinByName($"{prefix}{index:00}");
+                if (candidate != excludedCoin && IsLiveCoin(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+
+        string objectivePrefix =
+            objectAwarePhase == EdgeRunnerObjectAwarePhase.MixedRandomWarmup
+                ? "MixedRandomWarmup"
+                : "MixedWarmup";
+        ScoreAttackCoin coin = FindCoinByName(
+            $"{objectivePrefix}_{(lowCoin ? "LowCoin" : "HighCoin")}");
+        return coin != excludedCoin && IsLiveCoin(coin) ? coin : null;
+    }
+
+    private bool IsOrderedCurriculumCoin(ScoreAttackCoin coin, bool lowCoin)
+    {
+        if (coin == null)
+        {
+            return false;
+        }
+
+        if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalRandom)
+        {
+            string prefix = lowCoin
+                ? "FinalRandom_LowCoin_"
+                : "FinalRandom_HighCoin_";
+            return coin.name.StartsWith(prefix, StringComparison.Ordinal);
+        }
+
+        string expectedName =
+            objectAwarePhase == EdgeRunnerObjectAwarePhase.MixedRandomWarmup
+                ? $"MixedRandomWarmup_{(lowCoin ? "LowCoin" : "HighCoin")}"
+                : $"MixedWarmup_{(lowCoin ? "LowCoin" : "HighCoin")}";
+        return coin.name == expectedName;
+    }
+
+    private bool RejectOrderedHighCoinAttempt(ScoreAttackCoin coin, string reason)
+    {
+        mixedRandomSameJumpHighCoinAttempt = true;
+        AddReward(sameJumpHighCoinPenalty);
+
+        if (debugObjectAwareNextObjective)
+        {
+            Debug.LogWarning(
+                $"[OBJECT AWARE ORDERED HIGH COIN BLOCK] target={coin.name} " +
+                $"reason={reason} highCoinLockedUntilLanding=" +
+                $"{MixedRandomHighCoinLockedUntilLanding()} " +
+                $"hasLandedAfterLowCoin={mixedRandomHasLandedAfterLowCoin} " +
+                $"sameJumpHighCoinAttempt=true penalty={sameJumpHighCoinPenalty:F2}",
+                this);
+        }
+
+        if (endEpisodeOnSameJumpHighCoin)
+        {
+            objectAwareEpisodeEnding = true;
+            EndEpisode();
+        }
+
+        return false;
     }
 
     private ScoreAttackCoin FindCoinByName(string expectedName)
@@ -1136,7 +1337,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
 
     private bool MixedRandomHighCoinLockedUntilLanding()
     {
-        return objectAwarePhase == EdgeRunnerObjectAwarePhase.MixedRandomWarmup &&
+        return UsesGroundedLowHighGateCurriculum() &&
             requireGroundedBetweenLowAndHigh &&
             mixedRandomLowCoinCollectedThisEpisode &&
             mixedRandomAwaitingGroundedAfterLowCoin &&
@@ -1206,7 +1407,14 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     private bool IsMixedWarmupCurriculum()
     {
         return objectAwarePhase == EdgeRunnerObjectAwarePhase.MixedWarmup ||
-            objectAwarePhase == EdgeRunnerObjectAwarePhase.MixedRandomWarmup;
+            objectAwarePhase == EdgeRunnerObjectAwarePhase.MixedRandomWarmup ||
+            objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalRandom;
+    }
+
+    private bool UsesGroundedLowHighGateCurriculum()
+    {
+        return objectAwarePhase == EdgeRunnerObjectAwarePhase.MixedRandomWarmup ||
+            objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalRandom;
     }
 
     private static ActionBuffers WithoutJumpAction(ActionBuffers actions)
@@ -1328,6 +1536,12 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         {
             mixedRandomWarmupRandomizer =
                 FindAnyObjectByType<ScoreMaxOAMixedRandomWarmupRandomizer>();
+        }
+
+        if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalRandom &&
+            finalRandomizer == null)
+        {
+            finalRandomizer = FindAnyObjectByType<ScoreMaxOAFinalRandomizer>();
         }
     }
 
@@ -1466,9 +1680,13 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
             string coinClass = next.type == ObjectAwareObjectiveType.Coin
                 ? context.coinNeedsJump ? "high" : "low"
                 : "none";
+            string sequenceStage = objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalRandom
+                ? GetFinalRandomSequenceStage(context)
+                : currentTarget;
             Debug.Log(
                 $"[OBJECT AWARE NEXT] type={FormatObjectiveType(next.type)} " +
                 $"currentTarget={currentTarget} " +
+                $"sequenceStage={sequenceStage} " +
                 $"exists={next.exists} dx={next.delta.x:F2} dy={next.delta.y:F2} " +
                 $"dist={next.distance:F2} ahead={next.ahead} " +
                 $"coinClass={coinClass} coinNeedsJump={context.coinNeedsJump} " +
@@ -1504,6 +1722,26 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
                 $"valid={context.jumpContextValid} shouldNotJump={context.shouldNotJumpNow}",
                 this);
         }
+    }
+
+    private string GetFinalRandomSequenceStage(ObjectAwareContext context)
+    {
+        if (context.highCoinLockedUntilLanding)
+        {
+            return "landing_required";
+        }
+
+        if (FindFirstLiveOrderedCoin(true) != null)
+        {
+            return "LowCoin";
+        }
+
+        if (FindFirstLiveOrderedCoin(false) != null)
+        {
+            return "HighCoin";
+        }
+
+        return context.android.exists ? "Enemy" : "Goal";
     }
 
     private static string FormatObjectiveType(ObjectAwareObjectiveType type)
@@ -1594,7 +1832,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         if (context.highCoinRequiresLanding || context.highCoinLockedUntilLanding)
         {
             ScoreAttackCoin blockedCoin = context.highCoinLockedUntilLanding
-                ? FindCoinByName("MixedRandomWarmup_HighCoin")
+                ? FindFirstLiveOrderedCoin(false)
                 : FindHighCoinSequenceCoin(false);
             if (IsLiveCoin(blockedCoin))
             {

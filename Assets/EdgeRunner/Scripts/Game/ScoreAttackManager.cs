@@ -160,6 +160,23 @@ public class ScoreAttackManager : MonoBehaviour
         }
     }
 
+    public void OverrideActiveObjectiveCountsForRuntimeLayout(
+        int runtimeActiveCoinCount,
+        int runtimeActiveEnemyCount)
+    {
+        RegisterSceneObjects();
+        activeCoinCount = Mathf.Clamp(runtimeActiveCoinCount, 0, coins.Count);
+        activeEnemyCount = Mathf.Clamp(runtimeActiveEnemyCount, 0, enemies.Count);
+
+        if (debugLogs)
+        {
+            Debug.Log(
+                $"[SCORE ATTACK] Runtime layout counts coins={activeCoinCount} " +
+                $"enemies={activeEnemyCount}",
+                this);
+        }
+    }
+
     private List<Vector3> BuildEnemyPositions()
     {
         List<Vector3> positions = new List<Vector3>();

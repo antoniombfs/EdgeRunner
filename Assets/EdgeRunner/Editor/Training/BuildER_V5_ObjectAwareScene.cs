@@ -48,6 +48,13 @@ public static class BuildER_V5_ObjectAwareScene
     private const float MixedRandomWarmupGoalMaxX = 22f;
     private const float MixedRandomWarmupMinimumLowCoinHighCoinDistance = 4f;
     private const float MixedRandomWarmupMinimumHighCoinAndroidDistance = 3f;
+    private const float FinalRandomFirstGapMin = 1.5f;
+    private const float FinalRandomFirstGapMax = 2.2f;
+    private const float FinalRandomSecondGapMin = 2f;
+    private const float FinalRandomSecondGapMax = 2.8f;
+    private const float FinalRandomMinimumLowHighDistance = 4f;
+    private const float FinalRandomMinimumHighAndroidDistance = 3f;
+    private const float FinalRandomMinimumAndroidGoalDistance = 3f;
 
     private const string TraversalScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_TraversalBase.unity";
@@ -63,6 +70,8 @@ public static class BuildER_V5_ObjectAwareScene
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_MixedWarmup.unity";
     private const string MixedRandomWarmupScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_MixedRandomWarmup.unity";
+    private const string FinalRandomScenePath =
+        "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_FinalRandom.unity";
     private const string PlayerPrefabPath =
         "Assets/EdgeRunner/Prefabs/Agent/Player_V5.prefab";
     private const string GroundPrefabPath =
@@ -363,6 +372,97 @@ public static class BuildER_V5_ObjectAwareScene
         CreateDeathZone(11f, 36f, "DeathZone_ScoreMaxOA_MixedRandomWarmup");
         CreateCamera(player.transform);
         ValidateMixedRandomWarmup(scene, player, manager, randomizer, android, goal);
+    }
+
+    [MenuItem("EdgeRunner/Training/ObjectAware/Build ScoreMaxOA FinalRandom")]
+    public static void BuildFinalRandom()
+    {
+        if (!CanReplaceOpenScenes())
+        {
+            return;
+        }
+
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        BuildFinalRandomContents(scene, out GameObject player);
+        SaveAndKeepOpen(scene, FinalRandomScenePath, player, "FinalRandom");
+    }
+
+    private static void BuildFinalRandomContents(Scene scene, out GameObject player)
+    {
+        GameObject root = new GameObject("ER_V5_ScoreMaxOA_FinalRandom");
+        Sprite sprite = GetSharedSprite();
+
+        Transform startPlatform =
+            CreatePlatform(root.transform, "FinalRandom_Start", 2.5f, 0f, 9f, sprite);
+        Transform lowPlatform =
+            CreatePlatform(root.transform, "FinalRandom_LowZone", 12.3f, 0f, 7f, sprite);
+        Transform highPlatform =
+            CreatePlatform(root.transform, "FinalRandom_HighRecovery", 22.7f, 0f, 9f, sprite);
+        Transform finalPlatform =
+            CreatePlatform(root.transform, "FinalRandom_AndroidGoal", 32.2f, 0f, 11f, sprite);
+
+        ScoreAttackManager manager = CreateFinalRandomManager(root.transform);
+        GameObject goal = CreateLockedGoal(
+            "Goal_ScoreMaxOA_FinalRandom",
+            new Vector3(36.2f, 1.2f, 0f),
+            manager);
+        player = CreateObjectAwarePlayer(new Vector3(0f, 1.15f, 0f), goal.transform);
+
+        ScoreAttackCoin[] lowCoins =
+        {
+            CreateCoin(
+                root.transform,
+                "FinalRandom_LowCoin_01",
+                new Vector3(10.3f, MixedWarmupLowCoinY, 0f),
+                sprite,
+                manager),
+            CreateCoin(
+                root.transform,
+                "FinalRandom_LowCoin_02",
+                new Vector3(13.6f, MixedWarmupLowCoinY, 0f),
+                sprite,
+                manager)
+        };
+        ScoreAttackCoin[] highCoins =
+        {
+            CreateCoin(
+                root.transform,
+                "FinalRandom_HighCoin_01",
+                new Vector3(20f, MixedWarmupHighCoinY, 0f),
+                sprite,
+                manager),
+            CreateCoin(
+                root.transform,
+                "FinalRandom_HighCoin_02",
+                new Vector3(24f, MixedWarmupHighCoinY, 0f),
+                sprite,
+                manager)
+        };
+        GameObject android = CreateStaticAndroid(
+            root.transform,
+            "FinalRandom_Android_01",
+            new Vector3(31.2f, 1.02f, 0f),
+            sprite,
+            manager);
+
+        ScoreMaxOAFinalRandomizer randomizer =
+            manager.gameObject.AddComponent<ScoreMaxOAFinalRandomizer>();
+        ConfigureFinalRandomizer(
+            randomizer,
+            manager,
+            lowCoins,
+            highCoins,
+            android.GetComponent<ScoreAttackAndroid>(),
+            goal.transform,
+            startPlatform,
+            lowPlatform,
+            highPlatform,
+            finalPlatform);
+        ConfigureFinalRandomPlayer(player, manager, randomizer);
+
+        CreateDeathZone(18f, 50f, "DeathZone_ScoreMaxOA_FinalRandom");
+        CreateCamera(player.transform);
+        ValidateFinalRandom(scene, player, manager, randomizer, android, goal);
     }
 
     public static void BuildCoinPhasesBatch()
@@ -1613,6 +1713,326 @@ public static class BuildER_V5_ObjectAwareScene
         ValidateCommonSceneObjects(scene, phaseName);
     }
 
+    private static void ValidateFinalRandom(
+        Scene scene,
+        GameObject player,
+        ScoreAttackManager manager,
+        ScoreMaxOAFinalRandomizer randomizer,
+        GameObject android,
+        GameObject goal)
+    {
+        const string phaseName = "FinalRandom";
+        ValidateObjectAwarePlayer(player, phaseName);
+
+        ScoreAttackCoin[] coins = GetSceneComponents<ScoreAttackCoin>(scene);
+        ScoreAttackGoalLock[] goalLocks = GetSceneComponents<ScoreAttackGoalLock>(scene);
+        if (CountSceneComponents<ScoreAttackManager>(scene) != 1 ||
+            CountSceneComponents<ScoreMaxOAFinalRandomizer>(scene) != 1 ||
+            coins.Length != 4 ||
+            CountSceneComponents<ScoreAttackAndroid>(scene) != 1 ||
+            goalLocks.Length != 1 ||
+            CountSceneComponents<DemoAndroidPatrol>(scene) != 0 ||
+            CountSceneComponents<EdgeRunnerAgentV5ScoreMax>(scene) != 0 ||
+            CountSceneComponents<EdgeRunnerAgentV5EnemyAware>(scene) != 0)
+        {
+            throw new System.InvalidOperationException(
+                "FinalRandom requires four coin slots, one static Android, one manager, " +
+                "one runtime randomizer, one GoalLock, no patrol, and no legacy agents.");
+        }
+
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        BoxCollider2D playerCollider = player.GetComponent<BoxCollider2D>();
+        Rigidbody2D playerBody = player.GetComponent<Rigidbody2D>();
+        ScoreAttackAndroid androidComponent = android != null
+            ? android.GetComponent<ScoreAttackAndroid>()
+            : null;
+        Rigidbody2D androidBody = android != null ? android.GetComponent<Rigidbody2D>() : null;
+        Collider2D androidCollider = android != null ? android.GetComponent<Collider2D>() : null;
+
+        Dictionary<string, BoxCollider2D> platforms = new Dictionary<string, BoxCollider2D>();
+        BoxCollider2D[] boxColliders = GetSceneComponents<BoxCollider2D>(scene);
+        for (int i = 0; i < boxColliders.Length; i++)
+        {
+            string objectName = boxColliders[i].gameObject.name;
+            if (objectName.StartsWith("FinalRandom_", System.StringComparison.Ordinal))
+            {
+                platforms[objectName] = boxColliders[i];
+            }
+        }
+
+        if (agent == null || playerCollider == null || playerBody == null ||
+            manager == null || randomizer == null || androidComponent == null ||
+            androidBody == null || androidBody.bodyType != RigidbodyType2D.Kinematic ||
+            androidCollider == null || !androidCollider.isTrigger || goal == null ||
+            !platforms.ContainsKey("FinalRandom_Start") ||
+            !platforms.ContainsKey("FinalRandom_LowZone") ||
+            !platforms.ContainsKey("FinalRandom_HighRecovery") ||
+            !platforms.ContainsKey("FinalRandom_AndroidGoal"))
+        {
+            throw new System.InvalidOperationException(
+                "FinalRandom is missing its agent, physics, static Android, Goal, or platforms.");
+        }
+
+        SerializedObject serializedAgent = new SerializedObject(agent);
+        SerializedProperty phase = serializedAgent.FindProperty("objectAwarePhase");
+        SerializedProperty assignedManager = serializedAgent.FindProperty("scoreAttackManager");
+        SerializedProperty assignedRandomizer = serializedAgent.FindProperty("finalRandomizer");
+        SerializedProperty objectAwareGoal = serializedAgent.FindProperty("objectAwareGoal");
+        SerializedProperty rewardShaping = serializedAgent.FindProperty(
+            "enableObjectAwareRewardShaping");
+        SerializedProperty missedCoinEnd = serializedAgent.FindProperty(
+            "enableMissedCoinEpisodeEnd");
+        SerializedProperty contextualJumpMask = serializedAgent.FindProperty(
+            "enableContextualJumpMask");
+        SerializedProperty requireGroundedLowCoin = serializedAgent.FindProperty(
+            "requireGroundedLowCoin");
+        SerializedProperty airborneLowCoinPenalty = serializedAgent.FindProperty(
+            "airborneLowCoinPenalty");
+        SerializedProperty endOnAirborneLowCoin = serializedAgent.FindProperty(
+            "endEpisodeOnAirborneLowCoin");
+        SerializedProperty requireLowHighLanding = serializedAgent.FindProperty(
+            "requireGroundedBetweenLowAndHigh");
+        SerializedProperty sameJumpHighCoinPenalty = serializedAgent.FindProperty(
+            "sameJumpHighCoinPenalty");
+        SerializedProperty endOnSameJumpHighCoin = serializedAgent.FindProperty(
+            "endEpisodeOnSameJumpHighCoin");
+        SerializedProperty threshold = serializedAgent.FindProperty("lowCoinHeightThreshold");
+        SerializedProperty jumpForce = serializedAgent.FindProperty("jumpForce");
+        SerializedProperty missedCoinPenalty = serializedAgent.FindProperty("missedCoinPenalty");
+        SerializedProperty missedEnemyPenalty = serializedAgent.FindProperty("missedEnemyPenalty");
+        SerializedProperty endOnMissedEnemy = serializedAgent.FindProperty(
+            "endEpisodeOnMissedEnemy");
+        SerializedProperty debugObservationCount = serializedAgent.FindProperty(
+            "debugObjectAwareObservationCount");
+        SerializedProperty debugNextObjective = serializedAgent.FindProperty(
+            "debugObjectAwareNextObjective");
+        SerializedProperty debugJumpContext = serializedAgent.FindProperty(
+            "debugObjectAwareJumpContext");
+        SerializedProperty debugGizmos = serializedAgent.FindProperty(
+            "debugObjectAwareGizmos");
+
+        GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+        EdgeRunnerAgentV5 prefabAgent = playerPrefab != null
+            ? playerPrefab.GetComponent<EdgeRunnerAgentV5>()
+            : null;
+        SerializedProperty prefabJumpForce = prefabAgent != null
+            ? new SerializedObject(prefabAgent).FindProperty("jumpForce")
+            : null;
+
+        if (phase == null || phase.enumValueIndex != (int)EdgeRunnerObjectAwarePhase.FinalRandom ||
+            assignedManager == null || assignedManager.objectReferenceValue != manager ||
+            assignedRandomizer == null || assignedRandomizer.objectReferenceValue != randomizer ||
+            objectAwareGoal == null || objectAwareGoal.objectReferenceValue != goal.transform ||
+            rewardShaping == null || !rewardShaping.boolValue ||
+            missedCoinEnd == null || !missedCoinEnd.boolValue ||
+            contextualJumpMask == null || !contextualJumpMask.boolValue ||
+            requireGroundedLowCoin == null || !requireGroundedLowCoin.boolValue ||
+            airborneLowCoinPenalty == null ||
+            Mathf.Abs(airborneLowCoinPenalty.floatValue + 2f) > 0.0001f ||
+            endOnAirborneLowCoin == null || !endOnAirborneLowCoin.boolValue ||
+            requireLowHighLanding == null || !requireLowHighLanding.boolValue ||
+            sameJumpHighCoinPenalty == null ||
+            Mathf.Abs(sameJumpHighCoinPenalty.floatValue + 2f) > 0.0001f ||
+            endOnSameJumpHighCoin == null || !endOnSameJumpHighCoin.boolValue ||
+            threshold == null ||
+            Mathf.Abs(threshold.floatValue - LowCoinRunHeightThreshold) > 0.0001f ||
+            jumpForce == null || prefabJumpForce == null ||
+            Mathf.Abs(jumpForce.floatValue - prefabJumpForce.floatValue) > 0.0001f ||
+            missedCoinPenalty == null || Mathf.Abs(missedCoinPenalty.floatValue + 2f) > 0.0001f ||
+            missedEnemyPenalty == null ||
+            Mathf.Abs(missedEnemyPenalty.floatValue - StaticAndroidStompMissedPenalty) > 0.0001f ||
+            endOnMissedEnemy == null || !endOnMissedEnemy.boolValue ||
+            debugObservationCount == null || debugObservationCount.boolValue ||
+            debugNextObjective == null || debugNextObjective.boolValue ||
+            debugJumpContext == null || debugJumpContext.boolValue ||
+            debugGizmos == null || debugGizmos.boolValue)
+        {
+            throw new System.InvalidOperationException(
+                "FinalRandom has invalid phase, references, gates, jumpForce, or debug flags.");
+        }
+
+        Physics2D.SyncTransforms();
+        BoxCollider2D startPlatform = platforms["FinalRandom_Start"];
+        float playerScaleY = Mathf.Abs(player.transform.lossyScale.y);
+        float playerHalfHeight = playerCollider.size.y * playerScaleY * 0.5f;
+        float groundedCenterY =
+            startPlatform.bounds.max.y + playerHalfHeight -
+            playerCollider.offset.y * playerScaleY;
+        float groundedTopY = groundedCenterY + playerHalfHeight;
+        float effectiveGravity =
+            Mathf.Abs(Physics2D.gravity.y) * Mathf.Max(0.0001f, playerBody.gravityScale);
+        float maximumJumpCenterY =
+            groundedCenterY + jumpForce.floatValue * jumpForce.floatValue / (2f * effectiveGravity);
+        int lowCoinCount = 0;
+        int highCoinCount = 0;
+
+        for (int i = 0; i < coins.Length; i++)
+        {
+            ScoreAttackCoin coin = coins[i];
+            CircleCollider2D coinCollider = coin.GetComponent<CircleCollider2D>();
+            SerializedProperty coinManager =
+                new SerializedObject(coin).FindProperty("manager");
+            if (coinCollider == null || coinManager == null ||
+                coinManager.objectReferenceValue != manager)
+            {
+                throw new System.InvalidOperationException(
+                    $"{coin.name} is missing its collider or manager reference.");
+            }
+
+            float coinRadius = coinCollider.radius * Mathf.Abs(coin.transform.lossyScale.y);
+            float dy = coin.transform.position.y - groundedCenterY;
+            if (coin.name.StartsWith("FinalRandom_LowCoin_", System.StringComparison.Ordinal))
+            {
+                lowCoinCount++;
+                if (dy > threshold.floatValue ||
+                    coin.transform.position.y - coinRadius > groundedTopY + 0.0001f)
+                {
+                    throw new System.InvalidOperationException(
+                        $"{coin.name} must be low and ground-collectable; dy={dy:F3}.");
+                }
+            }
+            else if (coin.name.StartsWith("FinalRandom_HighCoin_", System.StringComparison.Ordinal))
+            {
+                highCoinCount++;
+                float minimumCenterForCollection =
+                    coin.transform.position.y - playerHalfHeight - coinRadius;
+                if (dy <= threshold.floatValue ||
+                    minimumCenterForCollection > maximumJumpCenterY)
+                {
+                    throw new System.InvalidOperationException(
+                        $"{coin.name} must be high and reachable; dy={dy:F3}.");
+                }
+            }
+        }
+
+        if (lowCoinCount != 2 || highCoinCount != 2)
+        {
+            throw new System.InvalidOperationException(
+                "FinalRandom requires exactly two low and two high runtime coin slots.");
+        }
+
+        SerializedObject serializedManager = new SerializedObject(manager);
+        SerializedProperty managerAgent = serializedManager.FindProperty("agent");
+        SerializedProperty resetOnStart = serializedManager.FindProperty("resetOnStart");
+        SerializedProperty managerRandomization = serializedManager.FindProperty(
+            "randomizeObjectPositionsOnReset");
+        SerializedProperty requireEnemies = serializedManager.FindProperty("requireEnemiesForGoal");
+        SerializedProperty minCoins = serializedManager.FindProperty("minActiveCoins");
+        SerializedProperty maxCoins = serializedManager.FindProperty("maxActiveCoins");
+        SerializedProperty minEnemies = serializedManager.FindProperty("minActiveEnemies");
+        SerializedProperty maxEnemies = serializedManager.FindProperty("maxActiveEnemies");
+        SerializedProperty coinReward = serializedManager.FindProperty("coinReward");
+        SerializedProperty stompReward = serializedManager.FindProperty("enemyKillReward");
+        SerializedProperty sideHitPenalty = serializedManager.FindProperty("enemySideHitPenalty");
+        SerializedProperty finalReward = serializedManager.FindProperty("finalCompletionReward");
+        SerializedProperty lockedGoalPenalty = serializedManager.FindProperty("prematureGoalPenalty");
+        SerializedProperty endOnLockedGoal = serializedManager.FindProperty(
+            "endEpisodeOnPrematureGoal");
+
+        if (managerAgent == null || managerAgent.objectReferenceValue != agent ||
+            resetOnStart == null || resetOnStart.boolValue ||
+            managerRandomization == null || managerRandomization.boolValue ||
+            requireEnemies == null || !requireEnemies.boolValue ||
+            minCoins == null || minCoins.intValue != 2 ||
+            maxCoins == null || maxCoins.intValue != 4 ||
+            minEnemies == null || minEnemies.intValue != 1 ||
+            maxEnemies == null || maxEnemies.intValue != 1 ||
+            coinReward == null || Mathf.Abs(coinReward.floatValue - 2f) > 0.0001f ||
+            stompReward == null || Mathf.Abs(stompReward.floatValue - 5f) > 0.0001f ||
+            sideHitPenalty == null || Mathf.Abs(sideHitPenalty.floatValue + 6f) > 0.0001f ||
+            finalReward == null || Mathf.Abs(finalReward.floatValue - 10f) > 0.0001f ||
+            lockedGoalPenalty == null ||
+            Mathf.Abs(lockedGoalPenalty.floatValue + 2f) > 0.0001f ||
+            endOnLockedGoal == null || !endOnLockedGoal.boolValue)
+        {
+            throw new System.InvalidOperationException(
+                "FinalRandom manager rewards, counts, reset, or GoalLock rules are invalid.");
+        }
+
+        SerializedObject serializedRandomizer = new SerializedObject(randomizer);
+        SerializedProperty randomManager = serializedRandomizer.FindProperty("manager");
+        SerializedProperty randomLowCoins = serializedRandomizer.FindProperty("lowCoins");
+        SerializedProperty randomHighCoins = serializedRandomizer.FindProperty("highCoins");
+        SerializedProperty randomAndroid = serializedRandomizer.FindProperty("android");
+        SerializedProperty randomGoal = serializedRandomizer.FindProperty("goal");
+        SerializedProperty randomStartPlatform = serializedRandomizer.FindProperty("startPlatform");
+        SerializedProperty randomLowPlatform = serializedRandomizer.FindProperty("lowPlatform");
+        SerializedProperty randomHighPlatform = serializedRandomizer.FindProperty(
+            "highRecoveryPlatform");
+        SerializedProperty randomFinalPlatform = serializedRandomizer.FindProperty("finalPlatform");
+        SerializedProperty gapOne = serializedRandomizer.FindProperty("firstGapWidthRange");
+        SerializedProperty gapTwo = serializedRandomizer.FindProperty("secondGapWidthRange");
+        SerializedProperty minimumLowHigh = serializedRandomizer.FindProperty(
+            "minimumLowCoinToHighCoinDistance");
+        SerializedProperty minimumHighAndroid = serializedRandomizer.FindProperty(
+            "minimumHighCoinToAndroidDistance");
+        SerializedProperty minimumAndroidGoal = serializedRandomizer.FindProperty(
+            "minimumAndroidToGoalDistance");
+        SerializedProperty debugPositions = serializedRandomizer.FindProperty(
+            "debugObjectAwareFinalRandomPositions");
+
+        bool randomArraysValid =
+            randomLowCoins != null && randomLowCoins.arraySize == 2 &&
+            randomHighCoins != null && randomHighCoins.arraySize == 2 &&
+            randomLowCoins.GetArrayElementAtIndex(0).objectReferenceValue != null &&
+            randomLowCoins.GetArrayElementAtIndex(0).objectReferenceValue.name ==
+                "FinalRandom_LowCoin_01" &&
+            randomLowCoins.GetArrayElementAtIndex(1).objectReferenceValue != null &&
+            randomLowCoins.GetArrayElementAtIndex(1).objectReferenceValue.name ==
+                "FinalRandom_LowCoin_02" &&
+            randomHighCoins.GetArrayElementAtIndex(0).objectReferenceValue != null &&
+            randomHighCoins.GetArrayElementAtIndex(0).objectReferenceValue.name ==
+                "FinalRandom_HighCoin_01" &&
+            randomHighCoins.GetArrayElementAtIndex(1).objectReferenceValue != null &&
+            randomHighCoins.GetArrayElementAtIndex(1).objectReferenceValue.name ==
+                "FinalRandom_HighCoin_02";
+        if (randomManager == null || randomManager.objectReferenceValue != manager ||
+            !randomArraysValid ||
+            randomAndroid == null || randomAndroid.objectReferenceValue != androidComponent ||
+            randomGoal == null || randomGoal.objectReferenceValue != goal.transform ||
+            randomStartPlatform == null ||
+            randomStartPlatform.objectReferenceValue != platforms["FinalRandom_Start"].transform ||
+            randomLowPlatform == null ||
+            randomLowPlatform.objectReferenceValue != platforms["FinalRandom_LowZone"].transform ||
+            randomHighPlatform == null ||
+            randomHighPlatform.objectReferenceValue !=
+                platforms["FinalRandom_HighRecovery"].transform ||
+            randomFinalPlatform == null ||
+            randomFinalPlatform.objectReferenceValue !=
+                platforms["FinalRandom_AndroidGoal"].transform ||
+            gapOne == null ||
+            gapOne.vector2Value != new Vector2(FinalRandomFirstGapMin, FinalRandomFirstGapMax) ||
+            gapTwo == null ||
+            gapTwo.vector2Value != new Vector2(FinalRandomSecondGapMin, FinalRandomSecondGapMax) ||
+            gapOne.vector2Value.y > 2.2f || gapTwo.vector2Value.y > 2.8f ||
+            minimumLowHigh == null ||
+            minimumLowHigh.floatValue < FinalRandomMinimumLowHighDistance ||
+            minimumHighAndroid == null ||
+            minimumHighAndroid.floatValue < FinalRandomMinimumHighAndroidDistance ||
+            minimumAndroidGoal == null ||
+            minimumAndroidGoal.floatValue < FinalRandomMinimumAndroidGoalDistance ||
+            debugPositions == null || debugPositions.boolValue)
+        {
+            throw new System.InvalidOperationException(
+                "FinalRandom runtime references, gap ranges, spacing, or debug are invalid.");
+        }
+
+        SerializedProperty androidManager =
+            new SerializedObject(androidComponent).FindProperty("manager");
+        SerializedProperty goalLockManager =
+            new SerializedObject(goalLocks[0]).FindProperty("manager");
+        if (androidManager == null || androidManager.objectReferenceValue != manager ||
+            goalLockManager == null || goalLockManager.objectReferenceValue != manager ||
+            goal.transform.position.x <= android.transform.position.x)
+        {
+            throw new System.InvalidOperationException(
+                "FinalRandom Android/Goal ordering or manager references are invalid.");
+        }
+
+        ValidateCommonSceneObjects(scene, phaseName);
+    }
+
     private static void ValidateObjectAwarePlayer(GameObject player, string phaseName)
     {
         EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent =
@@ -1888,6 +2308,19 @@ public static class BuildER_V5_ObjectAwareScene
         // randomizer then moves every ordered objective exactly once.
         SetBool(manager, "resetOnStart", false);
         SetBool(manager, "randomizeObjectPositionsOnReset", false);
+        return manager;
+    }
+
+    private static ScoreAttackManager CreateFinalRandomManager(Transform parent)
+    {
+        ScoreAttackManager manager = CreateMixedWarmupManager(parent);
+        manager.gameObject.name = "ScoreMaxOA_FinalRandom_Manager";
+        SetBool(manager, "resetOnStart", false);
+        SetBool(manager, "randomizeObjectPositionsOnReset", false);
+        SetInt(manager, "minActiveCoins", 2);
+        SetInt(manager, "maxActiveCoins", 4);
+        SetInt(manager, "minActiveEnemies", 1);
+        SetInt(manager, "maxActiveEnemies", 1);
         return manager;
     }
 
@@ -2216,6 +2649,81 @@ public static class BuildER_V5_ObjectAwareScene
         SetBool(randomizer, "debugObjectAwareMixedRandomPositions", false);
     }
 
+    private static void ConfigureFinalRandomPlayer(
+        GameObject player,
+        ScoreAttackManager manager,
+        ScoreMaxOAFinalRandomizer randomizer)
+    {
+        ConfigureMixedWarmupPlayer(player, manager);
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        SetInt(agent, "objectAwarePhase", (int)EdgeRunnerObjectAwarePhase.FinalRandom);
+        SetObjectReference(agent, "finalRandomizer", randomizer);
+        SetBool(agent, "requireGroundedLowCoin", true);
+        SetFloat(agent, "airborneLowCoinPenalty", -2f);
+        SetBool(agent, "endEpisodeOnAirborneLowCoin", true);
+        SetBool(agent, "requireGroundedBetweenLowAndHigh", true);
+        SetFloat(agent, "sameJumpHighCoinPenalty", -2f);
+        SetBool(agent, "endEpisodeOnSameJumpHighCoin", true);
+    }
+
+    private static void ConfigureFinalRandomizer(
+        ScoreMaxOAFinalRandomizer randomizer,
+        ScoreAttackManager manager,
+        ScoreAttackCoin[] lowCoins,
+        ScoreAttackCoin[] highCoins,
+        ScoreAttackAndroid android,
+        Transform goal,
+        Transform startPlatform,
+        Transform lowPlatform,
+        Transform highPlatform,
+        Transform finalPlatform)
+    {
+        SetObjectReference(randomizer, "manager", manager);
+        SetObjectArray(randomizer, "lowCoins", lowCoins);
+        SetObjectArray(randomizer, "highCoins", highCoins);
+        SetObjectReference(randomizer, "android", android);
+        SetObjectReference(randomizer, "goal", goal);
+        SetObjectReference(randomizer, "startPlatform", startPlatform);
+        SetObjectReference(randomizer, "lowPlatform", lowPlatform);
+        SetObjectReference(randomizer, "highRecoveryPlatform", highPlatform);
+        SetObjectReference(randomizer, "finalPlatform", finalPlatform);
+        SetVector2(
+            randomizer,
+            "firstGapWidthRange",
+            new Vector2(FinalRandomFirstGapMin, FinalRandomFirstGapMax));
+        SetVector2(
+            randomizer,
+            "secondGapWidthRange",
+            new Vector2(FinalRandomSecondGapMin, FinalRandomSecondGapMax));
+        SetFloat(randomizer, "startPlatformLeftX", -2f);
+        SetFloat(randomizer, "startPlatformWidth", 9f);
+        SetFloat(randomizer, "lowPlatformWidth", 7f);
+        SetFloat(randomizer, "highRecoveryPlatformWidth", 9f);
+        SetFloat(randomizer, "finalPlatformWidth", 11f);
+        SetFloat(randomizer, "finalPlatformOverlap", 0.5f);
+        SetFloat(randomizer, "platformCenterY", -0.2f);
+        SetFloat(randomizer, "platformHeight", 0.4f);
+        SetFloat(randomizer, "lowCoinY", MixedWarmupLowCoinY);
+        SetFloat(randomizer, "highCoinY", MixedWarmupHighCoinY);
+        SetFloat(randomizer, "androidY", 1.02f);
+        SetFloat(randomizer, "goalY", 1.2f);
+        SetFloat(randomizer, "objectiveXJitter", 0.25f);
+        SetFloat(
+            randomizer,
+            "minimumLowCoinToHighCoinDistance",
+            FinalRandomMinimumLowHighDistance);
+        SetFloat(
+            randomizer,
+            "minimumHighCoinToAndroidDistance",
+            FinalRandomMinimumHighAndroidDistance);
+        SetFloat(
+            randomizer,
+            "minimumAndroidToGoalDistance",
+            FinalRandomMinimumAndroidGoalDistance);
+        SetBool(randomizer, "debugObjectAwareFinalRandomPositions", false);
+    }
+
     private static GameObject CreateLockedGoal(
         string name,
         Vector3 position,
@@ -2378,7 +2886,7 @@ public static class BuildER_V5_ObjectAwareScene
         }
     }
 
-    private static void CreatePlatform(
+    private static Transform CreatePlatform(
         Transform parent,
         string name,
         float centerX,
@@ -2405,6 +2913,7 @@ public static class BuildER_V5_ObjectAwareScene
         BoxCollider2D collider = platform.AddComponent<BoxCollider2D>();
         collider.size = Vector2.one;
         collider.isTrigger = false;
+        return platform.transform;
     }
 
     private static GameObject CreateGoal(Vector3 position)
@@ -2518,6 +3027,28 @@ public static class BuildER_V5_ObjectAwareScene
         }
 
         property.objectReferenceValue = value;
+        serializedObject.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static void SetObjectArray(
+        Object target,
+        string propertyName,
+        Object[] values)
+    {
+        SerializedObject serializedObject = new SerializedObject(target);
+        SerializedProperty property = serializedObject.FindProperty(propertyName);
+        if (property == null || !property.isArray)
+        {
+            throw new System.InvalidOperationException(
+                $"Serialized array '{propertyName}' was not found on {target.name}.");
+        }
+
+        property.arraySize = values != null ? values.Length : 0;
+        for (int i = 0; i < property.arraySize; i++)
+        {
+            property.GetArrayElementAtIndex(i).objectReferenceValue = values[i];
+        }
+
         serializedObject.ApplyModifiedPropertiesWithoutUndo();
     }
 
