@@ -50,6 +50,11 @@ mover ou substituir ficheiros. `results/` nao foi inspecionado nem alterado.
   e YAML `Assets/EdgeRunner/ML/Config/ObjectAware/scoremax_oa_static_android_stomp.yaml`.
   Deve ser treinada preferencialmente a partir de `TraversalBase02`, nao de
   `StaticAndroidAvoid01`, para nao herdar a politica de simplesmente saltar por cima.
+- `ScoreMaxOA MixedWarmup`: fase controlada de juncao com a sequencia obrigatoria
+  LowCoin -> HighCoin -> AndroidStomp -> Goal. Cena
+  `Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_MixedWarmup.unity` e YAML
+  `Assets/EdgeRunner/ML/Config/ObjectAware/scoremax_oa_mixed_warmup.yaml`.
+  Deve ser treinada apenas depois das fases individuais ObjectAware estarem validadas.
 - LowCoinRun e HighCoinJump so devem ser treinadas depois de TraversalBase estar
   validada e treinada; ambas mantem Behavior `EdgeRunnerV5ScoreMaxObjectAware`,
   111 observacoes e actions `[3,2,2]`.

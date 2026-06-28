@@ -32,6 +32,12 @@ public static class BuildER_V5_ObjectAwareScene
     private const float StaticAndroidStompWindowReward = 0.05f;
     private const float StaticAndroidStompWindowRange = 3.5f;
     private const float StaticAndroidStompMissedForwardMargin = 2.5f;
+    private const float MixedWarmupLowCoinX = 3.5f;
+    private const float MixedWarmupLowCoinY = 0.85f;
+    private const float MixedWarmupHighCoinX = 7f;
+    private const float MixedWarmupHighCoinY = 2.55f;
+    private const float MixedWarmupAndroidX = 11.5f;
+    private const float MixedWarmupGoalX = 18f;
 
     private const string TraversalScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_TraversalBase.unity";
@@ -43,6 +49,8 @@ public static class BuildER_V5_ObjectAwareScene
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_StaticAndroidAvoid.unity";
     private const string StaticAndroidStompScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_StaticAndroidStomp.unity";
+    private const string MixedWarmupScenePath =
+        "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_MixedWarmup.unity";
     private const string PlayerPrefabPath =
         "Assets/EdgeRunner/Prefabs/Agent/Player_V5.prefab";
     private const string GroundPrefabPath =
@@ -234,6 +242,56 @@ public static class BuildER_V5_ObjectAwareScene
         CreateDeathZone(7f, 26f, "DeathZone_ScoreMaxOA_StaticAndroidStomp");
         CreateCamera(player.transform);
         ValidateStaticAndroidStomp(scene, player, manager, android, goal);
+    }
+
+    [MenuItem("EdgeRunner/Training/ObjectAware/Build ScoreMaxOA MixedWarmup")]
+    public static void BuildMixedWarmup()
+    {
+        if (!CanReplaceOpenScenes())
+        {
+            return;
+        }
+
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        BuildMixedWarmupContents(scene, out GameObject player);
+        SaveAndKeepOpen(scene, MixedWarmupScenePath, player, "MixedWarmup");
+    }
+
+    private static void BuildMixedWarmupContents(Scene scene, out GameObject player)
+    {
+        GameObject root = new GameObject("ER_V5_ScoreMaxOA_MixedWarmup");
+        Sprite sprite = GetSharedSprite();
+        CreatePlatform(root.transform, "MixedWarmup_Platform", 9f, 0f, 22f, sprite);
+
+        ScoreAttackManager manager = CreateMixedWarmupManager(root.transform);
+        GameObject goal = CreateLockedGoal(
+            "Goal_ScoreMaxOA_MixedWarmup",
+            new Vector3(MixedWarmupGoalX, 1.2f, 0f),
+            manager);
+        player = CreateObjectAwarePlayer(new Vector3(0f, 1.15f, 0f), goal.transform);
+        ConfigureMixedWarmupPlayer(player, manager);
+        CreateCoin(
+            root.transform,
+            "MixedWarmup_LowCoin",
+            new Vector3(MixedWarmupLowCoinX, MixedWarmupLowCoinY, 0f),
+            sprite,
+            manager);
+        CreateCoin(
+            root.transform,
+            "MixedWarmup_HighCoin",
+            new Vector3(MixedWarmupHighCoinX, MixedWarmupHighCoinY, 0f),
+            sprite,
+            manager);
+        GameObject android = CreateStaticAndroid(
+            root.transform,
+            "MixedWarmup_Android_01",
+            new Vector3(MixedWarmupAndroidX, 1.02f, 0f),
+            sprite,
+            manager);
+
+        CreateDeathZone(9f, 30f, "DeathZone_ScoreMaxOA_MixedWarmup");
+        CreateCamera(player.transform);
+        ValidateMixedWarmup(scene, player, manager, android, goal);
     }
 
     public static void BuildCoinPhasesBatch()
@@ -929,6 +987,232 @@ public static class BuildER_V5_ObjectAwareScene
         ValidateCommonSceneObjects(scene, phaseName);
     }
 
+    private static void ValidateMixedWarmup(
+        Scene scene,
+        GameObject player,
+        ScoreAttackManager manager,
+        GameObject android,
+        GameObject goal)
+    {
+        const string phaseName = "MixedWarmup";
+        ValidateObjectAwarePlayer(player, phaseName);
+
+        ScoreAttackCoin[] coins = GetSceneComponents<ScoreAttackCoin>(scene);
+        ScoreAttackGoalLock[] goalLocks = GetSceneComponents<ScoreAttackGoalLock>(scene);
+        if (CountSceneComponents<ScoreAttackManager>(scene) != 1 ||
+            coins.Length != 2 ||
+            CountSceneComponents<ScoreAttackAndroid>(scene) != 1 ||
+            goalLocks.Length != 1 ||
+            CountSceneComponents<DemoAndroidPatrol>(scene) != 0)
+        {
+            throw new System.InvalidOperationException(
+                "MixedWarmup requires two coins, one static Android, one manager, " +
+                "one GoalLock, and no patrol.");
+        }
+
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        BoxCollider2D playerCollider = player.GetComponent<BoxCollider2D>();
+        Rigidbody2D playerBody = player.GetComponent<Rigidbody2D>();
+        ScoreAttackAndroid androidComponent = android != null
+            ? android.GetComponent<ScoreAttackAndroid>()
+            : null;
+        Rigidbody2D androidBody = android != null ? android.GetComponent<Rigidbody2D>() : null;
+        Collider2D androidCollider = android != null ? android.GetComponent<Collider2D>() : null;
+        BoxCollider2D platform = null;
+        BoxCollider2D[] boxColliders = GetSceneComponents<BoxCollider2D>(scene);
+        for (int i = 0; i < boxColliders.Length; i++)
+        {
+            if (boxColliders[i].gameObject.name == "MixedWarmup_Platform")
+            {
+                platform = boxColliders[i];
+                break;
+            }
+        }
+
+        if (agent == null || playerCollider == null || playerBody == null ||
+            manager == null || androidComponent == null || androidBody == null ||
+            androidBody.bodyType != RigidbodyType2D.Kinematic ||
+            androidCollider == null || !androidCollider.isTrigger || platform == null ||
+            goal == null)
+        {
+            throw new System.InvalidOperationException(
+                "MixedWarmup is missing its agent, physics, static Android, platform, or Goal.");
+        }
+
+        SerializedObject serializedAgent = new SerializedObject(agent);
+        SerializedProperty phase = serializedAgent.FindProperty("objectAwarePhase");
+        SerializedProperty assignedManager = serializedAgent.FindProperty("scoreAttackManager");
+        SerializedProperty objectAwareGoal = serializedAgent.FindProperty("objectAwareGoal");
+        SerializedProperty rewardShaping = serializedAgent.FindProperty(
+            "enableObjectAwareRewardShaping");
+        SerializedProperty missedCoinEnd = serializedAgent.FindProperty(
+            "enableMissedCoinEpisodeEnd");
+        SerializedProperty contextualJumpMask = serializedAgent.FindProperty(
+            "enableContextualJumpMask");
+        SerializedProperty enforceLowGroundCollection = serializedAgent.FindProperty(
+            "enforceLowCoinRunGroundCollection");
+        SerializedProperty requireHighLanding = serializedAgent.FindProperty(
+            "requireGroundedBetweenHighCoins");
+        SerializedProperty threshold = serializedAgent.FindProperty("lowCoinHeightThreshold");
+        SerializedProperty jumpForce = serializedAgent.FindProperty("jumpForce");
+        SerializedProperty lowJumpPenalty = serializedAgent.FindProperty(
+            "lowCoinUnnecessaryJumpPenalty");
+        SerializedProperty missedCoinPenalty = serializedAgent.FindProperty("missedCoinPenalty");
+        SerializedProperty missedEnemyPenalty = serializedAgent.FindProperty("missedEnemyPenalty");
+        SerializedProperty endOnMissedEnemy = serializedAgent.FindProperty(
+            "endEpisodeOnMissedEnemy");
+        SerializedProperty debugObservationCount = serializedAgent.FindProperty(
+            "debugObjectAwareObservationCount");
+        SerializedProperty debugNextObjective = serializedAgent.FindProperty(
+            "debugObjectAwareNextObjective");
+        SerializedProperty debugJumpContext = serializedAgent.FindProperty(
+            "debugObjectAwareJumpContext");
+        SerializedProperty debugGizmos = serializedAgent.FindProperty(
+            "debugObjectAwareGizmos");
+
+        if (phase == null || phase.enumValueIndex != (int)EdgeRunnerObjectAwarePhase.MixedWarmup ||
+            assignedManager == null || assignedManager.objectReferenceValue != manager ||
+            objectAwareGoal == null || objectAwareGoal.objectReferenceValue != goal.transform ||
+            rewardShaping == null || !rewardShaping.boolValue ||
+            missedCoinEnd == null || !missedCoinEnd.boolValue ||
+            contextualJumpMask == null || !contextualJumpMask.boolValue ||
+            enforceLowGroundCollection == null || enforceLowGroundCollection.boolValue ||
+            requireHighLanding == null || requireHighLanding.boolValue ||
+            threshold == null ||
+            Mathf.Abs(threshold.floatValue - LowCoinRunHeightThreshold) > 0.0001f ||
+            jumpForce == null ||
+            lowJumpPenalty == null ||
+            Mathf.Abs(lowJumpPenalty.floatValue - LowCoinRunJumpPenalty) > 0.0001f ||
+            missedCoinPenalty == null || Mathf.Abs(missedCoinPenalty.floatValue + 2f) > 0.0001f ||
+            missedEnemyPenalty == null ||
+            Mathf.Abs(missedEnemyPenalty.floatValue - StaticAndroidStompMissedPenalty) > 0.0001f ||
+            endOnMissedEnemy == null || !endOnMissedEnemy.boolValue ||
+            debugObservationCount == null || debugObservationCount.boolValue ||
+            debugNextObjective == null || debugNextObjective.boolValue ||
+            debugJumpContext == null || debugJumpContext.boolValue ||
+            debugGizmos == null || debugGizmos.boolValue)
+        {
+            throw new System.InvalidOperationException(
+                "MixedWarmup has the wrong phase, contextual mask, shaping, or debug flags.");
+        }
+
+        Physics2D.SyncTransforms();
+        float playerScaleY = Mathf.Abs(player.transform.lossyScale.y);
+        float playerHalfHeight = playerCollider.size.y * playerScaleY * 0.5f;
+        float playerGroundedCenterY =
+            platform.bounds.max.y + playerHalfHeight - playerCollider.offset.y * playerScaleY;
+        float playerGroundedTopY = playerGroundedCenterY + playerHalfHeight;
+        float effectiveGravity =
+            Mathf.Abs(Physics2D.gravity.y) * Mathf.Max(0.0001f, playerBody.gravityScale);
+        float maximumJumpCenterY =
+            playerGroundedCenterY +
+            jumpForce.floatValue * jumpForce.floatValue / (2f * effectiveGravity);
+        ScoreAttackCoin lowCoin = null;
+        ScoreAttackCoin highCoin = null;
+
+        for (int i = 0; i < coins.Length; i++)
+        {
+            ScoreAttackCoin coin = coins[i];
+            CircleCollider2D coinCollider = coin.GetComponent<CircleCollider2D>();
+            SerializedObject serializedCoin = new SerializedObject(coin);
+            SerializedProperty coinManager = serializedCoin.FindProperty("manager");
+            if (coinCollider == null || coinManager == null || coinManager.objectReferenceValue != manager)
+            {
+                throw new System.InvalidOperationException(
+                    $"{coin.name} is missing its collider or manager reference.");
+            }
+
+            float coinRadius =
+                coinCollider.radius * Mathf.Abs(coin.transform.lossyScale.y);
+            float dy = coin.transform.position.y - playerGroundedCenterY;
+            if (coin.name == "MixedWarmup_LowCoin")
+            {
+                lowCoin = coin;
+                if (dy > threshold.floatValue ||
+                    coin.transform.position.y - coinRadius > playerGroundedTopY + 0.0001f)
+                {
+                    throw new System.InvalidOperationException(
+                        $"MixedWarmup low coin must be low and ground-collectable; dy={dy:F3}.");
+                }
+            }
+            else if (coin.name == "MixedWarmup_HighCoin")
+            {
+                highCoin = coin;
+                float minimumPlayerCenterForCollection =
+                    coin.transform.position.y - playerHalfHeight - coinRadius;
+                if (dy <= threshold.floatValue ||
+                    minimumPlayerCenterForCollection > maximumJumpCenterY)
+                {
+                    throw new System.InvalidOperationException(
+                        $"MixedWarmup high coin must be high and reachable; dy={dy:F3}.");
+                }
+            }
+        }
+
+        SerializedObject serializedManager = new SerializedObject(manager);
+        SerializedProperty managerAgent = serializedManager.FindProperty("agent");
+        SerializedProperty requireEnemies = serializedManager.FindProperty("requireEnemiesForGoal");
+        SerializedProperty minCoins = serializedManager.FindProperty("minActiveCoins");
+        SerializedProperty maxCoins = serializedManager.FindProperty("maxActiveCoins");
+        SerializedProperty minEnemies = serializedManager.FindProperty("minActiveEnemies");
+        SerializedProperty maxEnemies = serializedManager.FindProperty("maxActiveEnemies");
+        SerializedProperty coinReward = serializedManager.FindProperty("coinReward");
+        SerializedProperty stompReward = serializedManager.FindProperty("enemyKillReward");
+        SerializedProperty sideHitPenalty = serializedManager.FindProperty("enemySideHitPenalty");
+        SerializedProperty finalReward = serializedManager.FindProperty("finalCompletionReward");
+        SerializedProperty lockedGoalPenalty = serializedManager.FindProperty("prematureGoalPenalty");
+        SerializedProperty endOnLockedGoal = serializedManager.FindProperty(
+            "endEpisodeOnPrematureGoal");
+
+        if (managerAgent == null || managerAgent.objectReferenceValue != agent ||
+            requireEnemies == null || !requireEnemies.boolValue ||
+            minCoins == null || minCoins.intValue != 2 ||
+            maxCoins == null || maxCoins.intValue != 2 ||
+            minEnemies == null || minEnemies.intValue != 1 ||
+            maxEnemies == null || maxEnemies.intValue != 1 ||
+            coinReward == null || Mathf.Abs(coinReward.floatValue - 2f) > 0.0001f ||
+            stompReward == null || Mathf.Abs(stompReward.floatValue - 5f) > 0.0001f ||
+            sideHitPenalty == null || Mathf.Abs(sideHitPenalty.floatValue + 6f) > 0.0001f ||
+            finalReward == null || Mathf.Abs(finalReward.floatValue - 10f) > 0.0001f ||
+            lockedGoalPenalty == null ||
+            Mathf.Abs(lockedGoalPenalty.floatValue + 2f) > 0.0001f ||
+            endOnLockedGoal == null || !endOnLockedGoal.boolValue)
+        {
+            throw new System.InvalidOperationException(
+                "MixedWarmup manager rewards, counts, or GoalLock rules are invalid.");
+        }
+
+        SerializedObject serializedAndroid = new SerializedObject(androidComponent);
+        SerializedProperty androidManager = serializedAndroid.FindProperty("manager");
+        SerializedObject serializedGoalLock = new SerializedObject(goalLocks[0]);
+        SerializedProperty goalLockManager = serializedGoalLock.FindProperty("manager");
+        float pathMinX = Mathf.Min(player.transform.position.x, MixedWarmupLowCoinX);
+        float pathMaxX = Mathf.Max(goal.transform.position.x, MixedWarmupAndroidX);
+        bool layoutValid =
+            lowCoin != null && highCoin != null &&
+            Mathf.Abs(lowCoin.transform.position.x - MixedWarmupLowCoinX) <= 0.0001f &&
+            Mathf.Abs(highCoin.transform.position.x - MixedWarmupHighCoinX) <= 0.0001f &&
+            Mathf.Abs(android.transform.position.x - MixedWarmupAndroidX) <= 0.0001f &&
+            Mathf.Abs(goal.transform.position.x - MixedWarmupGoalX) <= 0.0001f &&
+            player.transform.position.x < lowCoin.transform.position.x &&
+            lowCoin.transform.position.x < highCoin.transform.position.x &&
+            highCoin.transform.position.x < android.transform.position.x &&
+            android.transform.position.x < goal.transform.position.x &&
+            platform.bounds.min.x <= pathMinX &&
+            platform.bounds.max.x >= pathMaxX;
+
+        if (androidManager == null || androidManager.objectReferenceValue != manager ||
+            goalLockManager == null || goalLockManager.objectReferenceValue != manager ||
+            !layoutValid)
+        {
+            throw new System.InvalidOperationException(
+                "MixedWarmup ordered objective layout or manager references are invalid.");
+        }
+
+        ValidateCommonSceneObjects(scene, phaseName);
+    }
+
     private static void ValidateObjectAwarePlayer(GameObject player, string phaseName)
     {
         EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent =
@@ -1173,6 +1457,28 @@ public static class BuildER_V5_ObjectAwareScene
         return manager;
     }
 
+    private static ScoreAttackManager CreateMixedWarmupManager(Transform parent)
+    {
+        GameObject managerObject = new GameObject("ScoreMaxOA_MixedWarmup_Manager");
+        managerObject.transform.SetParent(parent, false);
+        ScoreAttackManager manager = managerObject.AddComponent<ScoreAttackManager>();
+        SetBool(manager, "resetOnStart", true);
+        SetBool(manager, "randomizeObjectPositionsOnReset", false);
+        SetBool(manager, "requireEnemiesForGoal", true);
+        SetInt(manager, "minActiveCoins", 2);
+        SetInt(manager, "maxActiveCoins", 2);
+        SetInt(manager, "minActiveEnemies", 1);
+        SetInt(manager, "maxActiveEnemies", 1);
+        SetFloat(manager, "coinReward", 2f);
+        SetFloat(manager, "enemyKillReward", StaticAndroidStompReward);
+        SetFloat(manager, "enemySideHitPenalty", StaticAndroidStompSideHitPenalty);
+        SetFloat(manager, "finalCompletionReward", 10f);
+        SetFloat(manager, "prematureGoalPenalty", StaticAndroidStompLockedGoalPenalty);
+        SetBool(manager, "endEpisodeOnPrematureGoal", true);
+        SetBool(manager, "debugLogs", false);
+        return manager;
+    }
+
     private static void ConfigureCoinPhasePlayer(
         GameObject player,
         ScoreAttackManager manager,
@@ -1359,6 +1665,78 @@ public static class BuildER_V5_ObjectAwareScene
         SetFloat(agent, "noProgressTimeLimit", 15f);
         SetFloat(agent, "stuckTimeLimit", 15f);
         SetFloat(agent, "maxEpisodeTime", 60f);
+
+        SetBool(agent, "debugObjectAwareObservationCount", false);
+        SetBool(agent, "debugObjectAwareNextObjective", false);
+        SetBool(agent, "debugObjectAwareJumpContext", false);
+        SetBool(agent, "debugObjectAwareGizmos", false);
+    }
+
+    private static void ConfigureMixedWarmupPlayer(
+        GameObject player,
+        ScoreAttackManager manager)
+    {
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        SetObjectReference(agent, "scoreAttackManager", manager);
+        SetObjectReference(manager, "agent", agent);
+        SetInt(agent, "groundLayer", LayerMask.GetMask("Ground"));
+        SetBool(agent, "maskUselessJumps", false);
+        SetInt(agent, "objectAwarePhase", (int)EdgeRunnerObjectAwarePhase.MixedWarmup);
+        SetBool(agent, "enableObjectAwareRewardShaping", true);
+        SetBool(agent, "enableMissedCoinEpisodeEnd", true);
+        SetBool(agent, "enableContextualJumpMask", true);
+        SetBool(agent, "enforceLowCoinRunGroundCollection", false);
+        SetBool(agent, "requireGroundedBetweenHighCoins", false);
+        SetBool(agent, "endEpisodeOnSameJumpSecondCoin", false);
+        SetFloat(agent, "lowCoinHeightThreshold", LowCoinRunHeightThreshold);
+        SetFloat(agent, "lowCoinRunWindowX", 3f);
+        SetFloat(agent, "highCoinJumpWindowX", 2.25f);
+        SetFloat(agent, "androidContextWindowX", StaticAndroidStompWindowRange);
+        SetFloat(agent, "androidVerticalTolerance", 1.5f);
+        SetFloat(agent, "lowCoinGroundApproachReward", 0.01f);
+        SetFloat(agent, "lowCoinGroundedAlignmentReward", 0.005f);
+        SetFloat(agent, "lowCoinUnnecessaryJumpPenalty", LowCoinRunJumpPenalty);
+        SetFloat(agent, "highCoinApproachReward", 0.01f);
+        SetFloat(agent, "highCoinJumpCueReward", 0.04f);
+        SetFloat(agent, "earlyJumpPenalty", -0.01f);
+        SetFloat(agent, "jumpSpamPenalty", -0.01f);
+        SetFloat(agent, "missedCoinPenalty", -2f);
+        SetFloat(agent, "missedCoinForwardMargin", 2.5f);
+        SetFloat(agent, "enemyApproachReward", StaticAndroidStompApproachReward);
+        SetFloat(agent, "enemyStompWindowReward", StaticAndroidStompWindowReward);
+        SetFloat(agent, "enemyStompWindowHorizontalRange", StaticAndroidStompWindowRange);
+        SetFloat(agent, "missedEnemyPenalty", StaticAndroidStompMissedPenalty);
+        SetFloat(agent, "missedEnemyForwardMargin", StaticAndroidStompMissedForwardMargin);
+        SetBool(agent, "endEpisodeOnMissedEnemy", true);
+
+        // Ordered ObjectAware objectives provide progress shaping. Keep the base Goal
+        // shaping neutral until every coin and the Android are complete.
+        SetFloat(agent, "goalReward", 0f);
+        SetFloat(agent, "progressRewardScale", 0f);
+        SetFloat(agent, "maxProgressRewardPerStep", 0f);
+        SetFloat(agent, "milestoneReward", 0f);
+        SetFloat(agent, "backtrackPenalty", 0f);
+        SetFloat(agent, "jumpPenalty", 0f);
+        SetFloat(agent, "idleJumpPenalty", 0f);
+        SetFloat(agent, "flatGroundJumpPenalty", 0f);
+        SetFloat(agent, "earlyGapJumpPenalty", 0f);
+        SetFloat(agent, "uselessJumpPenalty", 0f);
+        SetFloat(agent, "gapJumpReward", 0f);
+        SetFloat(agent, "gapLandingReward", 0f);
+        SetFloat(agent, "lowMomentumJumpPenalty", 0f);
+        SetFloat(agent, "forwardActionReward", 0f);
+        SetFloat(agent, "forwardVelocityReward", 0f);
+        SetFloat(agent, "wrongDirectionActionPenalty", 0f);
+        SetFloat(agent, "distanceProgressRewardScale", 0f);
+        SetFloat(agent, "maxDistanceProgressReward", 0f);
+        SetFloat(agent, "distanceRegressionPenaltyScale", 0f);
+        SetFloat(agent, "maxDistanceRegressionPenalty", 0f);
+        SetFloat(agent, "stepPenalty", -0.001f);
+        SetFloat(agent, "idlePenalty", -0.001f);
+        SetFloat(agent, "noProgressTimeLimit", 20f);
+        SetFloat(agent, "stuckTimeLimit", 20f);
+        SetFloat(agent, "maxEpisodeTime", 90f);
 
         SetBool(agent, "debugObjectAwareObservationCount", false);
         SetBool(agent, "debugObjectAwareNextObjective", false);
