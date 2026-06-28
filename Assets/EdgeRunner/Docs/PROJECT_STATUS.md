@@ -55,6 +55,12 @@ mover ou substituir ficheiros. `results/` nao foi inspecionado nem alterado.
   `Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_MixedWarmup.unity` e YAML
   `Assets/EdgeRunner/ML/Config/ObjectAware/scoremax_oa_mixed_warmup.yaml`.
   Deve ser treinada apenas depois das fases individuais ObjectAware estarem validadas.
+- `ScoreMaxOA MixedRandomWarmup`: fase intermédia de randomizacao controlada com
+  a sequencia LowCoin -> HighCoin -> AndroidStomp -> Goal, plataforma segura e
+  posicoes variadas em runtime a cada episodio. Cena
+  `Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_MixedRandomWarmup.unity` e YAML
+  `Assets/EdgeRunner/ML/Config/ObjectAware/scoremax_oa_mixed_random_warmup.yaml`.
+  Deve ser treinada a partir de `MixedWarmup01`, antes de `FinalRandom`.
 - LowCoinRun e HighCoinJump so devem ser treinadas depois de TraversalBase estar
   validada e treinada; ambas mantem Behavior `EdgeRunnerV5ScoreMaxObjectAware`,
   111 observacoes e actions `[3,2,2]`.

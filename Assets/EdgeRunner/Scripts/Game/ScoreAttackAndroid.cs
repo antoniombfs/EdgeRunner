@@ -219,6 +219,12 @@ public class ScoreAttackAndroid : MonoBehaviour, IEdgeRunnerResettable
 
     private void KillByStomp(EdgeRunnerAgentV5 agent, Rigidbody2D playerBody)
     {
+        if (agent is EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent &&
+            !objectAwareAgent.TryAcceptScoreAttackAndroidStomp(this))
+        {
+            return;
+        }
+
         alive = false;
         defeated = true;
         ConfigureScoreAttackColliders(false);
