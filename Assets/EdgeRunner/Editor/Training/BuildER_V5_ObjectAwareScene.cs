@@ -65,6 +65,11 @@ public static class BuildER_V5_ObjectAwareScene
     private const float FinalRandomMinFlatRunAfterLowCoin = 2f;
     private const float FinalRandomMinLowCoinGapEdgeDistance = 3f;
     private const float FinalRandomMinLowCoinLandingZoneDistance = 3f;
+    private const float FinalRandomLedgeStuckGraceTime = 0.5f;
+    private const float FinalRandomLedgeStuckMinYBelowGround = 0.25f;
+    private const float FinalRandomLedgeStuckMaxVelocity = 0.25f;
+    private const float FinalRandomLedgeStuckProgressEpsilon = 0.03f;
+    private const float FinalRandomLedgeStuckPenalty = -4f;
 
     private const string TraversalScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_TraversalBase.unity";
@@ -92,6 +97,8 @@ public static class BuildER_V5_ObjectAwareScene
         "Assets/EdgeRunner/Prefabs/Environment/DeathZone.prefab";
     private const string AndroidEnemyPrefabPath =
         "Assets/EdgeRunner/Prefabs/Demo/DemoAndroidEnemy.prefab";
+    private const string AgentNoFrictionMaterialPath =
+        "Assets/EdgeRunner/Physics/Agent_NoFriction.physicsMaterial2D";
 
     [MenuItem("EdgeRunner/Training/ObjectAware/Build ScoreMaxOA TraversalBase")]
     public static void BuildTraversalBase()
@@ -1807,6 +1814,18 @@ public static class BuildER_V5_ObjectAwareScene
             "sameJumpHighCoinPenalty");
         SerializedProperty endOnSameJumpHighCoin = serializedAgent.FindProperty(
             "endEpisodeOnSameJumpHighCoin");
+        SerializedProperty antiLedgeEnabled = serializedAgent.FindProperty(
+            "enableAntiLedgeStuckFailSafe");
+        SerializedProperty ledgeGraceTime = serializedAgent.FindProperty(
+            "ledgeStuckGraceTime");
+        SerializedProperty ledgeMinY = serializedAgent.FindProperty(
+            "ledgeStuckMinYBelowGround");
+        SerializedProperty ledgeMaxVelocity = serializedAgent.FindProperty(
+            "ledgeStuckMaxVelocity");
+        SerializedProperty ledgeProgressEpsilon = serializedAgent.FindProperty(
+            "ledgeStuckProgressEpsilon");
+        SerializedProperty ledgePenalty = serializedAgent.FindProperty("ledgeStuckPenalty");
+        SerializedProperty debugAntiLedge = serializedAgent.FindProperty("debugAntiLedgeStuck");
         SerializedProperty threshold = serializedAgent.FindProperty("lowCoinHeightThreshold");
         SerializedProperty jumpForce = serializedAgent.FindProperty("jumpForce");
         SerializedProperty missedCoinPenalty = serializedAgent.FindProperty("missedCoinPenalty");
@@ -1829,6 +1848,8 @@ public static class BuildER_V5_ObjectAwareScene
         SerializedProperty prefabJumpForce = prefabAgent != null
             ? new SerializedObject(prefabAgent).FindProperty("jumpForce")
             : null;
+        PhysicsMaterial2D noFrictionMaterial =
+            AssetDatabase.LoadAssetAtPath<PhysicsMaterial2D>(AgentNoFrictionMaterialPath);
 
         if (phase == null || phase.enumValueIndex != (int)EdgeRunnerObjectAwarePhase.FinalRandom ||
             assignedManager == null || assignedManager.objectReferenceValue != manager ||
@@ -1845,6 +1866,22 @@ public static class BuildER_V5_ObjectAwareScene
             sameJumpHighCoinPenalty == null ||
             Mathf.Abs(sameJumpHighCoinPenalty.floatValue + 2f) > 0.0001f ||
             endOnSameJumpHighCoin == null || !endOnSameJumpHighCoin.boolValue ||
+            antiLedgeEnabled == null || !antiLedgeEnabled.boolValue ||
+            ledgeGraceTime == null ||
+            Mathf.Abs(ledgeGraceTime.floatValue - FinalRandomLedgeStuckGraceTime) > 0.0001f ||
+            ledgeMinY == null ||
+            Mathf.Abs(ledgeMinY.floatValue - FinalRandomLedgeStuckMinYBelowGround) > 0.0001f ||
+            ledgeMaxVelocity == null ||
+            Mathf.Abs(ledgeMaxVelocity.floatValue - FinalRandomLedgeStuckMaxVelocity) > 0.0001f ||
+            ledgeProgressEpsilon == null ||
+            Mathf.Abs(
+                ledgeProgressEpsilon.floatValue - FinalRandomLedgeStuckProgressEpsilon) >
+                0.0001f ||
+            ledgePenalty == null ||
+            Mathf.Abs(ledgePenalty.floatValue - FinalRandomLedgeStuckPenalty) > 0.0001f ||
+            debugAntiLedge == null || debugAntiLedge.boolValue ||
+            noFrictionMaterial == null || playerCollider.sharedMaterial != noFrictionMaterial ||
+            Mathf.Abs(noFrictionMaterial.friction) > 0.0001f ||
             threshold == null ||
             Mathf.Abs(threshold.floatValue - LowCoinRunHeightThreshold) > 0.0001f ||
             jumpForce == null || prefabJumpForce == null ||
@@ -1859,7 +1896,8 @@ public static class BuildER_V5_ObjectAwareScene
             debugGizmos == null || debugGizmos.boolValue)
         {
             throw new System.InvalidOperationException(
-                "FinalRandom has invalid phase, references, gates, jumpForce, or debug flags.");
+                "FinalRandom has invalid phase, references, gates, anti-ledge fail-safe, " +
+                "friction, jumpForce, or debug flags.");
         }
 
         Physics2D.SyncTransforms();
@@ -2771,6 +2809,24 @@ public static class BuildER_V5_ObjectAwareScene
         SetBool(agent, "requireGroundedBetweenLowAndHigh", true);
         SetFloat(agent, "sameJumpHighCoinPenalty", -2f);
         SetBool(agent, "endEpisodeOnSameJumpHighCoin", true);
+        SetBool(agent, "enableAntiLedgeStuckFailSafe", true);
+        SetFloat(agent, "ledgeStuckGraceTime", FinalRandomLedgeStuckGraceTime);
+        SetFloat(agent, "ledgeStuckMinYBelowGround", FinalRandomLedgeStuckMinYBelowGround);
+        SetFloat(agent, "ledgeStuckMaxVelocity", FinalRandomLedgeStuckMaxVelocity);
+        SetFloat(agent, "ledgeStuckProgressEpsilon", FinalRandomLedgeStuckProgressEpsilon);
+        SetFloat(agent, "ledgeStuckPenalty", FinalRandomLedgeStuckPenalty);
+        SetBool(agent, "debugAntiLedgeStuck", false);
+
+        PhysicsMaterial2D noFrictionMaterial =
+            AssetDatabase.LoadAssetAtPath<PhysicsMaterial2D>(AgentNoFrictionMaterialPath);
+        BoxCollider2D playerCollider = player.GetComponent<BoxCollider2D>();
+        if (noFrictionMaterial == null || playerCollider == null)
+        {
+            throw new System.InvalidOperationException(
+                "FinalRandom requires Agent_NoFriction and the player BoxCollider2D.");
+        }
+
+        playerCollider.sharedMaterial = noFrictionMaterial;
     }
 
     private static void ConfigureFinalRandomizer(

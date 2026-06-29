@@ -106,6 +106,15 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     [SerializeField] private float landingProbeDistance = 3.4f;
     [SerializeField] private float gapProbeDepth = 3.5f;
 
+    [Header("ObjectAware FinalRandom Anti Ledge Stuck")]
+    [SerializeField] private bool enableAntiLedgeStuckFailSafe = false;
+    [SerializeField] private float ledgeStuckGraceTime = 0.5f;
+    [SerializeField] private float ledgeStuckMinYBelowGround = 0.25f;
+    [SerializeField] private float ledgeStuckMaxVelocity = 0.25f;
+    [SerializeField] private float ledgeStuckProgressEpsilon = 0.03f;
+    [SerializeField] private float ledgeStuckPenalty = -4f;
+    [SerializeField] private bool debugAntiLedgeStuck = false;
+
     [Header("ObjectAware Debug")]
     [SerializeField] private bool debugObjectAwareObservationCount = false;
     [SerializeField] private bool debugObjectAwareNextObjective = false;
@@ -143,6 +152,12 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     private bool mixedRandomAirborneLowCoinAttempt;
     private int mixedRandomLowCoinCollectionFrame = -1;
     private bool missedEnemyPenaltyAppliedThisEpisode;
+    private Collider2D antiLedgeCollider;
+    private bool hasAntiLedgeLastGroundedLevel;
+    private float antiLedgeLastGroundedFeetY;
+    private float antiLedgeCandidateStartTime = -1f;
+    private Vector2 antiLedgeCandidateAnchor;
+    private bool antiLedgeEpisodeEnding;
     private readonly HashSet<Transform> rewardedHighCoinJumpCues = new HashSet<Transform>();
     private readonly HashSet<Transform> rewardedEnemyStompWindows = new HashSet<Transform>();
 
@@ -279,6 +294,11 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
             jumpRequested);
         previousObjectAwareJumpAction = jumpAction;
         if (endedForMissedCoin)
+        {
+            return;
+        }
+
+        if (TryEndEpisodeForAntiLedgeStuck(context.grounded))
         {
             return;
         }
@@ -1083,8 +1103,97 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         mixedRandomAirborneLowCoinAttempt = false;
         mixedRandomLowCoinCollectionFrame = -1;
         missedEnemyPenaltyAppliedThisEpisode = false;
+        ResetAntiLedgeStuckState();
         rewardedHighCoinJumpCues.Clear();
         rewardedEnemyStompWindows.Clear();
+    }
+
+    private bool TryEndEpisodeForAntiLedgeStuck(bool grounded)
+    {
+        if (!enableAntiLedgeStuckFailSafe ||
+            objectAwarePhase != EdgeRunnerObjectAwarePhase.FinalRandom ||
+            objectAwareEpisodeEnding || antiLedgeEpisodeEnding ||
+            objectAwareRigidbody == null || antiLedgeCollider == null)
+        {
+            ResetAntiLedgeCandidate();
+            return false;
+        }
+
+        float feetY = antiLedgeCollider.bounds.min.y;
+        if (grounded)
+        {
+            hasAntiLedgeLastGroundedLevel = true;
+            antiLedgeLastGroundedFeetY = feetY;
+            ResetAntiLedgeCandidate();
+            return false;
+        }
+
+        if (!hasAntiLedgeLastGroundedLevel)
+        {
+            ResetAntiLedgeCandidate();
+            return false;
+        }
+
+        Vector2 velocity = objectAwareRigidbody.linearVelocity;
+        bool belowLastGround =
+            antiLedgeLastGroundedFeetY - feetY >= ledgeStuckMinYBelowGround;
+        bool nearlyStopped =
+            Mathf.Abs(velocity.x) <= ledgeStuckMaxVelocity &&
+            Mathf.Abs(velocity.y) <= ledgeStuckMaxVelocity;
+        bool touchingPlatformSide =
+            antiLedgeCollider.IsTouchingLayers(GetBaseGroundLayer().value);
+
+        if (!belowLastGround || !nearlyStopped || !touchingPlatformSide)
+        {
+            ResetAntiLedgeCandidate();
+            return false;
+        }
+
+        Vector2 currentPosition = objectAwareRigidbody.position;
+        bool candidateMoved = antiLedgeCandidateStartTime >= 0f &&
+            Vector2.Distance(currentPosition, antiLedgeCandidateAnchor) >
+                ledgeStuckProgressEpsilon;
+        if (antiLedgeCandidateStartTime < 0f || candidateMoved)
+        {
+            antiLedgeCandidateStartTime = Time.time;
+            antiLedgeCandidateAnchor = currentPosition;
+            return false;
+        }
+
+        if (Time.time - antiLedgeCandidateStartTime < ledgeStuckGraceTime)
+        {
+            return false;
+        }
+
+        antiLedgeEpisodeEnding = true;
+        objectAwareEpisodeEnding = true;
+        AddReward(ledgeStuckPenalty);
+        if (debugAntiLedgeStuck)
+        {
+            Debug.LogWarning(
+                "[ANTI LEDGE STUCK] ending episode because agent is stuck on " +
+                "platform edge after missed gap",
+                this);
+        }
+
+        EndEpisode();
+        return true;
+    }
+
+    private void ResetAntiLedgeCandidate()
+    {
+        antiLedgeCandidateStartTime = -1f;
+        antiLedgeCandidateAnchor = objectAwareRigidbody != null
+            ? objectAwareRigidbody.position
+            : (Vector2)transform.position;
+    }
+
+    private void ResetAntiLedgeStuckState()
+    {
+        hasAntiLedgeLastGroundedLevel = false;
+        antiLedgeLastGroundedFeetY = 0f;
+        antiLedgeEpisodeEnding = false;
+        ResetAntiLedgeCandidate();
     }
 
     private void ClearPreviousTrainingObjective()
@@ -1529,6 +1638,11 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         if (objectAwareRigidbody == null)
         {
             objectAwareRigidbody = GetComponent<Rigidbody2D>();
+        }
+
+        if (antiLedgeCollider == null)
+        {
+            antiLedgeCollider = GetComponent<Collider2D>();
         }
 
         if (objectAwarePhase == EdgeRunnerObjectAwarePhase.MixedRandomWarmup &&
