@@ -55,6 +55,16 @@ public static class BuildER_V5_ObjectAwareScene
     private const float FinalRandomMinimumLowHighDistance = 4f;
     private const float FinalRandomMinimumHighAndroidDistance = 3f;
     private const float FinalRandomMinimumAndroidGoalDistance = 3f;
+    private const float FinalRandomPlayerStartX = 0f;
+    private const float FinalRandomStartPlatformLeftX = -2f;
+    private const float FinalRandomStartPlatformWidth = 15f;
+    private const float FinalRandomRecoveryPlatformWidth = 6f;
+    private const float FinalRandomHighPlatformWidth = 8f;
+    private const float FinalRandomFinalPlatformWidth = 10f;
+    private const float FinalRandomMinFlatRunBeforeLowCoin = 4f;
+    private const float FinalRandomMinFlatRunAfterLowCoin = 2f;
+    private const float FinalRandomMinLowCoinGapEdgeDistance = 3f;
+    private const float FinalRandomMinLowCoinLandingZoneDistance = 3f;
 
     private const string TraversalScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_TraversalBase.unity";
@@ -393,18 +403,18 @@ public static class BuildER_V5_ObjectAwareScene
         Sprite sprite = GetSharedSprite();
 
         Transform startPlatform =
-            CreatePlatform(root.transform, "FinalRandom_Start", 2.5f, 0f, 9f, sprite);
+            CreatePlatform(root.transform, "FinalRandom_StartSafeLow", 5.5f, 0f, 15f, sprite);
         Transform lowPlatform =
-            CreatePlatform(root.transform, "FinalRandom_LowZone", 12.3f, 0f, 7f, sprite);
+            CreatePlatform(root.transform, "FinalRandom_Recovery_A", 17.8f, 0f, 6f, sprite);
         Transform highPlatform =
-            CreatePlatform(root.transform, "FinalRandom_HighRecovery", 22.7f, 0f, 9f, sprite);
+            CreatePlatform(root.transform, "FinalRandom_HighRecovery", 27.2f, 0f, 8f, sprite);
         Transform finalPlatform =
-            CreatePlatform(root.transform, "FinalRandom_AndroidGoal", 32.2f, 0f, 11f, sprite);
+            CreatePlatform(root.transform, "FinalRandom_AndroidGoal", 35.7f, 0f, 10f, sprite);
 
         ScoreAttackManager manager = CreateFinalRandomManager(root.transform);
         GameObject goal = CreateLockedGoal(
             "Goal_ScoreMaxOA_FinalRandom",
-            new Vector3(36.2f, 1.2f, 0f),
+            new Vector3(39.2f, 1.2f, 0f),
             manager);
         player = CreateObjectAwarePlayer(new Vector3(0f, 1.15f, 0f), goal.transform);
 
@@ -413,13 +423,13 @@ public static class BuildER_V5_ObjectAwareScene
             CreateCoin(
                 root.transform,
                 "FinalRandom_LowCoin_01",
-                new Vector3(10.3f, MixedWarmupLowCoinY, 0f),
+                new Vector3(5f, MixedWarmupLowCoinY, 0f),
                 sprite,
                 manager),
             CreateCoin(
                 root.transform,
                 "FinalRandom_LowCoin_02",
-                new Vector3(13.6f, MixedWarmupLowCoinY, 0f),
+                new Vector3(9f, MixedWarmupLowCoinY, 0f),
                 sprite,
                 manager)
         };
@@ -428,20 +438,20 @@ public static class BuildER_V5_ObjectAwareScene
             CreateCoin(
                 root.transform,
                 "FinalRandom_HighCoin_01",
-                new Vector3(20f, MixedWarmupHighCoinY, 0f),
+                new Vector3(25f, MixedWarmupHighCoinY, 0f),
                 sprite,
                 manager),
             CreateCoin(
                 root.transform,
                 "FinalRandom_HighCoin_02",
-                new Vector3(24f, MixedWarmupHighCoinY, 0f),
+                new Vector3(29f, MixedWarmupHighCoinY, 0f),
                 sprite,
                 manager)
         };
         GameObject android = CreateStaticAndroid(
             root.transform,
             "FinalRandom_Android_01",
-            new Vector3(31.2f, 1.02f, 0f),
+            new Vector3(35.2f, 1.02f, 0f),
             sprite,
             manager);
 
@@ -460,7 +470,7 @@ public static class BuildER_V5_ObjectAwareScene
             finalPlatform);
         ConfigureFinalRandomPlayer(player, manager, randomizer);
 
-        CreateDeathZone(18f, 50f, "DeathZone_ScoreMaxOA_FinalRandom");
+        CreateDeathZone(20f, 60f, "DeathZone_ScoreMaxOA_FinalRandom");
         CreateCamera(player.transform);
         ValidateFinalRandom(scene, player, manager, randomizer, android, goal);
     }
@@ -1765,8 +1775,8 @@ public static class BuildER_V5_ObjectAwareScene
             manager == null || randomizer == null || androidComponent == null ||
             androidBody == null || androidBody.bodyType != RigidbodyType2D.Kinematic ||
             androidCollider == null || !androidCollider.isTrigger || goal == null ||
-            !platforms.ContainsKey("FinalRandom_Start") ||
-            !platforms.ContainsKey("FinalRandom_LowZone") ||
+            !platforms.ContainsKey("FinalRandom_StartSafeLow") ||
+            !platforms.ContainsKey("FinalRandom_Recovery_A") ||
             !platforms.ContainsKey("FinalRandom_HighRecovery") ||
             !platforms.ContainsKey("FinalRandom_AndroidGoal"))
         {
@@ -1853,7 +1863,19 @@ public static class BuildER_V5_ObjectAwareScene
         }
 
         Physics2D.SyncTransforms();
-        BoxCollider2D startPlatform = platforms["FinalRandom_Start"];
+        BoxCollider2D startPlatform = platforms["FinalRandom_StartSafeLow"];
+        BoxCollider2D recoveryPlatform = platforms["FinalRandom_Recovery_A"];
+        BoxCollider2D highPlatform = platforms["FinalRandom_HighRecovery"];
+        BoxCollider2D finalPlatformCollider = platforms["FinalRandom_AndroidGoal"];
+        if (Mathf.Abs(startPlatform.bounds.size.x - FinalRandomStartPlatformWidth) > 0.01f ||
+            Mathf.Abs(recoveryPlatform.bounds.size.x - FinalRandomRecoveryPlatformWidth) > 0.01f ||
+            Mathf.Abs(highPlatform.bounds.size.x - FinalRandomHighPlatformWidth) > 0.01f ||
+            Mathf.Abs(finalPlatformCollider.bounds.size.x - FinalRandomFinalPlatformWidth) > 0.01f)
+        {
+            throw new System.InvalidOperationException(
+                "FinalRandom platform widths do not preserve the safe-low and recovery zones.");
+        }
+
         float playerScaleY = Mathf.Abs(player.transform.lossyScale.y);
         float playerHalfHeight = playerCollider.size.y * playerScaleY * 0.5f;
         float groundedCenterY =
@@ -1866,6 +1888,8 @@ public static class BuildER_V5_ObjectAwareScene
             groundedCenterY + jumpForce.floatValue * jumpForce.floatValue / (2f * effectiveGravity);
         int lowCoinCount = 0;
         int highCoinCount = 0;
+        ScoreAttackCoin firstLowCoin = null;
+        ScoreAttackCoin secondLowCoin = null;
 
         for (int i = 0; i < coins.Length; i++)
         {
@@ -1885,11 +1909,34 @@ public static class BuildER_V5_ObjectAwareScene
             if (coin.name.StartsWith("FinalRandom_LowCoin_", System.StringComparison.Ordinal))
             {
                 lowCoinCount++;
+                if (coin.name == "FinalRandom_LowCoin_01")
+                {
+                    firstLowCoin = coin;
+                }
+                else if (coin.name == "FinalRandom_LowCoin_02")
+                {
+                    secondLowCoin = coin;
+                }
+
+                float flatRunBefore = coin.transform.position.x - player.transform.position.x;
+                float flatRunAfter = startPlatform.bounds.max.x - coin.transform.position.x;
+                float gapEdgeDistance = startPlatform.bounds.max.x - coin.transform.position.x;
+                float landingZoneClearance = coin.transform.position.x -
+                    (startPlatform.bounds.min.x + FinalRandomMinLowCoinLandingZoneDistance);
                 if (dy > threshold.floatValue ||
-                    coin.transform.position.y - coinRadius > groundedTopY + 0.0001f)
+                    coin.transform.position.y - coinRadius > groundedTopY + 0.0001f ||
+                    coin.transform.position.x <= startPlatform.bounds.min.x ||
+                    coin.transform.position.x >= startPlatform.bounds.max.x ||
+                    flatRunBefore < FinalRandomMinFlatRunBeforeLowCoin ||
+                    flatRunAfter < FinalRandomMinFlatRunAfterLowCoin ||
+                    gapEdgeDistance < FinalRandomMinLowCoinGapEdgeDistance ||
+                    landingZoneClearance < 0f)
                 {
                     throw new System.InvalidOperationException(
-                        $"{coin.name} must be low and ground-collectable; dy={dy:F3}.");
+                        $"{coin.name} must be low in the initial safe-flat zone; " +
+                        $"dy={dy:F3}, flatBefore={flatRunBefore:F2}, " +
+                        $"flatAfter={flatRunAfter:F2}, gapEdge={gapEdgeDistance:F2}, " +
+                        $"landingClearance={landingZoneClearance:F2}.");
                 }
             }
             else if (coin.name.StartsWith("FinalRandom_HighCoin_", System.StringComparison.Ordinal))
@@ -1898,7 +1945,9 @@ public static class BuildER_V5_ObjectAwareScene
                 float minimumCenterForCollection =
                     coin.transform.position.y - playerHalfHeight - coinRadius;
                 if (dy <= threshold.floatValue ||
-                    minimumCenterForCollection > maximumJumpCenterY)
+                    minimumCenterForCollection > maximumJumpCenterY ||
+                    coin.transform.position.x <= highPlatform.bounds.min.x ||
+                    coin.transform.position.x >= highPlatform.bounds.max.x)
                 {
                     throw new System.InvalidOperationException(
                         $"{coin.name} must be high and reachable; dy={dy:F3}.");
@@ -1906,10 +1955,17 @@ public static class BuildER_V5_ObjectAwareScene
             }
         }
 
-        if (lowCoinCount != 2 || highCoinCount != 2)
+        if (lowCoinCount != 2 || highCoinCount != 2 ||
+            firstLowCoin == null || secondLowCoin == null ||
+            firstLowCoin.transform.position.x < 4f ||
+            firstLowCoin.transform.position.x > 6f ||
+            secondLowCoin.transform.position.x < 8f ||
+            secondLowCoin.transform.position.x > 10f ||
+            firstLowCoin.transform.position.x >= secondLowCoin.transform.position.x)
         {
             throw new System.InvalidOperationException(
-                "FinalRandom requires exactly two low and two high runtime coin slots.");
+                "FinalRandom requires ordered low slots at x=4-6 and x=8-10 " +
+                "on the initial safe-flat platform, plus two high slots.");
         }
 
         SerializedObject serializedManager = new SerializedObject(manager);
@@ -1969,6 +2025,30 @@ public static class BuildER_V5_ObjectAwareScene
             "minimumHighCoinToAndroidDistance");
         SerializedProperty minimumAndroidGoal = serializedRandomizer.FindProperty(
             "minimumAndroidToGoalDistance");
+        SerializedProperty randomStartLeft = serializedRandomizer.FindProperty(
+            "startPlatformLeftX");
+        SerializedProperty randomStartWidth = serializedRandomizer.FindProperty(
+            "startPlatformWidth");
+        SerializedProperty randomRecoveryWidth = serializedRandomizer.FindProperty(
+            "lowPlatformWidth");
+        SerializedProperty randomHighWidth = serializedRandomizer.FindProperty(
+            "highRecoveryPlatformWidth");
+        SerializedProperty randomFinalWidth = serializedRandomizer.FindProperty(
+            "finalPlatformWidth");
+        SerializedProperty randomPlayerStartX = serializedRandomizer.FindProperty("playerStartX");
+        SerializedProperty firstLowRange = serializedRandomizer.FindProperty(
+            "firstLowCoinXRange");
+        SerializedProperty secondLowRange = serializedRandomizer.FindProperty(
+            "secondLowCoinXRange");
+        SerializedProperty minFlatBefore = serializedRandomizer.FindProperty(
+            "minFlatRunBeforeLowCoin");
+        SerializedProperty minFlatAfter = serializedRandomizer.FindProperty(
+            "minFlatRunAfterLowCoin");
+        SerializedProperty minGapEdge = serializedRandomizer.FindProperty(
+            "minLowCoinDistanceFromGapEdge");
+        SerializedProperty minLandingZone = serializedRandomizer.FindProperty(
+            "minLowCoinDistanceFromLandingZone");
+        SerializedProperty firstLowSafe = serializedRandomizer.FindProperty("firstLowCoinSafe");
         SerializedProperty debugPositions = serializedRandomizer.FindProperty(
             "debugObjectAwareFinalRandomPositions");
 
@@ -1992,9 +2072,11 @@ public static class BuildER_V5_ObjectAwareScene
             randomAndroid == null || randomAndroid.objectReferenceValue != androidComponent ||
             randomGoal == null || randomGoal.objectReferenceValue != goal.transform ||
             randomStartPlatform == null ||
-            randomStartPlatform.objectReferenceValue != platforms["FinalRandom_Start"].transform ||
+            randomStartPlatform.objectReferenceValue !=
+                platforms["FinalRandom_StartSafeLow"].transform ||
             randomLowPlatform == null ||
-            randomLowPlatform.objectReferenceValue != platforms["FinalRandom_LowZone"].transform ||
+            randomLowPlatform.objectReferenceValue !=
+                platforms["FinalRandom_Recovery_A"].transform ||
             randomHighPlatform == null ||
             randomHighPlatform.objectReferenceValue !=
                 platforms["FinalRandom_HighRecovery"].transform ||
@@ -2012,10 +2094,34 @@ public static class BuildER_V5_ObjectAwareScene
             minimumHighAndroid.floatValue < FinalRandomMinimumHighAndroidDistance ||
             minimumAndroidGoal == null ||
             minimumAndroidGoal.floatValue < FinalRandomMinimumAndroidGoalDistance ||
+            randomStartLeft == null ||
+            Mathf.Abs(randomStartLeft.floatValue - FinalRandomStartPlatformLeftX) > 0.0001f ||
+            randomStartWidth == null ||
+            Mathf.Abs(randomStartWidth.floatValue - FinalRandomStartPlatformWidth) > 0.0001f ||
+            randomRecoveryWidth == null ||
+            Mathf.Abs(randomRecoveryWidth.floatValue - FinalRandomRecoveryPlatformWidth) > 0.0001f ||
+            randomHighWidth == null ||
+            Mathf.Abs(randomHighWidth.floatValue - FinalRandomHighPlatformWidth) > 0.0001f ||
+            randomFinalWidth == null ||
+            Mathf.Abs(randomFinalWidth.floatValue - FinalRandomFinalPlatformWidth) > 0.0001f ||
+            randomPlayerStartX == null ||
+            Mathf.Abs(randomPlayerStartX.floatValue - FinalRandomPlayerStartX) > 0.0001f ||
+            firstLowRange == null || firstLowRange.vector2Value != new Vector2(4f, 6f) ||
+            secondLowRange == null || secondLowRange.vector2Value != new Vector2(8f, 10f) ||
+            minFlatBefore == null ||
+            minFlatBefore.floatValue < FinalRandomMinFlatRunBeforeLowCoin ||
+            minFlatAfter == null ||
+            minFlatAfter.floatValue < FinalRandomMinFlatRunAfterLowCoin ||
+            minGapEdge == null ||
+            minGapEdge.floatValue < FinalRandomMinLowCoinGapEdgeDistance ||
+            minLandingZone == null ||
+            minLandingZone.floatValue < FinalRandomMinLowCoinLandingZoneDistance ||
+            firstLowSafe == null || !firstLowSafe.boolValue ||
             debugPositions == null || debugPositions.boolValue)
         {
             throw new System.InvalidOperationException(
-                "FinalRandom runtime references, gap ranges, spacing, or debug are invalid.");
+                "FinalRandom runtime references, safe-low zone, gap ranges, spacing, or debug " +
+                "are invalid.");
         }
 
         SerializedProperty androidManager =
@@ -2696,11 +2802,11 @@ public static class BuildER_V5_ObjectAwareScene
             randomizer,
             "secondGapWidthRange",
             new Vector2(FinalRandomSecondGapMin, FinalRandomSecondGapMax));
-        SetFloat(randomizer, "startPlatformLeftX", -2f);
-        SetFloat(randomizer, "startPlatformWidth", 9f);
-        SetFloat(randomizer, "lowPlatformWidth", 7f);
-        SetFloat(randomizer, "highRecoveryPlatformWidth", 9f);
-        SetFloat(randomizer, "finalPlatformWidth", 11f);
+        SetFloat(randomizer, "startPlatformLeftX", FinalRandomStartPlatformLeftX);
+        SetFloat(randomizer, "startPlatformWidth", FinalRandomStartPlatformWidth);
+        SetFloat(randomizer, "lowPlatformWidth", FinalRandomRecoveryPlatformWidth);
+        SetFloat(randomizer, "highRecoveryPlatformWidth", FinalRandomHighPlatformWidth);
+        SetFloat(randomizer, "finalPlatformWidth", FinalRandomFinalPlatformWidth);
         SetFloat(randomizer, "finalPlatformOverlap", 0.5f);
         SetFloat(randomizer, "platformCenterY", -0.2f);
         SetFloat(randomizer, "platformHeight", 0.4f);
@@ -2721,6 +2827,26 @@ public static class BuildER_V5_ObjectAwareScene
             randomizer,
             "minimumAndroidToGoalDistance",
             FinalRandomMinimumAndroidGoalDistance);
+        SetFloat(randomizer, "playerStartX", FinalRandomPlayerStartX);
+        SetVector2(randomizer, "firstLowCoinXRange", new Vector2(4f, 6f));
+        SetVector2(randomizer, "secondLowCoinXRange", new Vector2(8f, 10f));
+        SetFloat(
+            randomizer,
+            "minFlatRunBeforeLowCoin",
+            FinalRandomMinFlatRunBeforeLowCoin);
+        SetFloat(
+            randomizer,
+            "minFlatRunAfterLowCoin",
+            FinalRandomMinFlatRunAfterLowCoin);
+        SetFloat(
+            randomizer,
+            "minLowCoinDistanceFromGapEdge",
+            FinalRandomMinLowCoinGapEdgeDistance);
+        SetFloat(
+            randomizer,
+            "minLowCoinDistanceFromLandingZone",
+            FinalRandomMinLowCoinLandingZoneDistance);
+        SetBool(randomizer, "firstLowCoinSafe", true);
         SetBool(randomizer, "debugObjectAwareFinalRandomPositions", false);
     }
 
