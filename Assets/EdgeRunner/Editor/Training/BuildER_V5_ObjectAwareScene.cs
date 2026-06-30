@@ -70,6 +70,13 @@ public static class BuildER_V5_ObjectAwareScene
     private const float FinalRandomLedgeStuckMaxVelocity = 0.25f;
     private const float FinalRandomLedgeStuckProgressEpsilon = 0.03f;
     private const float FinalRandomLedgeStuckPenalty = -4f;
+    private const float FinalLongChallengeGoalX = 88f;
+    private const float FinalLongChallengeLevelStartX = -2f;
+    private const float FinalLongChallengeLevelEndX = 91f;
+    private const int FinalLongChallengeLowCoinCount = 4;
+    private const int FinalLongChallengeHighCoinCount = 3;
+    private const int FinalLongChallengeAndroidCount = 2;
+    private const float FinalLongChallengeSafeFlatRadius = 2f;
 
     private const string TraversalScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_TraversalBase.unity";
@@ -87,6 +94,8 @@ public static class BuildER_V5_ObjectAwareScene
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_MixedRandomWarmup.unity";
     private const string FinalRandomScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_FinalRandom.unity";
+    private const string FinalLongChallengeScenePath =
+        "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_FinalLongChallenge.unity";
     private const string PlayerPrefabPath =
         "Assets/EdgeRunner/Prefabs/Agent/Player_V5.prefab";
     private const string GroundPrefabPath =
@@ -480,6 +489,70 @@ public static class BuildER_V5_ObjectAwareScene
         CreateDeathZone(20f, 60f, "DeathZone_ScoreMaxOA_FinalRandom");
         CreateCamera(player.transform);
         ValidateFinalRandom(scene, player, manager, randomizer, android, goal);
+    }
+
+    [MenuItem("EdgeRunner/Training/ObjectAware/Build ScoreMaxOA FinalLongChallenge")]
+    public static void BuildFinalLongChallenge()
+    {
+        if (!CanReplaceOpenScenes())
+        {
+            return;
+        }
+
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        BuildFinalLongChallengeContents(scene, out GameObject player);
+        SaveAndKeepOpen(
+            scene,
+            FinalLongChallengeScenePath,
+            player,
+            "FinalLongChallenge");
+    }
+
+    private static void BuildFinalLongChallengeContents(Scene scene, out GameObject player)
+    {
+        GameObject root = new GameObject("ER_V5_ScoreMaxOA_FinalLongChallenge");
+        Sprite sprite = GetSharedSprite();
+
+        CreatePlatform(root.transform, "FinalLongChallenge_Zone1_Start", 6f, 0f, 16f, sprite);
+        CreatePlatform(root.transform, "FinalLongChallenge_Zone1_Recovery", 22.5f, 0f, 13f, sprite);
+        CreatePlatform(root.transform, "FinalLongChallenge_Zone2_AndroidRecovery", 40.2f, 0f, 17.6f, sprite);
+        CreatePlatform(root.transform, "FinalLongChallenge_Zone4_AndroidHigh", 60.3f, 0f, 17f, sprite);
+        CreatePlatform(root.transform, "FinalLongChallenge_FinalRecovery", 75f, 0f, 8f, sprite);
+        CreatePlatform(root.transform, "FinalLongChallenge_GoalPlatform", 86.15f, 0f, 9.7f, sprite);
+
+        ScoreAttackManager manager = CreateFinalLongChallengeManager(root.transform);
+        GameObject goal = CreateLockedGoal(
+            "Goal_ScoreMaxOA_FinalLongChallenge",
+            new Vector3(FinalLongChallengeGoalX, 1.2f, 0f),
+            manager);
+        player = CreateObjectAwarePlayer(new Vector3(0f, 1.15f, 0f), goal.transform);
+
+        CreateCoin(root.transform, "FinalLongChallenge_LowCoin_01", new Vector3(4f, MixedWarmupLowCoinY, 0f), sprite, manager);
+        CreateCoin(root.transform, "FinalLongChallenge_LowCoin_02", new Vector3(8f, MixedWarmupLowCoinY, 0f), sprite, manager);
+        CreateCoin(root.transform, "FinalLongChallenge_HighCoin_01", new Vector3(19.5f, MixedWarmupHighCoinY, 0f), sprite, manager);
+        CreateCoin(root.transform, "FinalLongChallenge_LowCoin_03", new Vector3(25f, MixedWarmupLowCoinY, 0f), sprite, manager);
+
+        CreateStaticAndroid(
+            root.transform,
+            "FinalLongChallenge_Android_01",
+            new Vector3(35.5f, 1.02f, 0f),
+            sprite,
+            manager);
+        CreateCoin(root.transform, "FinalLongChallenge_HighCoin_02", new Vector3(41.5f, MixedWarmupHighCoinY, 0f), sprite, manager);
+        CreateCoin(root.transform, "FinalLongChallenge_LowCoin_04", new Vector3(46f, MixedWarmupLowCoinY, 0f), sprite, manager);
+
+        CreateStaticAndroid(
+            root.transform,
+            "FinalLongChallenge_Android_02",
+            new Vector3(57f, 1.02f, 0f),
+            sprite,
+            manager);
+        CreateCoin(root.transform, "FinalLongChallenge_HighCoin_03", new Vector3(64f, MixedWarmupHighCoinY, 0f), sprite, manager);
+
+        ConfigureFinalLongChallengePlayer(player, manager);
+        CreateDeathZone(44.5f, 100f, "DeathZone_ScoreMaxOA_FinalLongChallenge");
+        CreateCamera(player.transform);
+        ValidateFinalLongChallenge(scene, player, manager, goal);
     }
 
     public static void BuildCoinPhasesBatch()
@@ -2177,6 +2250,273 @@ public static class BuildER_V5_ObjectAwareScene
         ValidateCommonSceneObjects(scene, phaseName);
     }
 
+    private static void ValidateFinalLongChallenge(
+        Scene scene,
+        GameObject player,
+        ScoreAttackManager manager,
+        GameObject goal)
+    {
+        const string phaseName = "FinalLongChallenge";
+        ValidateObjectAwarePlayer(player, phaseName);
+
+        ScoreAttackCoin[] coins = GetSceneComponents<ScoreAttackCoin>(scene);
+        ScoreAttackAndroid[] androids = GetSceneComponents<ScoreAttackAndroid>(scene);
+        ScoreAttackGoalLock[] goalLocks = GetSceneComponents<ScoreAttackGoalLock>(scene);
+        if (CountSceneComponents<ScoreAttackManager>(scene) != 1 ||
+            CountSceneComponents<ScoreMaxOAFinalRandomizer>(scene) != 0 ||
+            coins.Length != FinalLongChallengeLowCoinCount + FinalLongChallengeHighCoinCount ||
+            androids.Length != FinalLongChallengeAndroidCount ||
+            goalLocks.Length != 1 ||
+            CountSceneComponents<DemoAndroidPatrol>(scene) != 0 ||
+            CountSceneComponents<EdgeRunnerAgentV5ScoreMax>(scene) != 0 ||
+            CountSceneComponents<EdgeRunnerAgentV5EnemyAware>(scene) != 0)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLongChallenge requires seven coins, two static Androids, one manager, " +
+                "one GoalLock, no randomizer/patrol, and no legacy agents.");
+        }
+
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        BoxCollider2D playerCollider = player.GetComponent<BoxCollider2D>();
+        Rigidbody2D playerBody = player.GetComponent<Rigidbody2D>();
+        SerializedObject serializedAgent = new SerializedObject(agent);
+        SerializedProperty phase = serializedAgent.FindProperty("objectAwarePhase");
+        SerializedProperty assignedManager = serializedAgent.FindProperty("scoreAttackManager");
+        SerializedProperty contextualJumpMask = serializedAgent.FindProperty(
+            "enableContextualJumpMask");
+        SerializedProperty missedCoinEnd = serializedAgent.FindProperty(
+            "enableMissedCoinEpisodeEnd");
+        SerializedProperty groundedLowCoin = serializedAgent.FindProperty(
+            "requireGroundedLowCoin");
+        SerializedProperty groundedSequence = serializedAgent.FindProperty(
+            "requireGroundedBetweenLowAndHigh");
+        SerializedProperty antiLedge = serializedAgent.FindProperty(
+            "enableAntiLedgeStuckFailSafe");
+        SerializedProperty jumpForce = serializedAgent.FindProperty("jumpForce");
+        SerializedProperty debugObservationCount = serializedAgent.FindProperty(
+            "debugObjectAwareObservationCount");
+        SerializedProperty debugNextObjective = serializedAgent.FindProperty(
+            "debugObjectAwareNextObjective");
+        SerializedProperty debugJumpContext = serializedAgent.FindProperty(
+            "debugObjectAwareJumpContext");
+        SerializedProperty debugGizmos = serializedAgent.FindProperty(
+            "debugObjectAwareGizmos");
+        SerializedProperty debugAntiLedge = serializedAgent.FindProperty("debugAntiLedgeStuck");
+        SerializedProperty debugLayout = serializedAgent.FindProperty(
+            "debugObjectAwareFinalLongValidation");
+
+        GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+        EdgeRunnerAgentV5 prefabAgent = playerPrefab != null
+            ? playerPrefab.GetComponent<EdgeRunnerAgentV5>()
+            : null;
+        SerializedProperty prefabJumpForce = prefabAgent != null
+            ? new SerializedObject(prefabAgent).FindProperty("jumpForce")
+            : null;
+        PhysicsMaterial2D noFrictionMaterial =
+            AssetDatabase.LoadAssetAtPath<PhysicsMaterial2D>(AgentNoFrictionMaterialPath);
+
+        if (agent == null || playerCollider == null || playerBody == null ||
+            phase == null ||
+            phase.enumValueIndex != (int)EdgeRunnerObjectAwarePhase.FinalLongChallenge ||
+            assignedManager == null || assignedManager.objectReferenceValue != manager ||
+            contextualJumpMask == null || !contextualJumpMask.boolValue ||
+            missedCoinEnd == null || !missedCoinEnd.boolValue ||
+            groundedLowCoin == null || !groundedLowCoin.boolValue ||
+            groundedSequence == null || !groundedSequence.boolValue ||
+            antiLedge == null || !antiLedge.boolValue ||
+            jumpForce == null || prefabJumpForce == null ||
+            Mathf.Abs(jumpForce.floatValue - prefabJumpForce.floatValue) > 0.0001f ||
+            noFrictionMaterial == null || playerCollider.sharedMaterial != noFrictionMaterial ||
+            Mathf.Abs(noFrictionMaterial.friction) > 0.0001f ||
+            debugObservationCount == null || debugObservationCount.boolValue ||
+            debugNextObjective == null || debugNextObjective.boolValue ||
+            debugJumpContext == null || debugJumpContext.boolValue ||
+            debugGizmos == null || debugGizmos.boolValue ||
+            debugAntiLedge == null || debugAntiLedge.boolValue ||
+            debugLayout == null || debugLayout.boolValue)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLongChallenge has invalid phase, manager, curriculum gates, friction, " +
+                "jumpForce, anti-ledge, or debug defaults.");
+        }
+
+        SerializedObject serializedManager = new SerializedObject(manager);
+        SerializedProperty managerAgent = serializedManager.FindProperty("agent");
+        SerializedProperty managerGoal = serializedManager.FindProperty("goal");
+        SerializedProperty randomize = serializedManager.FindProperty(
+            "randomizeObjectPositionsOnReset");
+        SerializedProperty requireEnemies = serializedManager.FindProperty(
+            "requireEnemiesForGoal");
+        SerializedProperty minCoins = serializedManager.FindProperty("minActiveCoins");
+        SerializedProperty maxCoins = serializedManager.FindProperty("maxActiveCoins");
+        SerializedProperty minEnemies = serializedManager.FindProperty("minActiveEnemies");
+        SerializedProperty maxEnemies = serializedManager.FindProperty("maxActiveEnemies");
+        SerializedProperty endOnLockedGoal = serializedManager.FindProperty(
+            "endEpisodeOnPrematureGoal");
+        int expectedCoins = FinalLongChallengeLowCoinCount + FinalLongChallengeHighCoinCount;
+        if (managerAgent == null || managerAgent.objectReferenceValue != agent ||
+            managerGoal == null || managerGoal.objectReferenceValue != goal.transform ||
+            randomize == null || randomize.boolValue ||
+            requireEnemies == null || !requireEnemies.boolValue ||
+            minCoins == null || minCoins.intValue != expectedCoins ||
+            maxCoins == null || maxCoins.intValue != expectedCoins ||
+            minEnemies == null || minEnemies.intValue != FinalLongChallengeAndroidCount ||
+            maxEnemies == null || maxEnemies.intValue != FinalLongChallengeAndroidCount ||
+            endOnLockedGoal == null || !endOnLockedGoal.boolValue)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLongChallenge manager must require all seven coins and both Androids.");
+        }
+
+        SerializedProperty goalLockManager =
+            new SerializedObject(goalLocks[0]).FindProperty("manager");
+        if (goalLockManager == null || goalLockManager.objectReferenceValue != manager ||
+            Mathf.Abs(goal.transform.position.x - FinalLongChallengeGoalX) > 0.0001f)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLongChallenge GoalLock or Goal position is invalid.");
+        }
+
+        Dictionary<string, BoxCollider2D> platforms = new Dictionary<string, BoxCollider2D>();
+        BoxCollider2D[] sceneBoxes = GetSceneComponents<BoxCollider2D>(scene);
+        for (int i = 0; i < sceneBoxes.Length; i++)
+        {
+            if (sceneBoxes[i].name.StartsWith("FinalLongChallenge_", System.StringComparison.Ordinal))
+            {
+                platforms[sceneBoxes[i].name] = sceneBoxes[i];
+            }
+        }
+
+        string[] platformNames =
+        {
+            "FinalLongChallenge_Zone1_Start",
+            "FinalLongChallenge_Zone1_Recovery",
+            "FinalLongChallenge_Zone2_AndroidRecovery",
+            "FinalLongChallenge_Zone4_AndroidHigh",
+            "FinalLongChallenge_FinalRecovery",
+            "FinalLongChallenge_GoalPlatform"
+        };
+        for (int i = 0; i < platformNames.Length; i++)
+        {
+            if (!platforms.ContainsKey(platformNames[i]))
+            {
+                throw new System.InvalidOperationException(
+                    $"FinalLongChallenge is missing platform {platformNames[i]}.");
+            }
+        }
+
+        Physics2D.SyncTransforms();
+        float[] gaps =
+        {
+            platforms[platformNames[1]].bounds.min.x - platforms[platformNames[0]].bounds.max.x,
+            platforms[platformNames[2]].bounds.min.x - platforms[platformNames[1]].bounds.max.x,
+            platforms[platformNames[3]].bounds.min.x - platforms[platformNames[2]].bounds.max.x,
+            platforms[platformNames[4]].bounds.min.x - platforms[platformNames[3]].bounds.max.x,
+            platforms[platformNames[5]].bounds.min.x - platforms[platformNames[4]].bounds.max.x
+        };
+        for (int i = 0; i < gaps.Length; i++)
+        {
+            if (gaps[i] < 1.499f || gaps[i] > 2.801f)
+            {
+                throw new System.InvalidOperationException(
+                    $"FinalLongChallenge gap {i + 1} is outside the fair range: {gaps[i]:F2}.");
+            }
+        }
+
+        Dictionary<string, BoxCollider2D> lowCoinPlatforms =
+            new Dictionary<string, BoxCollider2D>
+            {
+                { "FinalLongChallenge_LowCoin_01", platforms[platformNames[0]] },
+                { "FinalLongChallenge_LowCoin_02", platforms[platformNames[0]] },
+                { "FinalLongChallenge_LowCoin_03", platforms[platformNames[1]] },
+                { "FinalLongChallenge_LowCoin_04", platforms[platformNames[2]] }
+            };
+        int lowCount = 0;
+        int highCount = 0;
+        float gravity = Mathf.Abs(Physics2D.gravity.y) * Mathf.Max(0.0001f, playerBody.gravityScale);
+        float maximumJumpCenterY = player.transform.position.y +
+            (jumpForce.floatValue * jumpForce.floatValue) / (2f * gravity);
+        float playerHalfHeight = playerCollider.bounds.extents.y;
+
+        for (int i = 0; i < coins.Length; i++)
+        {
+            ScoreAttackCoin coin = coins[i];
+            CircleCollider2D coinCollider = coin.GetComponent<CircleCollider2D>();
+            float coinRadius = coinCollider != null
+                ? coinCollider.bounds.extents.y
+                : 0.25f;
+            float dy = coin.transform.position.y - player.transform.position.y;
+            if (coin.name.StartsWith("FinalLongChallenge_LowCoin_", System.StringComparison.Ordinal))
+            {
+                lowCount++;
+                if (!lowCoinPlatforms.TryGetValue(coin.name, out BoxCollider2D platform) ||
+                    dy > LowCoinRunHeightThreshold ||
+                    coin.transform.position.x - platform.bounds.min.x <
+                        FinalLongChallengeSafeFlatRadius ||
+                    platform.bounds.max.x - coin.transform.position.x <
+                        FinalLongChallengeSafeFlatRadius)
+                {
+                    throw new System.InvalidOperationException(
+                        $"{coin.name} is not grounded-low inside its safe flat zone.");
+                }
+            }
+            else if (coin.name.StartsWith("FinalLongChallenge_HighCoin_", System.StringComparison.Ordinal))
+            {
+                highCount++;
+                float minimumCenterForCollection =
+                    coin.transform.position.y - playerHalfHeight - coinRadius;
+                if (dy <= LowCoinRunHeightThreshold ||
+                    minimumCenterForCollection > maximumJumpCenterY)
+                {
+                    throw new System.InvalidOperationException(
+                        $"{coin.name} is not a reachable high coin; dy={dy:F2}.");
+                }
+            }
+            else
+            {
+                throw new System.InvalidOperationException(
+                    $"Unexpected FinalLongChallenge coin name {coin.name}.");
+            }
+        }
+
+        if (lowCount != FinalLongChallengeLowCoinCount ||
+            highCount != FinalLongChallengeHighCoinCount)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLongChallenge low/high coin counts are invalid.");
+        }
+
+        for (int i = 0; i < androids.Length; i++)
+        {
+            ScoreAttackAndroid android = androids[i];
+            Rigidbody2D body = android.GetComponent<Rigidbody2D>();
+            Collider2D collider = android.GetComponent<Collider2D>();
+            SerializedProperty androidManager =
+                new SerializedObject(android).FindProperty("manager");
+            if (body == null || body.bodyType != RigidbodyType2D.Kinematic ||
+                collider == null || !collider.isTrigger ||
+                androidManager == null || androidManager.objectReferenceValue != manager)
+            {
+                throw new System.InvalidOperationException(
+                    $"{android.name} must be a static mandatory ScoreAttack Android.");
+            }
+        }
+
+        float levelLength = FinalLongChallengeLevelEndX - FinalLongChallengeLevelStartX;
+        if (levelLength < 85f || goal.transform.position.x <= 80f)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLongChallenge must remain a long 85+ unit level.");
+        }
+
+        ValidateCommonSceneObjects(scene, phaseName);
+        Debug.Log(
+            $"[OBJECT AWARE BUILDER] FinalLongChallenge validated: length={levelLength:F1}, " +
+            $"lowCoins={lowCount}, highCoins={highCount}, Androids={androids.Length}, " +
+            "GoalLock=all objectives, safeFlatLowCoins=true, antiLedge=true.");
+    }
+
     private static void ValidateObjectAwarePlayer(GameObject player, string phaseName)
     {
         EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent =
@@ -2465,6 +2805,33 @@ public static class BuildER_V5_ObjectAwareScene
         SetInt(manager, "maxActiveCoins", 4);
         SetInt(manager, "minActiveEnemies", 1);
         SetInt(manager, "maxActiveEnemies", 1);
+        return manager;
+    }
+
+    private static ScoreAttackManager CreateFinalLongChallengeManager(Transform parent)
+    {
+        ScoreAttackManager manager = CreateMixedWarmupManager(parent);
+        manager.gameObject.name = "ScoreMaxOA_FinalLongChallenge_Manager";
+        SetBool(manager, "resetOnStart", true);
+        SetBool(manager, "randomizeObjectPositionsOnReset", false);
+        SetBool(manager, "requireEnemiesForGoal", true);
+        SetInt(
+            manager,
+            "minActiveCoins",
+            FinalLongChallengeLowCoinCount + FinalLongChallengeHighCoinCount);
+        SetInt(
+            manager,
+            "maxActiveCoins",
+            FinalLongChallengeLowCoinCount + FinalLongChallengeHighCoinCount);
+        SetInt(manager, "minActiveEnemies", FinalLongChallengeAndroidCount);
+        SetInt(manager, "maxActiveEnemies", FinalLongChallengeAndroidCount);
+        SetFloat(manager, "coinReward", 2f);
+        SetFloat(manager, "enemyKillReward", StaticAndroidStompReward);
+        SetFloat(manager, "enemySideHitPenalty", StaticAndroidStompSideHitPenalty);
+        SetFloat(manager, "finalCompletionReward", 15f);
+        SetFloat(manager, "prematureGoalPenalty", StaticAndroidStompLockedGoalPenalty);
+        SetBool(manager, "endEpisodeOnPrematureGoal", true);
+        SetBool(manager, "debugLogs", false);
         return manager;
     }
 
@@ -2824,6 +3191,45 @@ public static class BuildER_V5_ObjectAwareScene
         {
             throw new System.InvalidOperationException(
                 "FinalRandom requires Agent_NoFriction and the player BoxCollider2D.");
+        }
+
+        playerCollider.sharedMaterial = noFrictionMaterial;
+    }
+
+    private static void ConfigureFinalLongChallengePlayer(
+        GameObject player,
+        ScoreAttackManager manager)
+    {
+        ConfigureMixedWarmupPlayer(player, manager);
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        SetInt(agent, "objectAwarePhase", (int)EdgeRunnerObjectAwarePhase.FinalLongChallenge);
+        SetFloat(agent, "maxObjectiveDistance", 100f);
+        SetBool(agent, "requireGroundedLowCoin", true);
+        SetFloat(agent, "airborneLowCoinPenalty", -2f);
+        SetBool(agent, "endEpisodeOnAirborneLowCoin", true);
+        SetBool(agent, "requireGroundedBetweenLowAndHigh", true);
+        SetFloat(agent, "sameJumpHighCoinPenalty", -2f);
+        SetBool(agent, "endEpisodeOnSameJumpHighCoin", true);
+        SetBool(agent, "enableAntiLedgeStuckFailSafe", true);
+        SetFloat(agent, "ledgeStuckGraceTime", FinalRandomLedgeStuckGraceTime);
+        SetFloat(agent, "ledgeStuckMinYBelowGround", FinalRandomLedgeStuckMinYBelowGround);
+        SetFloat(agent, "ledgeStuckMaxVelocity", FinalRandomLedgeStuckMaxVelocity);
+        SetFloat(agent, "ledgeStuckProgressEpsilon", FinalRandomLedgeStuckProgressEpsilon);
+        SetFloat(agent, "ledgeStuckPenalty", FinalRandomLedgeStuckPenalty);
+        SetBool(agent, "debugAntiLedgeStuck", false);
+        SetBool(agent, "debugObjectAwareFinalLongValidation", false);
+        SetFloat(agent, "noProgressTimeLimit", 30f);
+        SetFloat(agent, "stuckTimeLimit", 30f);
+        SetFloat(agent, "maxEpisodeTime", 180f);
+
+        PhysicsMaterial2D noFrictionMaterial =
+            AssetDatabase.LoadAssetAtPath<PhysicsMaterial2D>(AgentNoFrictionMaterialPath);
+        BoxCollider2D playerCollider = player.GetComponent<BoxCollider2D>();
+        if (noFrictionMaterial == null || playerCollider == null)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLongChallenge requires Agent_NoFriction and the player BoxCollider2D.");
         }
 
         playerCollider.sharedMaterial = noFrictionMaterial;

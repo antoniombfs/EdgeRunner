@@ -1,0 +1,94 @@
+﻿=== EdgeRunner Evaluation Report ===
+Model: FINAL_ScoreMaxOA_FinalRandom02_250k
+Evaluation: ER_V5_ScoreMaxOA_FinalRandom_Eval50
+Episodes: 50
+Successes: 46
+Failures: 4
+Success Rate: 92,0%
+Failures:
+- Fell: 0
+- EnemyHit: 1
+- NoProgress: 0
+- Timeout: 0
+- Stuck: 0
+- Other: 0
+Average Reward: 18,021
+Average Duration: 3,73s
+ObjectAware FinalRandom Metrics:
+- Full Objective Successes: 46
+- Full Objective Success Rate: 92,0%
+- Goal Reached: 46
+- All Coins Collected: 47
+- Android Stomped: 46
+- Gap/DeathZone Failures: 0
+- Anti Ledge Stuck Failures: 0
+- Blocked Goal Failures: 0
+- Timeout Failures: 0
+Average Final X: 38,18
+Average Max X: 38,18
+Average Failure Final X: 29,67
+Failures By Nearest Gap Index:
+- None: 4
+Failures By Nearest Segment Type:
+- None: 4
+Failures By Nearest Segment Index:
+- None: 4
+Failures By Current Segment Type:
+- None: 4
+Failures By Next Segment Type:
+- None: 4
+Failures By Transition:
+- None -> None: 4
+Average Nearest Failed Gap Width: 0,00
+Segment Generation Statistics:
+Average StepUpSegment Count Per Episode: 0,00
+Average StepDownSegment Count Per Episode: 0,00
+Average SafeDropSegment Count Per Episode: 0,00
+Average GapSegment Count Per Episode: 0,00
+Average PlatformChainSegment Count Per Episode: 0,00
+Average PlatformChain Pieces Per Chain: 0,00
+Average PlatformChain Internal Gap Width: 0,00
+Average FlatSegment Count Per Episode: 0,00
+Average StepUp Height Delta: 0,00
+Max StepUp Height Delta: 0,00
+=== Runtime Configuration Snapshot ===
+Scene Name: ER_V5_ScoreMaxOA_FinalRandom
+Model Label: FINAL_ScoreMaxOA_FinalRandom02_250k
+Evaluation Label: ER_V5_ScoreMaxOA_FinalRandom_Eval50
+Time.timeScale Used: 20.000
+Evaluation Time Scale Setting: 20.000
+Generate On Start: false
+useMixedLevelGenerator: false
+Agent MixedLevelGenerator GameObject: None
+EvaluationManager MixedLevelGenerator GameObject: None
+MixedLevelGenerator References Match: false
+GapGenerator GameObject: None
+GapGenerator Active In Hierarchy: false
+MixedLevelGenerator: None
+Agent Settings:
+- Agent Version: V5
+- Expected Observation Space Size: 55
+- Expected Actions/Branches: [3, 2, 2]
+- normalMoveSpeed: 0.000
+- sprintMoveSpeed: 0.000
+- allowSprint: false
+- jumpForce: 0.000
+- useCoyoteTime: false
+- coyoteTime: 0.000
+- useJumpBuffer: false
+- useJumpBufferForAgent: false
+- requireJumpReleaseBeforeNextJump: false
+- forwardTerrainSampleCount: 0
+- forwardSensorRange: 0.000
+- backwardTerrainSampleCount: 0
+- backwardSensorRange: 0.000
+- verticalSensorCount: 0
+- verticalSensorRange: 0.000
+- gapSensorRange: 0.000
+- frontDownSensorRange: 0.000
+- wallSensorRange: 0.000
+- groundCheckRange: 0.000
+- allowBacktrackingForPositioning: false
+- maxAllowedBacktrackDistance: 0.000
+Behavior Name: EdgeRunnerV5ScoreMaxObjectAware
+ONNX Model: FINAL_ScoreMaxOA_FinalRandom02_250k
