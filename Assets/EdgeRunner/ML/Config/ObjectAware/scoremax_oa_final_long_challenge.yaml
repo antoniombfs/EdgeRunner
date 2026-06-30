@@ -1,8 +1,9 @@
 engine_settings:
-  time_scale: 10
+  time_scale: 20
   target_frame_rate: -1
-  capture_frame_rate: 60
-  no_graphics: false
+  quality_level: 0
+  width: 640
+  height: 360
 
 # FinalLongChallenge: long, fixed-layout ObjectAware level.
 # Ordered sequence: low/low/high/low/Android/high/low/Android/high/Goal.
