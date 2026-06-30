@@ -2305,6 +2305,8 @@ public static class BuildER_V5_ObjectAwareScene
         SerializedProperty debugAntiLedge = serializedAgent.FindProperty("debugAntiLedgeStuck");
         SerializedProperty debugLayout = serializedAgent.FindProperty(
             "debugObjectAwareFinalLongValidation");
+        SerializedProperty debugFailureReason = serializedAgent.FindProperty(
+            "debugFinalLongFailureReason");
 
         GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
         EdgeRunnerAgentV5 prefabAgent = playerPrefab != null
@@ -2335,7 +2337,8 @@ public static class BuildER_V5_ObjectAwareScene
             debugJumpContext == null || debugJumpContext.boolValue ||
             debugGizmos == null || debugGizmos.boolValue ||
             debugAntiLedge == null || debugAntiLedge.boolValue ||
-            debugLayout == null || debugLayout.boolValue)
+            debugLayout == null || debugLayout.boolValue ||
+            debugFailureReason == null || debugFailureReason.boolValue)
         {
             throw new System.InvalidOperationException(
                 "FinalLongChallenge has invalid phase, manager, curriculum gates, friction, " +
@@ -2542,6 +2545,27 @@ public static class BuildER_V5_ObjectAwareScene
                 "landing zones.");
         }
 
+        float[] lowCoinEdgeDistances =
+        {
+            Mathf.Min(4f - platforms[platformNames[0]].bounds.min.x,
+                platforms[platformNames[0]].bounds.max.x - 4f),
+            Mathf.Min(8f - platforms[platformNames[0]].bounds.min.x,
+                platforms[platformNames[0]].bounds.max.x - 8f),
+            Mathf.Min(27f - platforms[platformNames[1]].bounds.min.x,
+                platforms[platformNames[1]].bounds.max.x - 27f),
+            Mathf.Min(49.5f - platforms[platformNames[2]].bounds.min.x,
+                platforms[platformNames[2]].bounds.max.x - 49.5f)
+        };
+        for (int i = 0; i < lowCoinEdgeDistances.Length; i++)
+        {
+            if (lowCoinEdgeDistances[i] < FinalLongChallengeSafeFlatRadius - 0.001f)
+            {
+                throw new System.InvalidOperationException(
+                    $"FinalLongChallenge LowCoin_{i + 1:00} is too close to an edge: " +
+                    $"{lowCoinEdgeDistances[i]:F2}.");
+            }
+        }
+
         for (int i = 0; i < androids.Length; i++)
         {
             ScoreAttackAndroid android = androids[i];
@@ -2558,6 +2582,26 @@ public static class BuildER_V5_ObjectAwareScene
             }
         }
 
+
+        ScoreAttackAndroid android01 = System.Array.Find(
+            androids,
+            android => android != null && android.name == "FinalLongChallenge_Android_01");
+        ScoreAttackAndroid android02 = System.Array.Find(
+            androids,
+            android => android != null && android.name == "FinalLongChallenge_Android_02");
+        float android01FromLanding = android01 != null
+            ? android01.transform.position.x - platforms[platformNames[2]].bounds.min.x
+            : -1f;
+        float android02FromLanding = android02 != null
+            ? android02.transform.position.x - platforms[platformNames[3]].bounds.min.x
+            : -1f;
+        if (android01FromLanding < 3f || android02FromLanding < 3f)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLongChallenge Androids must remain at least 3 units after their " +
+                "preceding landing edge.");
+        }
+
         float levelLength = FinalLongChallengeLevelEndX - FinalLongChallengeLevelStartX;
         if (levelLength < 85f || goal.transform.position.x <= 80f)
         {
@@ -2566,6 +2610,25 @@ public static class BuildER_V5_ObjectAwareScene
         }
 
         ValidateCommonSceneObjects(scene, phaseName);
+        Debug.Log(
+            "[OBJECT AWARE BUILDER ZONES] " +
+            "Zone1=LowCoin_01->LowCoin_02->gap1->HighCoin_01->landing; " +
+            "Zone2=LowCoin_03->gap2->Android_01; " +
+            "Zone3=HighCoin_02->landing->LowCoin_04; " +
+            "Zone4=gap3->Android_02->HighCoin_03->landing->gap4->gap5->Goal.");
+        Debug.Log(
+            $"[OBJECT AWARE BUILDER GEOMETRY] gaps=[{string.Join(", ", gaps)}] " +
+            $"high01ToLow03={firstHighToRecoveryLow:F2} " +
+            $"high02ToLow04={secondHighToRecoveryLow:F2} " +
+            $"high03LandingRoom={platforms[platformNames[3]].bounds.max.x - 65f:F2} " +
+            $"android01FromLanding={android01FromLanding:F2} " +
+            $"android02FromLanding={android02FromLanding:F2} " +
+            $"lowCoinNearestEdges=[{string.Join(", ", lowCoinEdgeDistances)}].");
+        Debug.Log(
+            $"[OBJECT AWARE BUILDER GOAL LOCK] enabled=true coinsRequired={expectedCoins} " +
+            $"enemiesRequired={FinalLongChallengeAndroidCount} " +
+            $"requireEnemiesForGoal={requireEnemies.boolValue} " +
+            $"endEpisodeOnPrematureGoal={endOnLockedGoal.boolValue}.");
         Debug.Log(
             $"[OBJECT AWARE BUILDER] FinalLongChallenge validated: length={levelLength:F1}, " +
             $"lowCoins={lowCount}, highCoins={highCount}, Androids={androids.Length}, " +
@@ -3274,6 +3337,7 @@ public static class BuildER_V5_ObjectAwareScene
         SetFloat(agent, "ledgeStuckPenalty", FinalRandomLedgeStuckPenalty);
         SetBool(agent, "debugAntiLedgeStuck", false);
         SetBool(agent, "debugObjectAwareFinalLongValidation", false);
+        SetBool(agent, "debugFinalLongFailureReason", false);
         SetFloat(agent, "noProgressTimeLimit", 30f);
         SetFloat(agent, "stuckTimeLimit", 30f);
         SetFloat(agent, "maxEpisodeTime", 180f);

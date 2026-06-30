@@ -122,12 +122,17 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     [SerializeField] private bool debugObjectAwareJumpContext = false;
     [SerializeField] private bool debugObjectAwareGizmos = false;
     [SerializeField] private bool debugObjectAwareFinalLongValidation = false;
+    [SerializeField] private bool debugFinalLongFailureReason = false;
     [SerializeField] private float debugObjectAwareLogInterval = 1f;
 
     private static readonly FieldInfo BaseGroundLayerField =
         typeof(EdgeRunnerAgentV5).GetField("groundLayer", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly FieldInfo BaseCoyoteTimerField =
         typeof(EdgeRunnerAgentV5).GetField("coyoteTimer", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo BaseDebugEpisodeResetReasonField =
+        typeof(EdgeRunnerAgentV5).GetField(
+            "debugEpisodeResetReason",
+            BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly FieldInfo VectorSensorObservationsField =
         typeof(VectorSensor).GetField("m_Observations", BindingFlags.Instance | BindingFlags.NonPublic);
 
@@ -156,6 +161,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     private bool finalLongAwaitingGroundedAfterHighCoin;
     private bool finalLongHasLandedAfterHighCoin;
     private int finalLongHighCoinCollectionFrame = -1;
+    private string lastCompletedFinalLongObjective = "none";
     private bool lastCoinCollectionWasNextObjective;
     private bool lastCoinCollectionGrounded;
     private bool lastCoinCollectionGroundedByProbe;
@@ -242,6 +248,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
 
     public override void Initialize()
     {
+        ConfigureFinalLongFailureDebug();
         ResolveObjectAwareReferences();
         base.Initialize();
         ResolveObjectAwareReferences();
@@ -250,6 +257,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
 
     public override void OnEpisodeBegin()
     {
+        ConfigureFinalLongFailureDebug();
         ResolveObjectAwareReferences();
         base.OnEpisodeBegin();
         ResolveObjectAwareReferences();
@@ -296,6 +304,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
 
     public override void OnActionReceived(ActionBuffers actions)
     {
+        ConfigureFinalLongFailureDebug();
         ResolveObjectAwareReferences();
         RefreshObjectCache(false);
         ObjectAwareContext context = BuildContext();
@@ -355,6 +364,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     public void EndEpisodeWithObjectAwareEvaluationReason(EdgeRunnerEpisodeEndReason reason)
     {
         objectAwareEpisodeEnding = true;
+        LogFinalLongFailureReason(reason.ToString());
         ResolveObjectAwareEvaluationManager();
         objectAwareEvaluationManager?.NotifyEpisodeEnded(this, reason);
         EndEpisode();
@@ -663,6 +673,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
 
             lastCoinCollectionReason = "accepted_grounded_low_coin";
             mixedRandomAirborneLowCoinAttempt = false;
+            lastCompletedFinalLongObjective = coin.name;
             return true;
         }
 
@@ -677,6 +688,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         finalLongHasLandedAfterHighCoin = false;
         finalLongHighCoinCollectionFrame = Time.frameCount;
         mixedRandomSameJumpHighCoinAttempt = false;
+        lastCompletedFinalLongObjective = coin.name;
         return true;
     }
 
@@ -760,8 +772,14 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
             UpdateFinalLongChallengeLandingState();
             TargetSnapshot expectedObjective = FindFinalLongChallengeObjective(
                 CreateTargetSnapshot(objectAwareGoal, ObjectAwareObjectiveType.Goal));
-            return expectedObjective.type == ObjectAwareObjectiveType.Android &&
+            bool accepted = expectedObjective.type == ObjectAwareObjectiveType.Android &&
                 expectedObjective.target == android.transform;
+            if (accepted)
+            {
+                lastCompletedFinalLongObjective = android.name;
+            }
+
+            return accepted;
         }
 
         return FindFirstLiveOrderedCoin(true) == null &&
@@ -1321,6 +1339,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         finalLongAwaitingGroundedAfterHighCoin = false;
         finalLongHasLandedAfterHighCoin = true;
         finalLongHighCoinCollectionFrame = -1;
+        lastCompletedFinalLongObjective = "none";
         lastCoinCollectionWasNextObjective = false;
         lastCoinCollectionGrounded = false;
         lastCoinCollectionGroundedByProbe = false;
@@ -1793,6 +1812,13 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         {
             finalLongHasLandedAfterHighCoin = true;
             finalLongAwaitingGroundedAfterHighCoin = false;
+            if (lastCompletedFinalLongObjective.StartsWith(
+                "FinalLongChallenge_HighCoin_",
+                StringComparison.Ordinal))
+            {
+                lastCompletedFinalLongObjective =
+                    $"landing_required_after_{lastCompletedFinalLongObjective}";
+            }
             ClearPreviousTrainingObjective();
         }
     }
@@ -2229,6 +2255,171 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
             $"coinsRemaining={CountLiveCoins()} enemiesRemaining={CountLiveAndroids()} " +
             $"goalLock={goalLocked} antiLedgeStuck={enableAntiLedgeStuckFailSafe}",
             this);
+    }
+
+    protected override void OnEnable()
+    {
+        base.OnEnable();
+        Application.logMessageReceived += HandleFinalLongBaseEpisodeLog;
+    }
+
+    protected override void OnDisable()
+    {
+        Application.logMessageReceived -= HandleFinalLongBaseEpisodeLog;
+        base.OnDisable();
+    }
+
+    private void ConfigureFinalLongFailureDebug()
+    {
+        if (objectAwarePhase != EdgeRunnerObjectAwarePhase.FinalLongChallenge ||
+            !debugFinalLongFailureReason ||
+            BaseDebugEpisodeResetReasonField == null)
+        {
+            return;
+        }
+
+        BaseDebugEpisodeResetReasonField.SetValue(this, true);
+    }
+
+    private void HandleFinalLongBaseEpisodeLog(
+        string condition,
+        string stackTrace,
+        LogType type)
+    {
+        const string prefix = "[SCOREMAX RESET] reason=";
+        if (objectAwarePhase != EdgeRunnerObjectAwarePhase.FinalLongChallenge ||
+            !debugFinalLongFailureReason ||
+            string.IsNullOrEmpty(condition) ||
+            !condition.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        int reasonEnd = condition.IndexOf(' ', prefix.Length);
+        string reason = reasonEnd > prefix.Length
+            ? condition.Substring(prefix.Length, reasonEnd - prefix.Length)
+            : condition.Substring(prefix.Length);
+        LogFinalLongFailureReason(reason);
+    }
+
+    private void LogFinalLongFailureReason(string reason)
+    {
+        if (objectAwarePhase != EdgeRunnerObjectAwarePhase.FinalLongChallenge ||
+            !debugFinalLongFailureReason)
+        {
+            return;
+        }
+
+        ResolveObjectAwareReferences();
+        RefreshObjectCache(false);
+        UpdateFinalLongChallengeLandingState();
+
+        TargetSnapshot current = FindFinalLongChallengeObjective(
+            CreateTargetSnapshot(objectAwareGoal, ObjectAwareObjectiveType.Goal));
+        string currentObjective = FinalLongChallengeLandingRequired()
+            ? "landing_required"
+            : current.target != null
+                ? current.target.name
+                : "none";
+        float distanceToNextObjective = current.exists ? current.distance : -1f;
+        Vector2 velocity = objectAwareRigidbody != null
+            ? objectAwareRigidbody.linearVelocity
+            : Vector2.zero;
+        bool grounded = IsCurrentlyGroundedForEvaluation();
+        int coinsCollected = objectAwareScoreAttackManager != null
+            ? objectAwareScoreAttackManager.CoinsCollected
+            : -1;
+        int coinsTotal = objectAwareScoreAttackManager != null
+            ? objectAwareScoreAttackManager.CoinsCollected +
+                objectAwareScoreAttackManager.CoinsRemaining
+            : -1;
+        int enemiesKilled = objectAwareScoreAttackManager != null
+            ? objectAwareScoreAttackManager.EnemiesKilled
+            : -1;
+        int enemiesTotal = objectAwareScoreAttackManager != null
+            ? objectAwareScoreAttackManager.EnemiesKilled +
+                objectAwareScoreAttackManager.EnemiesRemaining
+            : -1;
+
+        Debug.LogWarning(
+            $"[FINAL LONG FAILURE] step={StepCount} " +
+            $"failReason={FormatFinalLongFailureReason(reason)} " +
+            $"currentObjective={currentObjective} " +
+            $"lastCompletedObjective={lastCompletedFinalLongObjective} " +
+            $"playerPosition={transform.position} velocity={velocity} " +
+            $"grounded={grounded} zoneIndex={GetFinalLongZoneIndex(currentObjective)} " +
+            $"coins={coinsCollected}/{coinsTotal} " +
+            $"enemies={enemiesKilled}/{enemiesTotal} " +
+            $"distanceToNextObjective={distanceToNextObjective:F2}",
+            this);
+    }
+
+    private string FormatFinalLongFailureReason(string reason)
+    {
+        if (reason == EdgeRunnerEpisodeEndReason.ObjectAwareAirborneLowCoin.ToString() ||
+            reason == EdgeRunnerEpisodeEndReason.ObjectAwareSameJumpHighCoin.ToString())
+        {
+            return $"coin_rejected:{lastCoinCollectionReason}";
+        }
+
+        if (reason == EdgeRunnerEpisodeEndReason.ObjectAwareMissedCoin.ToString() &&
+            lastCoinCollectionReason != "not_attempted" &&
+            !lastCoinCollectionReason.StartsWith("accepted_", StringComparison.Ordinal))
+        {
+            return $"coin_rejected_then_missed:{lastCoinCollectionReason}";
+        }
+
+        return reason;
+    }
+
+    private int GetFinalLongZoneIndex(string currentObjective)
+    {
+        if (!string.IsNullOrEmpty(currentObjective))
+        {
+            if (currentObjective.EndsWith("LowCoin_01", StringComparison.Ordinal) ||
+                currentObjective.EndsWith("LowCoin_02", StringComparison.Ordinal) ||
+                currentObjective.EndsWith("HighCoin_01", StringComparison.Ordinal))
+            {
+                return 1;
+            }
+
+            if (currentObjective.EndsWith("LowCoin_03", StringComparison.Ordinal) ||
+                currentObjective.EndsWith("Android_01", StringComparison.Ordinal))
+            {
+                return 2;
+            }
+
+            if (currentObjective.EndsWith("HighCoin_02", StringComparison.Ordinal) ||
+                currentObjective.EndsWith("LowCoin_04", StringComparison.Ordinal))
+            {
+                return 3;
+            }
+
+            if (currentObjective.EndsWith("Android_02", StringComparison.Ordinal) ||
+                currentObjective.EndsWith("HighCoin_03", StringComparison.Ordinal) ||
+                currentObjective.Contains("Goal"))
+            {
+                return 4;
+            }
+        }
+
+        if (FinalLongChallengeLandingRequired())
+        {
+            if (lastCompletedFinalLongObjective.Contains("HighCoin_01"))
+            {
+                return 1;
+            }
+
+            if (lastCompletedFinalLongObjective.Contains("HighCoin_02"))
+            {
+                return 3;
+            }
+
+            return 4;
+        }
+
+        float x = transform.position.x;
+        return x < 29f ? 1 : x < 53f ? 2 : x < 68.8f ? 3 : 4;
     }
 
     private static bool HasConsistentGroundUnder(
