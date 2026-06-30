@@ -156,6 +156,10 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     private bool finalLongAwaitingGroundedAfterHighCoin;
     private bool finalLongHasLandedAfterHighCoin;
     private int finalLongHighCoinCollectionFrame = -1;
+    private bool lastCoinCollectionWasNextObjective;
+    private bool lastCoinCollectionGrounded;
+    private string lastCoinCollectionReason = "not_attempted";
+    private string lastCoinCollectionObjective = "none";
     private bool missedEnemyPenaltyAppliedThisEpisode;
     private ScoreAttackManager objectAwareScoreAttackManager;
     private EdgeRunnerEvaluationManager objectAwareEvaluationManager;
@@ -444,70 +448,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
 
         if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge)
         {
-            RefreshObjectCache(true);
-            UpdateFinalLongChallengeLandingState();
-
-            TargetSnapshot expectedObjective = FindFinalLongChallengeObjective(
-                CreateTargetSnapshot(objectAwareGoal, ObjectAwareObjectiveType.Goal));
-            bool isLowCoin = IsOrderedCurriculumCoin(coin, true);
-            bool isHighCoin = IsOrderedCurriculumCoin(coin, false);
-
-            if (expectedObjective.target != coin.transform)
-            {
-                if (isHighCoin)
-                {
-                    return RejectOrderedHighCoinAttempt(
-                        coin,
-                        FinalLongChallengeLandingRequired()
-                            ? "landing_required"
-                            : "objective_out_of_order");
-                }
-
-                return false;
-            }
-
-            if (isLowCoin)
-            {
-                bool grounded = IsCurrentlyGroundedForEvaluation();
-                if (requireGroundedLowCoin && !grounded)
-                {
-                    mixedRandomAirborneLowCoinAttempt = true;
-                    AddReward(airborneLowCoinPenalty);
-
-                    if (debugObjectAwareNextObjective)
-                    {
-                        Debug.LogWarning(
-                            $"[OBJECT AWARE LOW COIN BLOCK] target={coin.name} " +
-                            $"lowCoinRequiresGrounded={requireGroundedLowCoin} " +
-                            $"grounded={grounded} airborneLowCoinAttempt=true " +
-                            $"penalty={airborneLowCoinPenalty:F2}",
-                            this);
-                    }
-
-                    if (endEpisodeOnAirborneLowCoin)
-                    {
-                        objectAwareEpisodeEnding = true;
-                        EndEpisodeWithObjectAwareEvaluationReason(
-                            EdgeRunnerEpisodeEndReason.ObjectAwareAirborneLowCoin);
-                    }
-
-                    return false;
-                }
-
-                mixedRandomAirborneLowCoinAttempt = false;
-                return true;
-            }
-
-            if (!isHighCoin)
-            {
-                return false;
-            }
-
-            finalLongAwaitingGroundedAfterHighCoin = true;
-            finalLongHasLandedAfterHighCoin = false;
-            finalLongHighCoinCollectionFrame = Time.frameCount;
-            mixedRandomSameJumpHighCoinAttempt = false;
-            return true;
+            return TryAcceptFinalLongChallengeCoin(coin);
         }
 
         if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalRandom)
@@ -651,6 +592,135 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         }
 
         return false;
+    }
+
+    private bool TryAcceptFinalLongChallengeCoin(ScoreAttackCoin coin)
+    {
+        RefreshObjectCache(true);
+        UpdateFinalLongChallengeLandingState();
+
+        TargetSnapshot expectedObjective = FindFinalLongChallengeObjective(
+            CreateTargetSnapshot(objectAwareGoal, ObjectAwareObjectiveType.Goal));
+        bool isLowCoin = IsOrderedCurriculumCoin(coin, true);
+        bool isHighCoin = IsOrderedCurriculumCoin(coin, false);
+        bool isNextObjective = expectedObjective.target == coin.transform;
+        bool grounded = isLowCoin
+            ? IsSupportedForFinalLongLowCoinCollection()
+            : IsCurrentlyGroundedForEvaluation();
+
+        lastCoinCollectionWasNextObjective = isNextObjective;
+        lastCoinCollectionGrounded = grounded;
+        lastCoinCollectionObjective = expectedObjective.target != null
+            ? expectedObjective.target.name
+            : FinalLongChallengeLandingRequired()
+                ? "landing_required"
+                : "none";
+
+        if (!isNextObjective)
+        {
+            lastCoinCollectionReason = FinalLongChallengeLandingRequired()
+                ? "landing_required"
+                : "objective_out_of_order";
+            if (isHighCoin)
+            {
+                return RejectOrderedHighCoinAttempt(coin, lastCoinCollectionReason);
+            }
+
+            return false;
+        }
+
+        if (isLowCoin)
+        {
+            if (requireGroundedLowCoin && !grounded)
+            {
+                lastCoinCollectionReason = "airborne_low_coin";
+                mixedRandomAirborneLowCoinAttempt = true;
+                AddReward(airborneLowCoinPenalty);
+
+                if (debugObjectAwareNextObjective)
+                {
+                    Debug.LogWarning(
+                        $"[OBJECT AWARE LOW COIN BLOCK] target={coin.name} " +
+                        $"lowCoinRequiresGrounded={requireGroundedLowCoin} " +
+                        $"grounded={grounded} airborneLowCoinAttempt=true " +
+                        $"penalty={airborneLowCoinPenalty:F2}",
+                        this);
+                }
+
+                if (endEpisodeOnAirborneLowCoin)
+                {
+                    objectAwareEpisodeEnding = true;
+                    EndEpisodeWithObjectAwareEvaluationReason(
+                        EdgeRunnerEpisodeEndReason.ObjectAwareAirborneLowCoin);
+                }
+
+                return false;
+            }
+
+            lastCoinCollectionReason = "accepted_grounded_low_coin";
+            mixedRandomAirborneLowCoinAttempt = false;
+            return true;
+        }
+
+        if (!isHighCoin)
+        {
+            lastCoinCollectionReason = "invalid_coin_type";
+            return false;
+        }
+
+        lastCoinCollectionReason = "accepted_high_coin";
+        finalLongAwaitingGroundedAfterHighCoin = true;
+        finalLongHasLandedAfterHighCoin = false;
+        finalLongHighCoinCollectionFrame = Time.frameCount;
+        mixedRandomSameJumpHighCoinAttempt = false;
+        return true;
+    }
+
+    private bool IsSupportedForFinalLongLowCoinCollection()
+    {
+        if (IsCurrentlyGroundedForEvaluation())
+        {
+            return true;
+        }
+
+        ResolveObjectAwareReferences();
+        if (objectAwareRigidbody == null || antiLedgeCollider == null ||
+            Mathf.Abs(objectAwareRigidbody.linearVelocity.y) > 0.5f)
+        {
+            return false;
+        }
+
+        Bounds bounds = antiLedgeCollider.bounds;
+        float horizontalInset = Mathf.Min(bounds.extents.x * 0.55f, 0.3f);
+        float probeY = bounds.min.y + 0.05f;
+        LayerMask groundMask = GetBaseGroundLayer();
+        for (int i = -1; i <= 1; i++)
+        {
+            float x = bounds.center.x + horizontalInset * i;
+            RaycastHit2D hit = Physics2D.Raycast(
+                new Vector2(x, probeY),
+                Vector2.down,
+                0.22f,
+                groundMask.value);
+            if (hit.collider != null && !hit.collider.isTrigger)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public void GetLastCoinCollectionDecision(
+        out bool isNextObjective,
+        out bool grounded,
+        out string reason,
+        out string currentObjective)
+    {
+        isNextObjective = lastCoinCollectionWasNextObjective;
+        grounded = lastCoinCollectionGrounded;
+        reason = lastCoinCollectionReason;
+        currentObjective = lastCoinCollectionObjective;
     }
 
     public bool TryAcceptScoreAttackAndroidStomp(ScoreAttackAndroid android)
@@ -1241,6 +1311,10 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         finalLongAwaitingGroundedAfterHighCoin = false;
         finalLongHasLandedAfterHighCoin = true;
         finalLongHighCoinCollectionFrame = -1;
+        lastCoinCollectionWasNextObjective = false;
+        lastCoinCollectionGrounded = false;
+        lastCoinCollectionReason = "not_attempted";
+        lastCoinCollectionObjective = "none";
         missedEnemyPenaltyAppliedThisEpisode = false;
         ResetAntiLedgeStuckState();
         rewardedHighCoinJumpCues.Clear();

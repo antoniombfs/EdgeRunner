@@ -5,10 +5,13 @@ public class ScoreAttackCoin : MonoBehaviour, IEdgeRunnerResettable
 {
     [SerializeField] private ScoreAttackManager manager;
     [SerializeField] private bool disableOnCollect = true;
+    [SerializeField] private bool enableTriggerStayFallback = false;
+    [SerializeField] private bool debugCoinCollection = false;
 
     private Collider2D ownCollider;
     private SpriteRenderer[] spriteRenderers;
     private bool collected;
+    private int lastCollectionAttemptFrame = -1;
 
     public Vector3 InitialPosition { get; private set; }
     public bool IsCollected => collected;
@@ -47,7 +50,21 @@ public class ScoreAttackCoin : MonoBehaviour, IEdgeRunnerResettable
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        if (collected)
+        TryCollect(other, "OnTriggerEnter2D");
+    }
+
+    private void OnTriggerStay2D(Collider2D other)
+    {
+        if (enableTriggerStayFallback)
+        {
+            TryCollect(other, "OnTriggerStay2D");
+        }
+    }
+
+    private void TryCollect(Collider2D other, string contactSource)
+    {
+        if (collected ||
+            (enableTriggerStayFallback && lastCollectionAttemptFrame == Time.frameCount))
         {
             return;
         }
@@ -59,9 +76,17 @@ public class ScoreAttackCoin : MonoBehaviour, IEdgeRunnerResettable
             return;
         }
 
-        if (agent is EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent &&
-            !objectAwareAgent.TryAcceptScoreAttackCoinCollection(this))
+        if (enableTriggerStayFallback)
         {
+            lastCollectionAttemptFrame = Time.frameCount;
+        }
+        EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent =
+            agent as EdgeRunnerAgentV5ScoreMaxObjectAware;
+        bool accepted = objectAwareAgent == null ||
+            objectAwareAgent.TryAcceptScoreAttackCoinCollection(this);
+        if (!accepted)
+        {
+            LogCollectionAttempt(objectAwareAgent, contactSource, false);
             return;
         }
 
@@ -72,10 +97,50 @@ public class ScoreAttackCoin : MonoBehaviour, IEdgeRunnerResettable
             manager.CollectCoin(this, agent);
         }
 
+        LogCollectionAttempt(objectAwareAgent, contactSource, true);
+
         if (disableOnCollect)
         {
             SetVisualsAndCollider(false);
         }
+    }
+
+    private void LogCollectionAttempt(
+        EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent,
+        string contactSource,
+        bool accepted)
+    {
+        if (!debugCoinCollection)
+        {
+            return;
+        }
+
+        string coinType = name.Contains("LowCoin")
+            ? "low"
+            : name.Contains("HighCoin")
+                ? "high"
+                : "unknown";
+        bool isNextObjective = accepted;
+        bool grounded = objectAwareAgent != null &&
+            objectAwareAgent.IsCurrentlyGroundedForEvaluation();
+        string reason = accepted ? "accepted" : "rejected_by_agent";
+        string currentObjective = "unknown";
+        if (objectAwareAgent != null)
+        {
+            objectAwareAgent.GetLastCoinCollectionDecision(
+                out isNextObjective,
+                out grounded,
+                out reason,
+                out currentObjective);
+        }
+
+        int collectedCount = manager != null ? manager.CoinsCollected : -1;
+        Debug.Log(
+            $"[COIN COLLECTION] source={contactSource} coinName={name} " +
+            $"coinType={coinType} isNextObjective={isNextObjective} " +
+            $"grounded={grounded} accepted={accepted} reason={reason} " +
+            $"currentObjective={currentObjective} collectedCount={collectedCount}",
+            this);
     }
 
     public void ResetForNewRun()
@@ -87,6 +152,7 @@ public class ScoreAttackCoin : MonoBehaviour, IEdgeRunnerResettable
     {
         transform.position = position;
         collected = false;
+        lastCollectionAttemptFrame = -1;
         gameObject.SetActive(active);
         SetVisualsAndCollider(active);
     }

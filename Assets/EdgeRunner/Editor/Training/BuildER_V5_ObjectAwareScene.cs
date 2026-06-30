@@ -527,10 +527,10 @@ public static class BuildER_V5_ObjectAwareScene
             manager);
         player = CreateObjectAwarePlayer(new Vector3(0f, 1.15f, 0f), goal.transform);
 
-        CreateCoin(root.transform, "FinalLongChallenge_LowCoin_01", new Vector3(4f, MixedWarmupLowCoinY, 0f), sprite, manager);
-        CreateCoin(root.transform, "FinalLongChallenge_LowCoin_02", new Vector3(8f, MixedWarmupLowCoinY, 0f), sprite, manager);
-        CreateCoin(root.transform, "FinalLongChallenge_HighCoin_01", new Vector3(19.5f, MixedWarmupHighCoinY, 0f), sprite, manager);
-        CreateCoin(root.transform, "FinalLongChallenge_LowCoin_03", new Vector3(25f, MixedWarmupLowCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_01", new Vector3(4f, MixedWarmupLowCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_02", new Vector3(8f, MixedWarmupLowCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_HighCoin_01", new Vector3(19.5f, MixedWarmupHighCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_03", new Vector3(25f, MixedWarmupLowCoinY, 0f), sprite, manager);
 
         CreateStaticAndroid(
             root.transform,
@@ -538,8 +538,8 @@ public static class BuildER_V5_ObjectAwareScene
             new Vector3(35.5f, 1.02f, 0f),
             sprite,
             manager);
-        CreateCoin(root.transform, "FinalLongChallenge_HighCoin_02", new Vector3(41.5f, MixedWarmupHighCoinY, 0f), sprite, manager);
-        CreateCoin(root.transform, "FinalLongChallenge_LowCoin_04", new Vector3(46f, MixedWarmupLowCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_HighCoin_02", new Vector3(41.5f, MixedWarmupHighCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_04", new Vector3(46f, MixedWarmupLowCoinY, 0f), sprite, manager);
 
         CreateStaticAndroid(
             root.transform,
@@ -547,7 +547,7 @@ public static class BuildER_V5_ObjectAwareScene
             new Vector3(57f, 1.02f, 0f),
             sprite,
             manager);
-        CreateCoin(root.transform, "FinalLongChallenge_HighCoin_03", new Vector3(64f, MixedWarmupHighCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_HighCoin_03", new Vector3(64f, MixedWarmupHighCoinY, 0f), sprite, manager);
 
         ConfigureFinalLongChallengePlayer(player, manager);
         CreateDeathZone(44.5f, 100f, "DeathZone_ScoreMaxOA_FinalLongChallenge");
@@ -2325,6 +2325,7 @@ public static class BuildER_V5_ObjectAwareScene
             groundedLowCoin == null || !groundedLowCoin.boolValue ||
             groundedSequence == null || !groundedSequence.boolValue ||
             antiLedge == null || !antiLedge.boolValue ||
+            playerBody.collisionDetectionMode != CollisionDetectionMode2D.Continuous ||
             jumpForce == null || prefabJumpForce == null ||
             Mathf.Abs(jumpForce.floatValue - prefabJumpForce.floatValue) > 0.0001f ||
             noFrictionMaterial == null || playerCollider.sharedMaterial != noFrictionMaterial ||
@@ -2344,6 +2345,7 @@ public static class BuildER_V5_ObjectAwareScene
         SerializedObject serializedManager = new SerializedObject(manager);
         SerializedProperty managerAgent = serializedManager.FindProperty("agent");
         SerializedProperty managerGoal = serializedManager.FindProperty("goal");
+        SerializedProperty resetOnStart = serializedManager.FindProperty("resetOnStart");
         SerializedProperty randomize = serializedManager.FindProperty(
             "randomizeObjectPositionsOnReset");
         SerializedProperty requireEnemies = serializedManager.FindProperty(
@@ -2357,6 +2359,7 @@ public static class BuildER_V5_ObjectAwareScene
         int expectedCoins = FinalLongChallengeLowCoinCount + FinalLongChallengeHighCoinCount;
         if (managerAgent == null || managerAgent.objectReferenceValue != agent ||
             managerGoal == null || managerGoal.objectReferenceValue != goal.transform ||
+            resetOnStart == null || !resetOnStart.boolValue ||
             randomize == null || randomize.boolValue ||
             requireEnemies == null || !requireEnemies.boolValue ||
             minCoins == null || minCoins.intValue != expectedCoins ||
@@ -2424,6 +2427,17 @@ public static class BuildER_V5_ObjectAwareScene
             }
         }
 
+        Dictionary<string, Vector3> expectedCoinPositions =
+            new Dictionary<string, Vector3>
+            {
+                { "FinalLongChallenge_LowCoin_01", new Vector3(4f, MixedWarmupLowCoinY, 0f) },
+                { "FinalLongChallenge_LowCoin_02", new Vector3(8f, MixedWarmupLowCoinY, 0f) },
+                { "FinalLongChallenge_HighCoin_01", new Vector3(19.5f, MixedWarmupHighCoinY, 0f) },
+                { "FinalLongChallenge_LowCoin_03", new Vector3(25f, MixedWarmupLowCoinY, 0f) },
+                { "FinalLongChallenge_HighCoin_02", new Vector3(41.5f, MixedWarmupHighCoinY, 0f) },
+                { "FinalLongChallenge_LowCoin_04", new Vector3(46f, MixedWarmupLowCoinY, 0f) },
+                { "FinalLongChallenge_HighCoin_03", new Vector3(64f, MixedWarmupHighCoinY, 0f) }
+            };
         Dictionary<string, BoxCollider2D> lowCoinPlatforms =
             new Dictionary<string, BoxCollider2D>
             {
@@ -2443,6 +2457,34 @@ public static class BuildER_V5_ObjectAwareScene
         {
             ScoreAttackCoin coin = coins[i];
             CircleCollider2D coinCollider = coin.GetComponent<CircleCollider2D>();
+            SpriteRenderer coinRenderer = coin.GetComponent<SpriteRenderer>();
+            SerializedObject serializedCoin = new SerializedObject(coin);
+            SerializedProperty coinManager = serializedCoin.FindProperty("manager");
+            SerializedProperty triggerStayFallback = serializedCoin.FindProperty(
+                "enableTriggerStayFallback");
+            SerializedProperty debugCoinCollection = serializedCoin.FindProperty(
+                "debugCoinCollection");
+            bool positionValid = expectedCoinPositions.TryGetValue(
+                coin.name,
+                out Vector3 expectedPosition) &&
+                Vector3.Distance(coin.transform.position, expectedPosition) <= 0.0001f;
+            bool contactValid = coin.gameObject.activeSelf && coin.enabled &&
+                coin.CompareTag("Untagged") &&
+                coinCollider != null && coinCollider.enabled && coinCollider.isTrigger &&
+                coinCollider.radius >= 0.65f && coinCollider.offset == Vector2.zero &&
+                coinRenderer != null && coinRenderer.enabled &&
+                coinRenderer.transform == coin.transform &&
+                !Physics2D.GetIgnoreLayerCollision(coin.gameObject.layer, player.layer) &&
+                coinManager != null && coinManager.objectReferenceValue == manager &&
+                triggerStayFallback != null && triggerStayFallback.boolValue &&
+                debugCoinCollection != null && !debugCoinCollection.boolValue;
+            if (!positionValid || !contactValid)
+            {
+                throw new System.InvalidOperationException(
+                    $"{coin.name} has invalid active state, manager, transform, " +
+                    "trigger fallback, collider, renderer, layer, or debug default.");
+            }
+
             float coinRadius = coinCollider != null
                 ? coinCollider.bounds.extents.y
                 : 0.25f;
@@ -3226,13 +3268,15 @@ public static class BuildER_V5_ObjectAwareScene
         PhysicsMaterial2D noFrictionMaterial =
             AssetDatabase.LoadAssetAtPath<PhysicsMaterial2D>(AgentNoFrictionMaterialPath);
         BoxCollider2D playerCollider = player.GetComponent<BoxCollider2D>();
-        if (noFrictionMaterial == null || playerCollider == null)
+        Rigidbody2D playerBody = player.GetComponent<Rigidbody2D>();
+        if (noFrictionMaterial == null || playerCollider == null || playerBody == null)
         {
             throw new System.InvalidOperationException(
-                "FinalLongChallenge requires Agent_NoFriction and the player BoxCollider2D.");
+                "FinalLongChallenge requires Agent_NoFriction, BoxCollider2D, and Rigidbody2D.");
         }
 
         playerCollider.sharedMaterial = noFrictionMaterial;
+        playerBody.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
     }
 
     private static void ConfigureFinalRandomizer(
@@ -3355,6 +3399,30 @@ public static class BuildER_V5_ObjectAwareScene
         ScoreAttackCoin coinScript = coin.AddComponent<ScoreAttackCoin>();
         coinScript.SetManager(manager);
         return coinScript;
+    }
+
+    private static ScoreAttackCoin CreateFinalLongChallengeCoin(
+        Transform parent,
+        string name,
+        Vector3 position,
+        Sprite sprite,
+        ScoreAttackManager manager)
+    {
+        ScoreAttackCoin coin = CreateCoin(parent, name, position, sprite, manager);
+        SetBool(coin, "enableTriggerStayFallback", true);
+        SetBool(coin, "debugCoinCollection", false);
+
+        CircleCollider2D collider = coin.GetComponent<CircleCollider2D>();
+        if (collider == null)
+        {
+            throw new System.InvalidOperationException(
+                $"{name} requires a CircleCollider2D.");
+        }
+
+        collider.radius = 0.65f;
+        collider.offset = Vector2.zero;
+        collider.isTrigger = true;
+        return coin;
     }
 
     private static GameObject CreateStaticAndroid(
