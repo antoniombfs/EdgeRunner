@@ -158,6 +158,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     private int finalLongHighCoinCollectionFrame = -1;
     private bool lastCoinCollectionWasNextObjective;
     private bool lastCoinCollectionGrounded;
+    private bool lastCoinCollectionGroundedByProbe;
     private string lastCoinCollectionReason = "not_attempted";
     private string lastCoinCollectionObjective = "none";
     private bool missedEnemyPenaltyAppliedThisEpisode;
@@ -604,12 +605,14 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         bool isLowCoin = IsOrderedCurriculumCoin(coin, true);
         bool isHighCoin = IsOrderedCurriculumCoin(coin, false);
         bool isNextObjective = expectedObjective.target == coin.transform;
-        bool grounded = isLowCoin
-            ? IsSupportedForFinalLongLowCoinCollection()
-            : IsCurrentlyGroundedForEvaluation();
+        bool grounded = IsCurrentlyGroundedForEvaluation();
+        bool groundedByProbe = false;
+        bool groundedForCollection = grounded ||
+            (isLowCoin && IsSupportedForFinalLongLowCoinCollection(out groundedByProbe));
 
         lastCoinCollectionWasNextObjective = isNextObjective;
         lastCoinCollectionGrounded = grounded;
+        lastCoinCollectionGroundedByProbe = groundedByProbe;
         lastCoinCollectionObjective = expectedObjective.target != null
             ? expectedObjective.target.name
             : FinalLongChallengeLandingRequired()
@@ -631,7 +634,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
 
         if (isLowCoin)
         {
-            if (requireGroundedLowCoin && !grounded)
+            if (requireGroundedLowCoin && !groundedForCollection)
             {
                 lastCoinCollectionReason = "airborne_low_coin";
                 mixedRandomAirborneLowCoinAttempt = true;
@@ -642,7 +645,8 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
                     Debug.LogWarning(
                         $"[OBJECT AWARE LOW COIN BLOCK] target={coin.name} " +
                         $"lowCoinRequiresGrounded={requireGroundedLowCoin} " +
-                        $"grounded={grounded} airborneLowCoinAttempt=true " +
+                        $"grounded={grounded} groundedByProbe={groundedByProbe} " +
+                        "airborneLowCoinAttempt=true " +
                         $"penalty={airborneLowCoinPenalty:F2}",
                         this);
                 }
@@ -676,8 +680,9 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         return true;
     }
 
-    private bool IsSupportedForFinalLongLowCoinCollection()
+    private bool IsSupportedForFinalLongLowCoinCollection(out bool groundedByProbe)
     {
+        groundedByProbe = false;
         if (IsCurrentlyGroundedForEvaluation())
         {
             return true;
@@ -704,6 +709,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
                 groundMask.value);
             if (hit.collider != null && !hit.collider.isTrigger)
             {
+                groundedByProbe = true;
                 return true;
             }
         }
@@ -714,13 +720,17 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     public void GetLastCoinCollectionDecision(
         out bool isNextObjective,
         out bool grounded,
+        out bool groundedByProbe,
         out string reason,
-        out string currentObjective)
+        out string currentObjective,
+        out string phase)
     {
         isNextObjective = lastCoinCollectionWasNextObjective;
         grounded = lastCoinCollectionGrounded;
+        groundedByProbe = lastCoinCollectionGroundedByProbe;
         reason = lastCoinCollectionReason;
         currentObjective = lastCoinCollectionObjective;
+        phase = objectAwarePhase.ToString();
     }
 
     public bool TryAcceptScoreAttackAndroidStomp(ScoreAttackAndroid android)
@@ -1313,6 +1323,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         finalLongHighCoinCollectionFrame = -1;
         lastCoinCollectionWasNextObjective = false;
         lastCoinCollectionGrounded = false;
+        lastCoinCollectionGroundedByProbe = false;
         lastCoinCollectionReason = "not_attempted";
         lastCoinCollectionObjective = "none";
         missedEnemyPenaltyAppliedThisEpisode = false;

@@ -123,23 +123,42 @@ public class ScoreAttackCoin : MonoBehaviour, IEdgeRunnerResettable
         bool isNextObjective = accepted;
         bool grounded = objectAwareAgent != null &&
             objectAwareAgent.IsCurrentlyGroundedForEvaluation();
+        bool groundedByProbe = false;
         string reason = accepted ? "accepted" : "rejected_by_agent";
         string currentObjective = "unknown";
+        string objectAwarePhase = "none";
         if (objectAwareAgent != null)
         {
             objectAwareAgent.GetLastCoinCollectionDecision(
                 out isNextObjective,
                 out grounded,
+                out groundedByProbe,
                 out reason,
-                out currentObjective);
+                out currentObjective,
+                out objectAwarePhase);
         }
 
         int collectedCount = manager != null ? manager.CoinsCollected : -1;
+        Vector3 agentPosition = objectAwareAgent != null
+            ? objectAwareAgent.transform.position
+            : Vector3.zero;
+        float distanceToCoin = objectAwareAgent != null
+            ? Vector2.Distance(agentPosition, transform.position)
+            : -1f;
+        Vector2 velocity = objectAwareAgent != null
+            ? objectAwareAgent.GetCurrentVelocityForEvaluation()
+            : Vector2.zero;
         Debug.Log(
             $"[COIN COLLECTION] source={contactSource} coinName={name} " +
-            $"coinType={coinType} isNextObjective={isNextObjective} " +
-            $"grounded={grounded} accepted={accepted} reason={reason} " +
-            $"currentObjective={currentObjective} collectedCount={collectedCount}",
+            $"coinType={coinType} coinPosition={transform.position} " +
+            $"agentPosition={agentPosition} distanceToCoin={distanceToCoin:F3} " +
+            $"grounded={grounded} groundedByProbe={groundedByProbe} " +
+            $"verticalVelocity={velocity.y:F3} horizontalVelocity={velocity.x:F3} " +
+            $"isNextObjective={isNextObjective} currentObjectiveName={currentObjective} " +
+            $"accepted={accepted} rejectionReason={reason} " +
+            $"objectAwarePhase={objectAwarePhase} " +
+            $"fallbackEnabled={enableTriggerStayFallback} overlapConfirmed=true " +
+            $"collectedCount={collectedCount}",
             this);
     }
 

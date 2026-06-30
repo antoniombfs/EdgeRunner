@@ -515,8 +515,8 @@ public static class BuildER_V5_ObjectAwareScene
 
         CreatePlatform(root.transform, "FinalLongChallenge_Zone1_Start", 6f, 0f, 16f, sprite);
         CreatePlatform(root.transform, "FinalLongChallenge_Zone1_Recovery", 22.5f, 0f, 13f, sprite);
-        CreatePlatform(root.transform, "FinalLongChallenge_Zone2_AndroidRecovery", 40.2f, 0f, 17.6f, sprite);
-        CreatePlatform(root.transform, "FinalLongChallenge_Zone4_AndroidHigh", 60.3f, 0f, 17f, sprite);
+        CreatePlatform(root.transform, "FinalLongChallenge_Zone2_AndroidRecovery", 42.2f, 0f, 21.6f, sprite);
+        CreatePlatform(root.transform, "FinalLongChallenge_Zone4_AndroidHigh", 62.3f, 0f, 13f, sprite);
         CreatePlatform(root.transform, "FinalLongChallenge_FinalRecovery", 75f, 0f, 8f, sprite);
         CreatePlatform(root.transform, "FinalLongChallenge_GoalPlatform", 86.15f, 0f, 9.7f, sprite);
 
@@ -530,7 +530,7 @@ public static class BuildER_V5_ObjectAwareScene
         CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_01", new Vector3(4f, MixedWarmupLowCoinY, 0f), sprite, manager);
         CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_02", new Vector3(8f, MixedWarmupLowCoinY, 0f), sprite, manager);
         CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_HighCoin_01", new Vector3(19.5f, MixedWarmupHighCoinY, 0f), sprite, manager);
-        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_03", new Vector3(25f, MixedWarmupLowCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_03", new Vector3(27f, MixedWarmupLowCoinY, 0f), sprite, manager);
 
         CreateStaticAndroid(
             root.transform,
@@ -538,16 +538,16 @@ public static class BuildER_V5_ObjectAwareScene
             new Vector3(35.5f, 1.02f, 0f),
             sprite,
             manager);
-        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_HighCoin_02", new Vector3(41.5f, MixedWarmupHighCoinY, 0f), sprite, manager);
-        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_04", new Vector3(46f, MixedWarmupLowCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_HighCoin_02", new Vector3(40.5f, MixedWarmupHighCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_04", new Vector3(49.5f, MixedWarmupLowCoinY, 0f), sprite, manager);
 
         CreateStaticAndroid(
             root.transform,
             "FinalLongChallenge_Android_02",
-            new Vector3(57f, 1.02f, 0f),
+            new Vector3(59f, 1.02f, 0f),
             sprite,
             manager);
-        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_HighCoin_03", new Vector3(64f, MixedWarmupHighCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_HighCoin_03", new Vector3(65f, MixedWarmupHighCoinY, 0f), sprite, manager);
 
         ConfigureFinalLongChallengePlayer(player, manager);
         CreateDeathZone(44.5f, 100f, "DeathZone_ScoreMaxOA_FinalLongChallenge");
@@ -2433,10 +2433,10 @@ public static class BuildER_V5_ObjectAwareScene
                 { "FinalLongChallenge_LowCoin_01", new Vector3(4f, MixedWarmupLowCoinY, 0f) },
                 { "FinalLongChallenge_LowCoin_02", new Vector3(8f, MixedWarmupLowCoinY, 0f) },
                 { "FinalLongChallenge_HighCoin_01", new Vector3(19.5f, MixedWarmupHighCoinY, 0f) },
-                { "FinalLongChallenge_LowCoin_03", new Vector3(25f, MixedWarmupLowCoinY, 0f) },
-                { "FinalLongChallenge_HighCoin_02", new Vector3(41.5f, MixedWarmupHighCoinY, 0f) },
-                { "FinalLongChallenge_LowCoin_04", new Vector3(46f, MixedWarmupLowCoinY, 0f) },
-                { "FinalLongChallenge_HighCoin_03", new Vector3(64f, MixedWarmupHighCoinY, 0f) }
+                { "FinalLongChallenge_LowCoin_03", new Vector3(27f, MixedWarmupLowCoinY, 0f) },
+                { "FinalLongChallenge_HighCoin_02", new Vector3(40.5f, MixedWarmupHighCoinY, 0f) },
+                { "FinalLongChallenge_LowCoin_04", new Vector3(49.5f, MixedWarmupLowCoinY, 0f) },
+                { "FinalLongChallenge_HighCoin_03", new Vector3(65f, MixedWarmupHighCoinY, 0f) }
             };
         Dictionary<string, BoxCollider2D> lowCoinPlatforms =
             new Dictionary<string, BoxCollider2D>
@@ -2527,6 +2527,19 @@ public static class BuildER_V5_ObjectAwareScene
         {
             throw new System.InvalidOperationException(
                 "FinalLongChallenge low/high coin counts are invalid.");
+        }
+
+        float firstHighToRecoveryLow =
+            expectedCoinPositions["FinalLongChallenge_LowCoin_03"].x -
+            expectedCoinPositions["FinalLongChallenge_HighCoin_01"].x;
+        float secondHighToRecoveryLow =
+            expectedCoinPositions["FinalLongChallenge_LowCoin_04"].x -
+            expectedCoinPositions["FinalLongChallenge_HighCoin_02"].x;
+        if (firstHighToRecoveryLow < 7.5f || secondHighToRecoveryLow < 9f)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLongChallenge low coins must remain beyond the preceding high-coin " +
+                "landing zones.");
         }
 
         for (int i = 0; i < androids.Length; i++)
