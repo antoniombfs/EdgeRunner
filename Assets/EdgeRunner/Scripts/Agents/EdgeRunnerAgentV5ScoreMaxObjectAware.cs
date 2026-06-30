@@ -16,7 +16,8 @@ public enum EdgeRunnerObjectAwarePhase
     MixedWarmup = 5,
     MixedRandomWarmup = 6,
     FinalRandom = 7,
-    FinalLongChallenge = 8
+    FinalLongChallenge = 8,
+    FinalLongZone4Warmup = 9
 }
 
 public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
@@ -457,7 +458,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
             return true;
         }
 
-        if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge)
+        if (IsFinalLongOrderedCurriculum())
         {
             return TryAcceptFinalLongChallengeCoin(coin);
         }
@@ -761,13 +762,13 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         }
 
         if (objectAwarePhase != EdgeRunnerObjectAwarePhase.FinalRandom &&
-            objectAwarePhase != EdgeRunnerObjectAwarePhase.FinalLongChallenge)
+            !IsFinalLongOrderedCurriculum())
         {
             return true;
         }
 
         RefreshObjectCache(true);
-        if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge)
+        if (IsFinalLongOrderedCurriculum())
         {
             UpdateFinalLongChallengeLandingState();
             TargetSnapshot expectedObjective = FindFinalLongChallengeObjective(
@@ -1044,8 +1045,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
             lowCoinRequiresGrounded =
                 UsesGroundedLowHighGateCurriculum() &&
                 requireGroundedLowCoin,
-            hasLandedAfterLowCoin = objectAwarePhase ==
-                EdgeRunnerObjectAwarePhase.FinalLongChallenge
+            hasLandedAfterLowCoin = IsFinalLongOrderedCurriculum()
                     ? finalLongHasLandedAfterHighCoin
                     : mixedRandomHasLandedAfterLowCoin,
             highCoinLockedUntilLanding = highCoinLockedUntilLanding,
@@ -1355,7 +1355,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     {
         if (!enableAntiLedgeStuckFailSafe ||
             (objectAwarePhase != EdgeRunnerObjectAwarePhase.FinalRandom &&
-             objectAwarePhase != EdgeRunnerObjectAwarePhase.FinalLongChallenge) ||
+             !IsFinalLongOrderedCurriculum()) ||
             objectAwareEpisodeEnding || antiLedgeEpisodeEnding ||
             objectAwareRigidbody == null || antiLedgeCollider == null)
         {
@@ -1512,7 +1512,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         TargetSnapshot android,
         TargetSnapshot goal)
     {
-        if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge)
+        if (IsFinalLongOrderedCurriculum())
         {
             return FindFinalLongChallengeObjective(goal);
         }
@@ -1627,10 +1627,9 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         ScoreAttackCoin excludedCoin = null)
     {
         if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalRandom ||
-            objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge)
+            IsFinalLongOrderedCurriculum())
         {
-            bool finalLong =
-                objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge;
+            bool finalLong = IsFinalLongOrderedCurriculum();
             string prefix = lowCoin
                 ? finalLong
                     ? "FinalLongChallenge_LowCoin_"
@@ -1668,10 +1667,9 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         }
 
         if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalRandom ||
-            objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge)
+            IsFinalLongOrderedCurriculum())
         {
-            bool finalLong =
-                objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge;
+            bool finalLong = IsFinalLongOrderedCurriculum();
             string prefix = lowCoin
                 ? finalLong
                     ? "FinalLongChallenge_LowCoin_"
@@ -1793,7 +1791,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
 
     private bool FinalLongChallengeLandingRequired()
     {
-        return objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge &&
+        return IsFinalLongOrderedCurriculum() &&
             finalLongAwaitingGroundedAfterHighCoin &&
             !finalLongHasLandedAfterHighCoin;
     }
@@ -1870,14 +1868,20 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         return objectAwarePhase == EdgeRunnerObjectAwarePhase.MixedWarmup ||
             objectAwarePhase == EdgeRunnerObjectAwarePhase.MixedRandomWarmup ||
             objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalRandom ||
-            objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge;
+            IsFinalLongOrderedCurriculum();
     }
 
     private bool UsesGroundedLowHighGateCurriculum()
     {
         return objectAwarePhase == EdgeRunnerObjectAwarePhase.MixedRandomWarmup ||
             objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalRandom ||
-            objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge;
+            IsFinalLongOrderedCurriculum();
+    }
+
+    private bool IsFinalLongOrderedCurriculum()
+    {
+        return objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge ||
+            objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongZone4Warmup;
     }
 
     private static ActionBuffers WithoutJumpAction(ActionBuffers actions)
@@ -2163,7 +2167,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
                 : "none";
             string sequenceStage = objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalRandom
                 ? GetFinalRandomSequenceStage(context)
-                : objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge
+                : IsFinalLongOrderedCurriculum()
                     ? FinalLongChallengeLandingRequired()
                         ? "landing_required"
                         : currentTarget

@@ -77,6 +77,7 @@ public static class BuildER_V5_ObjectAwareScene
     private const int FinalLongChallengeHighCoinCount = 3;
     private const int FinalLongChallengeAndroidCount = 2;
     private const float FinalLongChallengeSafeFlatRadius = 2f;
+    private const float FinalLongZone4WarmupGoalX = 42.5f;
 
     private const string TraversalScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_TraversalBase.unity";
@@ -96,6 +97,8 @@ public static class BuildER_V5_ObjectAwareScene
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_FinalRandom.unity";
     private const string FinalLongChallengeScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_FinalLongChallenge.unity";
+    private const string FinalLongZone4WarmupScenePath =
+        "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_FinalLongZone4Warmup.unity";
     private const string PlayerPrefabPath =
         "Assets/EdgeRunner/Prefabs/Agent/Player_V5.prefab";
     private const string GroundPrefabPath =
@@ -508,6 +511,23 @@ public static class BuildER_V5_ObjectAwareScene
             "FinalLongChallenge");
     }
 
+    [MenuItem("EdgeRunner/Training/ObjectAware/Build ScoreMaxOA FinalLongZone4Warmup")]
+    public static void BuildFinalLongZone4Warmup()
+    {
+        if (!CanReplaceOpenScenes())
+        {
+            return;
+        }
+
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        BuildFinalLongZone4WarmupContents(scene, out GameObject player);
+        SaveAndKeepOpen(
+            scene,
+            FinalLongZone4WarmupScenePath,
+            player,
+            "FinalLongZone4Warmup");
+    }
+
     private static void BuildFinalLongChallengeContents(Scene scene, out GameObject player)
     {
         GameObject root = new GameObject("ER_V5_ScoreMaxOA_FinalLongChallenge");
@@ -553,6 +573,51 @@ public static class BuildER_V5_ObjectAwareScene
         CreateDeathZone(44.5f, 100f, "DeathZone_ScoreMaxOA_FinalLongChallenge");
         CreateCamera(player.transform);
         ValidateFinalLongChallenge(scene, player, manager, goal);
+    }
+
+    private static void BuildFinalLongZone4WarmupContents(
+        Scene scene,
+        out GameObject player)
+    {
+        GameObject root = new GameObject("ER_V5_ScoreMaxOA_FinalLongZone4Warmup");
+        Sprite sprite = GetSharedSprite();
+
+        // Exact translation of FinalLongChallenge from LowCoin_04 onward.
+        CreatePlatform(root.transform, "FinalLongZone4Warmup_StartLow", 2.75f, 0f, 9.5f, sprite);
+        CreatePlatform(root.transform, "FinalLongZone4Warmup_AndroidHigh", 16.8f, 0f, 13f, sprite);
+        CreatePlatform(root.transform, "FinalLongZone4Warmup_FinalRecovery", 29.5f, 0f, 8f, sprite);
+        CreatePlatform(root.transform, "FinalLongZone4Warmup_GoalPlatform", 40.65f, 0f, 9.7f, sprite);
+
+        ScoreAttackManager manager = CreateFinalLongZone4WarmupManager(root.transform);
+        GameObject goal = CreateLockedGoal(
+            "Goal_ScoreMaxOA_FinalLongZone4Warmup",
+            new Vector3(FinalLongZone4WarmupGoalX, 1.2f, 0f),
+            manager);
+        player = CreateObjectAwarePlayer(new Vector3(0f, 1.15f, 0f), goal.transform);
+
+        CreateFinalLongChallengeCoin(
+            root.transform,
+            "FinalLongChallenge_LowCoin_04",
+            new Vector3(4f, MixedWarmupLowCoinY, 0f),
+            sprite,
+            manager);
+        CreateStaticAndroid(
+            root.transform,
+            "FinalLongChallenge_Android_02",
+            new Vector3(13.5f, 1.02f, 0f),
+            sprite,
+            manager);
+        CreateFinalLongChallengeCoin(
+            root.transform,
+            "FinalLongChallenge_HighCoin_03",
+            new Vector3(19.5f, MixedWarmupHighCoinY, 0f),
+            sprite,
+            manager);
+
+        ConfigureFinalLongZone4WarmupPlayer(player, manager);
+        CreateDeathZone(21.75f, 60f, "DeathZone_ScoreMaxOA_FinalLongZone4Warmup");
+        CreateCamera(player.transform);
+        ValidateFinalLongZone4Warmup(scene, player, manager, goal);
     }
 
     public static void BuildCoinPhasesBatch()
@@ -2635,6 +2700,201 @@ public static class BuildER_V5_ObjectAwareScene
             "GoalLock=all objectives, safeFlatLowCoins=true, antiLedge=true.");
     }
 
+    private static void ValidateFinalLongZone4Warmup(
+        Scene scene,
+        GameObject player,
+        ScoreAttackManager manager,
+        GameObject goal)
+    {
+        const string phaseName = "FinalLongZone4Warmup";
+        ValidateObjectAwarePlayer(player, phaseName);
+
+        ScoreAttackCoin[] coins = GetSceneComponents<ScoreAttackCoin>(scene);
+        ScoreAttackAndroid[] androids = GetSceneComponents<ScoreAttackAndroid>(scene);
+        ScoreAttackGoalLock[] goalLocks = GetSceneComponents<ScoreAttackGoalLock>(scene);
+        if (CountSceneComponents<ScoreAttackManager>(scene) != 1 ||
+            coins.Length != 2 || androids.Length != 1 || goalLocks.Length != 1 ||
+            CountSceneComponents<DemoAndroidPatrol>(scene) != 0 ||
+            CountSceneComponents<EdgeRunnerAgentV5ScoreMax>(scene) != 0 ||
+            CountSceneComponents<EdgeRunnerAgentV5EnemyAware>(scene) != 0)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLongZone4Warmup requires two coins, one static Android, one manager, " +
+                "one GoalLock, no patrol, and no legacy agents.");
+        }
+
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        BoxCollider2D playerCollider = player.GetComponent<BoxCollider2D>();
+        Rigidbody2D playerBody = player.GetComponent<Rigidbody2D>();
+        SerializedObject serializedAgent = new SerializedObject(agent);
+        SerializedProperty phase = serializedAgent.FindProperty("objectAwarePhase");
+        SerializedProperty assignedManager = serializedAgent.FindProperty("scoreAttackManager");
+        SerializedProperty contextualJumpMask = serializedAgent.FindProperty(
+            "enableContextualJumpMask");
+        SerializedProperty groundedLowCoin = serializedAgent.FindProperty(
+            "requireGroundedLowCoin");
+        SerializedProperty groundedSequence = serializedAgent.FindProperty(
+            "requireGroundedBetweenLowAndHigh");
+        SerializedProperty antiLedge = serializedAgent.FindProperty(
+            "enableAntiLedgeStuckFailSafe");
+        SerializedProperty jumpForce = serializedAgent.FindProperty("jumpForce");
+
+        GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+        EdgeRunnerAgentV5 prefabAgent = playerPrefab != null
+            ? playerPrefab.GetComponent<EdgeRunnerAgentV5>()
+            : null;
+        SerializedProperty prefabJumpForce = prefabAgent != null
+            ? new SerializedObject(prefabAgent).FindProperty("jumpForce")
+            : null;
+        PhysicsMaterial2D noFrictionMaterial =
+            AssetDatabase.LoadAssetAtPath<PhysicsMaterial2D>(AgentNoFrictionMaterialPath);
+
+        if (agent == null || playerCollider == null || playerBody == null ||
+            phase == null ||
+            phase.enumValueIndex != (int)EdgeRunnerObjectAwarePhase.FinalLongZone4Warmup ||
+            assignedManager == null || assignedManager.objectReferenceValue != manager ||
+            contextualJumpMask == null || !contextualJumpMask.boolValue ||
+            groundedLowCoin == null || !groundedLowCoin.boolValue ||
+            groundedSequence == null || !groundedSequence.boolValue ||
+            antiLedge == null || !antiLedge.boolValue ||
+            playerBody.collisionDetectionMode != CollisionDetectionMode2D.Continuous ||
+            jumpForce == null || prefabJumpForce == null ||
+            Mathf.Abs(jumpForce.floatValue - prefabJumpForce.floatValue) > 0.0001f ||
+            noFrictionMaterial == null || playerCollider.sharedMaterial != noFrictionMaterial ||
+            Mathf.Abs(noFrictionMaterial.friction) > 0.0001f)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLongZone4Warmup has invalid phase, manager, curriculum gates, " +
+                "friction, jumpForce, or anti-ledge settings.");
+        }
+
+        SerializedObject serializedManager = new SerializedObject(manager);
+        SerializedProperty managerAgent = serializedManager.FindProperty("agent");
+        SerializedProperty managerGoal = serializedManager.FindProperty("goal");
+        SerializedProperty requireEnemies = serializedManager.FindProperty(
+            "requireEnemiesForGoal");
+        SerializedProperty minCoins = serializedManager.FindProperty("minActiveCoins");
+        SerializedProperty maxCoins = serializedManager.FindProperty("maxActiveCoins");
+        SerializedProperty minEnemies = serializedManager.FindProperty("minActiveEnemies");
+        SerializedProperty maxEnemies = serializedManager.FindProperty("maxActiveEnemies");
+        SerializedProperty sideHitPenalty = serializedManager.FindProperty(
+            "enemySideHitPenalty");
+        SerializedProperty stompReward = serializedManager.FindProperty("enemyKillReward");
+        SerializedProperty endOnLockedGoal = serializedManager.FindProperty(
+            "endEpisodeOnPrematureGoal");
+        if (managerAgent == null || managerAgent.objectReferenceValue != agent ||
+            managerGoal == null || managerGoal.objectReferenceValue != goal.transform ||
+            requireEnemies == null || !requireEnemies.boolValue ||
+            minCoins == null || minCoins.intValue != 2 ||
+            maxCoins == null || maxCoins.intValue != 2 ||
+            minEnemies == null || minEnemies.intValue != 1 ||
+            maxEnemies == null || maxEnemies.intValue != 1 ||
+            sideHitPenalty == null || sideHitPenalty.floatValue >= 0f ||
+            stompReward == null || stompReward.floatValue <= 0f ||
+            endOnLockedGoal == null || !endOnLockedGoal.boolValue)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLongZone4Warmup manager must require both coins and the Android, " +
+                "reward stomp, fail side hits, and end on a locked Goal touch.");
+        }
+
+        SerializedProperty goalLockManager =
+            new SerializedObject(goalLocks[0]).FindProperty("manager");
+        if (goalLockManager == null || goalLockManager.objectReferenceValue != manager ||
+            Mathf.Abs(goal.transform.position.x - FinalLongZone4WarmupGoalX) > 0.0001f)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLongZone4Warmup GoalLock or Goal position is invalid.");
+        }
+
+        Dictionary<string, BoxCollider2D> platforms = new Dictionary<string, BoxCollider2D>();
+        BoxCollider2D[] boxes = GetSceneComponents<BoxCollider2D>(scene);
+        for (int i = 0; i < boxes.Length; i++)
+        {
+            if (boxes[i].name.StartsWith(
+                "FinalLongZone4Warmup_",
+                System.StringComparison.Ordinal))
+            {
+                platforms[boxes[i].name] = boxes[i];
+            }
+        }
+
+        string[] platformNames =
+        {
+            "FinalLongZone4Warmup_StartLow",
+            "FinalLongZone4Warmup_AndroidHigh",
+            "FinalLongZone4Warmup_FinalRecovery",
+            "FinalLongZone4Warmup_GoalPlatform"
+        };
+        for (int i = 0; i < platformNames.Length; i++)
+        {
+            if (!platforms.ContainsKey(platformNames[i]))
+            {
+                throw new System.InvalidOperationException(
+                    $"FinalLongZone4Warmup is missing platform {platformNames[i]}.");
+            }
+        }
+
+        Physics2D.SyncTransforms();
+        float transitionGap =
+            platforms[platformNames[1]].bounds.min.x - platforms[platformNames[0]].bounds.max.x;
+        float finalGap01 =
+            platforms[platformNames[2]].bounds.min.x - platforms[platformNames[1]].bounds.max.x;
+        float finalGap02 =
+            platforms[platformNames[3]].bounds.min.x - platforms[platformNames[2]].bounds.max.x;
+        ScoreAttackCoin lowCoin = System.Array.Find(
+            coins,
+            coin => coin != null && coin.name == "FinalLongChallenge_LowCoin_04");
+        ScoreAttackCoin highCoin = System.Array.Find(
+            coins,
+            coin => coin != null && coin.name == "FinalLongChallenge_HighCoin_03");
+        ScoreAttackAndroid android = androids[0];
+        float lowEdgeDistance = lowCoin != null
+            ? Mathf.Min(
+                lowCoin.transform.position.x - platforms[platformNames[0]].bounds.min.x,
+                platforms[platformNames[0]].bounds.max.x - lowCoin.transform.position.x)
+            : -1f;
+        float androidFromLanding = android != null
+            ? android.transform.position.x - platforms[platformNames[1]].bounds.min.x
+            : -1f;
+
+        if (lowCoin == null || highCoin == null || android == null ||
+            Mathf.Abs(transitionGap - 2.8f) > 0.01f ||
+            Mathf.Abs(finalGap01 - 2.2f) > 0.01f ||
+            Mathf.Abs(finalGap02 - 2.3f) > 0.01f ||
+            lowEdgeDistance < 3.49f ||
+            Mathf.Abs(androidFromLanding - 3.2f) > 0.01f ||
+            Mathf.Abs(highCoin.transform.position.x - android.transform.position.x - 6f) > 0.01f ||
+            lowCoin.transform.position.y - player.transform.position.y > LowCoinRunHeightThreshold ||
+            highCoin.transform.position.y - player.transform.position.y <= LowCoinRunHeightThreshold)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLongZone4Warmup no longer matches the FinalLongChallenge Zone 4 " +
+                "objective spacing, safe-low placement, or gap geometry.");
+        }
+
+        Rigidbody2D androidBody = android.GetComponent<Rigidbody2D>();
+        Collider2D androidCollider = android.GetComponent<Collider2D>();
+        SerializedProperty androidManager =
+            new SerializedObject(android).FindProperty("manager");
+        if (androidBody == null || androidBody.bodyType != RigidbodyType2D.Kinematic ||
+            androidCollider == null || !androidCollider.isTrigger ||
+            androidManager == null || androidManager.objectReferenceValue != manager)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLongZone4Warmup Android must be static, stompable, and manager-owned.");
+        }
+
+        ValidateCommonSceneObjects(scene, phaseName);
+        Debug.Log(
+            $"[OBJECT AWARE BUILDER] FinalLongZone4Warmup validated: " +
+            "sequence=LowCoin_04->Android_02->HighCoin_03->landing->gaps->Goal, " +
+            $"gaps=[{transitionGap:F1},{finalGap01:F1},{finalGap02:F1}], " +
+            $"androidFromLanding={androidFromLanding:F1}, GoalLock=2coins+1Android, " +
+            "sideHitFail=true, antiLedge=true.");
+    }
+
     private static void ValidateObjectAwarePlayer(GameObject player, string phaseName)
     {
         EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent =
@@ -2950,6 +3210,17 @@ public static class BuildER_V5_ObjectAwareScene
         SetFloat(manager, "prematureGoalPenalty", StaticAndroidStompLockedGoalPenalty);
         SetBool(manager, "endEpisodeOnPrematureGoal", true);
         SetBool(manager, "debugLogs", false);
+        return manager;
+    }
+
+    private static ScoreAttackManager CreateFinalLongZone4WarmupManager(Transform parent)
+    {
+        ScoreAttackManager manager = CreateFinalLongChallengeManager(parent);
+        manager.gameObject.name = "ScoreMaxOA_FinalLongZone4Warmup_Manager";
+        SetInt(manager, "minActiveCoins", 2);
+        SetInt(manager, "maxActiveCoins", 2);
+        SetInt(manager, "minActiveEnemies", 1);
+        SetInt(manager, "maxActiveEnemies", 1);
         return manager;
     }
 
@@ -3354,6 +3625,20 @@ public static class BuildER_V5_ObjectAwareScene
 
         playerCollider.sharedMaterial = noFrictionMaterial;
         playerBody.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+    }
+
+    private static void ConfigureFinalLongZone4WarmupPlayer(
+        GameObject player,
+        ScoreAttackManager manager)
+    {
+        ConfigureFinalLongChallengePlayer(player, manager);
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent =
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        SetInt(
+            agent,
+            "objectAwarePhase",
+            (int)EdgeRunnerObjectAwarePhase.FinalLongZone4Warmup);
+        SetFloat(agent, "maxObjectiveDistance", 55f);
     }
 
     private static void ConfigureFinalRandomizer(
