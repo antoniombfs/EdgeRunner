@@ -81,6 +81,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     [SerializeField] private bool requireGroundedBetweenLowAndHigh = false;
     [SerializeField] private float sameJumpHighCoinPenalty = -2f;
     [SerializeField] private bool endEpisodeOnSameJumpHighCoin = false;
+    [SerializeField] private float finalLongZone4WarmupLandingGateX = 11f;
 
     [Header("ObjectAware Low Coin Rewards")]
     [SerializeField] private float lowCoinGroundApproachReward = 0.01f;
@@ -162,6 +163,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     private bool finalLongAwaitingGroundedAfterHighCoin;
     private bool finalLongHasLandedAfterHighCoin;
     private int finalLongHighCoinCollectionFrame = -1;
+    private bool finalLongZone4WarmupHasLandedAfterGap;
     private string lastCompletedFinalLongObjective = "none";
     private bool lastCoinCollectionWasNextObjective;
     private bool lastCoinCollectionGrounded;
@@ -771,6 +773,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         if (IsFinalLongOrderedCurriculum())
         {
             UpdateFinalLongChallengeLandingState();
+            UpdateFinalLongZone4WarmupLandingGate();
             TargetSnapshot expectedObjective = FindFinalLongChallengeObjective(
                 CreateTargetSnapshot(objectAwareGoal, ObjectAwareObjectiveType.Goal));
             bool accepted = expectedObjective.type == ObjectAwareObjectiveType.Android &&
@@ -918,6 +921,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         UpdateHighCoinLandingState();
         UpdateMixedRandomLowHighLandingState();
         UpdateFinalLongChallengeLandingState();
+        UpdateFinalLongZone4WarmupLandingGate();
         TargetSnapshot nearestCoin = FindNearestCoin(null);
         TargetSnapshot lowCoin = FindNearestCoin(true);
         TargetSnapshot highCoin = FindNearestCoin(false);
@@ -1339,6 +1343,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         finalLongAwaitingGroundedAfterHighCoin = false;
         finalLongHasLandedAfterHighCoin = true;
         finalLongHighCoinCollectionFrame = -1;
+        finalLongZone4WarmupHasLandedAfterGap = false;
         lastCompletedFinalLongObjective = "none";
         lastCoinCollectionWasNextObjective = false;
         lastCoinCollectionGrounded = false;
@@ -1571,6 +1576,11 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     private TargetSnapshot FindFinalLongChallengeObjective(TargetSnapshot goal)
     {
         if (FinalLongChallengeLandingRequired())
+        {
+            return default;
+        }
+
+        if (FinalLongZone4WarmupLandingRequiredBeforeAndroid())
         {
             return default;
         }
@@ -1817,6 +1827,34 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
                 lastCompletedFinalLongObjective =
                     $"landing_required_after_{lastCompletedFinalLongObjective}";
             }
+            ClearPreviousTrainingObjective();
+        }
+    }
+
+    private bool FinalLongZone4WarmupLandingRequiredBeforeAndroid()
+    {
+        if (objectAwarePhase != EdgeRunnerObjectAwarePhase.FinalLongZone4Warmup ||
+            finalLongZone4WarmupHasLandedAfterGap)
+        {
+            return false;
+        }
+
+        ScoreAttackCoin lowCoin = FindCoinByName("FinalLongChallenge_LowCoin_04");
+        return !IsLiveCoin(lowCoin);
+    }
+
+    private void UpdateFinalLongZone4WarmupLandingGate()
+    {
+        if (!FinalLongZone4WarmupLandingRequiredBeforeAndroid() ||
+            objectAwareEpisodeEnding ||
+            transform.position.x < finalLongZone4WarmupLandingGateX)
+        {
+            return;
+        }
+
+        if (IsCurrentlyGroundedForEvaluation())
+        {
+            finalLongZone4WarmupHasLandedAfterGap = true;
             ClearPreviousTrainingObjective();
         }
     }
@@ -2629,6 +2667,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         farGapProbeDistance = Mathf.Max(midGapProbeDistance, farGapProbeDistance);
         landingProbeDistance = Mathf.Max(farGapProbeDistance, landingProbeDistance);
         gapProbeDepth = Mathf.Max(0.2f, gapProbeDepth);
+        finalLongZone4WarmupLandingGateX = Mathf.Max(0f, finalLongZone4WarmupLandingGateX);
         debugObjectAwareLogInterval = Mathf.Max(0.05f, debugObjectAwareLogInterval);
     }
 }

@@ -77,7 +77,10 @@ public static class BuildER_V5_ObjectAwareScene
     private const int FinalLongChallengeHighCoinCount = 3;
     private const int FinalLongChallengeAndroidCount = 2;
     private const float FinalLongChallengeSafeFlatRadius = 2f;
-    private const float FinalLongZone4WarmupGoalX = 42.5f;
+    private const float FinalLongZone4WarmupGoalX = 44.3f;
+    private const float FinalLongZone4WarmupAndroidX = 15.3f;
+    private const float FinalLongZone4WarmupHighCoinX = 21.3f;
+    private const float FinalLongZone4WarmupLandingGateX = 11f;
 
     private const string TraversalScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_TraversalBase.unity";
@@ -584,9 +587,9 @@ public static class BuildER_V5_ObjectAwareScene
 
         // Exact translation of FinalLongChallenge from LowCoin_04 onward.
         CreatePlatform(root.transform, "FinalLongZone4Warmup_StartLow", 2.75f, 0f, 9.5f, sprite);
-        CreatePlatform(root.transform, "FinalLongZone4Warmup_AndroidHigh", 16.8f, 0f, 13f, sprite);
-        CreatePlatform(root.transform, "FinalLongZone4Warmup_FinalRecovery", 29.5f, 0f, 8f, sprite);
-        CreatePlatform(root.transform, "FinalLongZone4Warmup_GoalPlatform", 40.65f, 0f, 9.7f, sprite);
+        CreatePlatform(root.transform, "FinalLongZone4Warmup_AndroidHigh", 17.7f, 0f, 14.8f, sprite);
+        CreatePlatform(root.transform, "FinalLongZone4Warmup_FinalRecovery", 31.3f, 0f, 8f, sprite);
+        CreatePlatform(root.transform, "FinalLongZone4Warmup_GoalPlatform", 42.45f, 0f, 9.7f, sprite);
 
         ScoreAttackManager manager = CreateFinalLongZone4WarmupManager(root.transform);
         GameObject goal = CreateLockedGoal(
@@ -604,18 +607,18 @@ public static class BuildER_V5_ObjectAwareScene
         CreateStaticAndroid(
             root.transform,
             "FinalLongChallenge_Android_02",
-            new Vector3(13.5f, 1.02f, 0f),
+            new Vector3(FinalLongZone4WarmupAndroidX, 1.02f, 0f),
             sprite,
             manager);
         CreateFinalLongChallengeCoin(
             root.transform,
             "FinalLongChallenge_HighCoin_03",
-            new Vector3(19.5f, MixedWarmupHighCoinY, 0f),
+            new Vector3(FinalLongZone4WarmupHighCoinX, MixedWarmupHighCoinY, 0f),
             sprite,
             manager);
 
         ConfigureFinalLongZone4WarmupPlayer(player, manager);
-        CreateDeathZone(21.75f, 60f, "DeathZone_ScoreMaxOA_FinalLongZone4Warmup");
+        CreateDeathZone(23.65f, 60f, "DeathZone_ScoreMaxOA_FinalLongZone4Warmup");
         CreateCamera(player.transform);
         ValidateFinalLongZone4Warmup(scene, player, manager, goal);
     }
@@ -2358,6 +2361,8 @@ public static class BuildER_V5_ObjectAwareScene
             "requireGroundedBetweenLowAndHigh");
         SerializedProperty antiLedge = serializedAgent.FindProperty(
             "enableAntiLedgeStuckFailSafe");
+        SerializedProperty landingGate = serializedAgent.FindProperty(
+            "finalLongZone4WarmupLandingGateX");
         SerializedProperty jumpForce = serializedAgent.FindProperty("jumpForce");
         SerializedProperty debugObservationCount = serializedAgent.FindProperty(
             "debugObjectAwareObservationCount");
@@ -2392,6 +2397,8 @@ public static class BuildER_V5_ObjectAwareScene
             groundedLowCoin == null || !groundedLowCoin.boolValue ||
             groundedSequence == null || !groundedSequence.boolValue ||
             antiLedge == null || !antiLedge.boolValue ||
+            landingGate == null ||
+            Mathf.Abs(landingGate.floatValue - FinalLongZone4WarmupLandingGateX) > 0.0001f ||
             playerBody.collisionDetectionMode != CollisionDetectionMode2D.Continuous ||
             jumpForce == null || prefabJumpForce == null ||
             Mathf.Abs(jumpForce.floatValue - prefabJumpForce.floatValue) > 0.0001f ||
@@ -2864,7 +2871,7 @@ public static class BuildER_V5_ObjectAwareScene
             Mathf.Abs(finalGap01 - 2.2f) > 0.01f ||
             Mathf.Abs(finalGap02 - 2.3f) > 0.01f ||
             lowEdgeDistance < 3.49f ||
-            Mathf.Abs(androidFromLanding - 3.2f) > 0.01f ||
+            Mathf.Abs(androidFromLanding - 5f) > 0.01f ||
             Mathf.Abs(highCoin.transform.position.x - android.transform.position.x - 6f) > 0.01f ||
             lowCoin.transform.position.y - player.transform.position.y > LowCoinRunHeightThreshold ||
             highCoin.transform.position.y - player.transform.position.y <= LowCoinRunHeightThreshold)
@@ -2892,7 +2899,8 @@ public static class BuildER_V5_ObjectAwareScene
             "sequence=LowCoin_04->Android_02->HighCoin_03->landing->gaps->Goal, " +
             $"gaps=[{transitionGap:F1},{finalGap01:F1},{finalGap02:F1}], " +
             $"androidFromLanding={androidFromLanding:F1}, GoalLock=2coins+1Android, " +
-            "sideHitFail=true, antiLedge=true.");
+            $"landingGateX={FinalLongZone4WarmupLandingGateX:F1}, " +
+            "sameGapJumpStompAllowed=false, sideHitFail=true, antiLedge=true.");
     }
 
     private static void ValidateObjectAwarePlayer(GameObject player, string phaseName)
@@ -3639,6 +3647,10 @@ public static class BuildER_V5_ObjectAwareScene
             "objectAwarePhase",
             (int)EdgeRunnerObjectAwarePhase.FinalLongZone4Warmup);
         SetFloat(agent, "maxObjectiveDistance", 55f);
+        SetFloat(
+            agent,
+            "finalLongZone4WarmupLandingGateX",
+            FinalLongZone4WarmupLandingGateX);
     }
 
     private static void ConfigureFinalRandomizer(
