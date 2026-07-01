@@ -2390,6 +2390,22 @@ public static class BuildER_V5_ObjectAwareScene
             "highCoinGroundedApproachReward");
         SerializedProperty debugHighCoinApproachDiscipline = serializedAgent.FindProperty(
             "debugHighCoinApproachDiscipline");
+        SerializedProperty groundedTraversalDiscipline = serializedAgent.FindProperty(
+            "enableFinalLongGroundedTraversalDiscipline");
+        SerializedProperty unnecessaryJumpPenalty = serializedAgent.FindProperty(
+            "unnecessaryJumpPenalty");
+        SerializedProperty repeatedUnnecessaryJumpPenalty = serializedAgent.FindProperty(
+            "repeatedUnnecessaryJumpPenalty");
+        SerializedProperty groundedTraversalReward = serializedAgent.FindProperty(
+            "groundedTraversalReward");
+        SerializedProperty airborneNoPurposePenalty = serializedAgent.FindProperty(
+            "airborneNoPurposePenalty");
+        SerializedProperty minSafeFlatDistance = serializedAgent.FindProperty(
+            "minSafeFlatDistanceForGroundedDiscipline");
+        SerializedProperty jumpPurposeWindowDistance = serializedAgent.FindProperty(
+            "jumpPurposeWindowDistance");
+        SerializedProperty debugGroundedTraversalDiscipline = serializedAgent.FindProperty(
+            "debugGroundedTraversalDiscipline");
         SerializedProperty jumpForce = serializedAgent.FindProperty("jumpForce");
         SerializedProperty debugObservationCount = serializedAgent.FindProperty(
             "debugObjectAwareObservationCount");
@@ -2445,11 +2461,27 @@ public static class BuildER_V5_ObjectAwareScene
             highCoinJumpWindowDistanceMax == null ||
             Mathf.Abs(highCoinJumpWindowDistanceMax.floatValue - 3f) > 0.0001f ||
             highCoinEarlyJumpPenalty == null ||
-            Mathf.Abs(highCoinEarlyJumpPenalty.floatValue - -0.02f) > 0.0001f ||
+            Mathf.Abs(highCoinEarlyJumpPenalty.floatValue - -0.05f) > 0.0001f ||
             highCoinGroundedApproachReward == null ||
-            Mathf.Abs(highCoinGroundedApproachReward.floatValue - 0.005f) > 0.0001f ||
+            Mathf.Abs(highCoinGroundedApproachReward.floatValue - 0.01f) > 0.0001f ||
             debugHighCoinApproachDiscipline == null ||
             debugHighCoinApproachDiscipline.boolValue ||
+            groundedTraversalDiscipline == null ||
+            !groundedTraversalDiscipline.boolValue ||
+            unnecessaryJumpPenalty == null ||
+            Mathf.Abs(unnecessaryJumpPenalty.floatValue - -0.05f) > 0.0001f ||
+            repeatedUnnecessaryJumpPenalty == null ||
+            Mathf.Abs(repeatedUnnecessaryJumpPenalty.floatValue - -0.015f) > 0.0001f ||
+            groundedTraversalReward == null ||
+            Mathf.Abs(groundedTraversalReward.floatValue - 0.006f) > 0.0001f ||
+            airborneNoPurposePenalty == null ||
+            Mathf.Abs(airborneNoPurposePenalty.floatValue - -0.003f) > 0.0001f ||
+            minSafeFlatDistance == null ||
+            Mathf.Abs(minSafeFlatDistance.floatValue - 3f) > 0.0001f ||
+            jumpPurposeWindowDistance == null ||
+            Mathf.Abs(jumpPurposeWindowDistance.floatValue - 3.5f) > 0.0001f ||
+            debugGroundedTraversalDiscipline == null ||
+            debugGroundedTraversalDiscipline.boolValue ||
             playerBody.collisionDetectionMode != CollisionDetectionMode2D.Continuous ||
             jumpForce == null || prefabJumpForce == null ||
             Mathf.Abs(jumpForce.floatValue - prefabJumpForce.floatValue) > 0.0001f ||
@@ -2465,7 +2497,7 @@ public static class BuildER_V5_ObjectAwareScene
         {
             throw new System.InvalidOperationException(
                 "FinalLongChallenge has invalid phase, manager, curriculum gates, friction, " +
-                "jumpForce, anti-ledge, or debug defaults.");
+                "jump discipline, jumpForce, anti-ledge, or debug defaults.");
         }
 
         SerializedObject serializedManager = new SerializedObject(manager);
@@ -2807,7 +2839,8 @@ public static class BuildER_V5_ObjectAwareScene
             "GoalLock=all objectives, safeFlatLowCoins=true, antiLedge=true, " +
             "sameGapJumpHighCoinAllowed=false, sameGapJumpStompAllowed=false, " +
             "postAndroidLandingRequired=true, " +
-            "sameStompArcHighCoinAllowed=false, highCoinApproachDiscipline=true.");
+            "sameStompArcHighCoinAllowed=false, highCoinApproachDiscipline=true, " +
+            "groundedTraversalDiscipline=true.");
     }
 
     private static void ValidateFinalLongZone4Warmup(
@@ -3719,9 +3752,17 @@ public static class BuildER_V5_ObjectAwareScene
         SetFloat(agent, "highCoinEarlyJumpDistance", 4f);
         SetFloat(agent, "highCoinJumpWindowDistanceMin", 1f);
         SetFloat(agent, "highCoinJumpWindowDistanceMax", 3f);
-        SetFloat(agent, "highCoinEarlyJumpPenalty", -0.02f);
-        SetFloat(agent, "highCoinGroundedApproachReward", 0.005f);
+        SetFloat(agent, "highCoinEarlyJumpPenalty", -0.05f);
+        SetFloat(agent, "highCoinGroundedApproachReward", 0.01f);
         SetBool(agent, "debugHighCoinApproachDiscipline", false);
+        SetBool(agent, "enableFinalLongGroundedTraversalDiscipline", true);
+        SetFloat(agent, "unnecessaryJumpPenalty", -0.05f);
+        SetFloat(agent, "repeatedUnnecessaryJumpPenalty", -0.015f);
+        SetFloat(agent, "groundedTraversalReward", 0.006f);
+        SetFloat(agent, "airborneNoPurposePenalty", -0.003f);
+        SetFloat(agent, "minSafeFlatDistanceForGroundedDiscipline", 3f);
+        SetFloat(agent, "jumpPurposeWindowDistance", 3.5f);
+        SetBool(agent, "debugGroundedTraversalDiscipline", false);
         SetFloat(
             agent,
             "finalLongHighCoin01LandingGateX",
@@ -3773,6 +3814,7 @@ public static class BuildER_V5_ObjectAwareScene
             "objectAwarePhase",
             (int)EdgeRunnerObjectAwarePhase.FinalLongZone4Warmup);
         SetBool(agent, "enableHighCoinApproachDiscipline", false);
+        SetBool(agent, "enableFinalLongGroundedTraversalDiscipline", false);
         SetFloat(agent, "maxObjectiveDistance", 55f);
         SetFloat(
             agent,

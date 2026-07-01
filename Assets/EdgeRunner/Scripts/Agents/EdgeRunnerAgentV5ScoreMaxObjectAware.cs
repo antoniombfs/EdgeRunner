@@ -102,9 +102,19 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     [SerializeField] private float highCoinEarlyJumpDistance = 4f;
     [SerializeField] private float highCoinJumpWindowDistanceMin = 1f;
     [SerializeField] private float highCoinJumpWindowDistanceMax = 3f;
-    [SerializeField] private float highCoinEarlyJumpPenalty = -0.02f;
-    [SerializeField] private float highCoinGroundedApproachReward = 0.005f;
+    [SerializeField] private float highCoinEarlyJumpPenalty = -0.05f;
+    [SerializeField] private float highCoinGroundedApproachReward = 0.01f;
     [SerializeField] private bool debugHighCoinApproachDiscipline = false;
+
+    [Header("ObjectAware Final Long Grounded Traversal Discipline")]
+    [SerializeField] private bool enableFinalLongGroundedTraversalDiscipline = false;
+    [SerializeField] private float unnecessaryJumpPenalty = -0.05f;
+    [SerializeField] private float repeatedUnnecessaryJumpPenalty = -0.015f;
+    [SerializeField] private float groundedTraversalReward = 0.006f;
+    [SerializeField] private float airborneNoPurposePenalty = -0.003f;
+    [SerializeField] private float minSafeFlatDistanceForGroundedDiscipline = 3f;
+    [SerializeField] private float jumpPurposeWindowDistance = 3.5f;
+    [SerializeField] private bool debugGroundedTraversalDiscipline = false;
 
     [Header("ObjectAware Static Android Stomp")]
     [SerializeField] private float enemyApproachReward = 0.01f;
@@ -202,6 +212,14 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     private float previousHighCoinDisciplineDistanceX;
     private bool hasPreviousHighCoinDisciplineDistance;
     private float nextHighCoinDisciplineDebugTime;
+    private Transform previousGroundedTraversalObjective;
+    private float previousGroundedTraversalDistanceX;
+    private bool hasPreviousGroundedTraversalDistance;
+    private int consecutiveUnnecessaryJumps;
+    private float groundedDistanceSinceUnnecessaryJump;
+    private bool trackingUnnecessaryJumpAirborne;
+    private bool observedUnnecessaryJumpAirborne;
+    private float nextGroundedTraversalDebugTime;
     private readonly HashSet<Transform> rewardedHighCoinJumpCues = new HashSet<Transform>();
     private readonly HashSet<Transform> rewardedEnemyStompWindows = new HashSet<Transform>();
 
@@ -1106,6 +1124,11 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
             return false;
         }
 
+        ApplyFinalLongGroundedTraversalDiscipline(
+            context,
+            jumpPressed,
+            jumpRequested);
+
         if (objectAwarePhase == EdgeRunnerObjectAwarePhase.StaticAndroidStomp)
         {
             return ApplyStaticAndroidStompCurriculum(context, jumpPressed);
@@ -1385,6 +1408,273 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         hasPreviousHighCoinDisciplineDistance = false;
     }
 
+    private void ApplyFinalLongGroundedTraversalDiscipline(
+        ObjectAwareContext context,
+        bool jumpPressed,
+        bool jumpRequested)
+    {
+        if (!IsFinalLongGroundedTraversalDisciplineActive())
+        {
+            ResetFinalLongGroundedTraversalTracking();
+            return;
+        }
+
+        TargetSnapshot objective = context.nextObjective;
+        float direction = GetForwardDirection();
+        float objectiveForwardDistance = objective.exists
+            ? objective.delta.x * direction
+            : 0f;
+        float objectiveDistanceX = objective.exists
+            ? Mathf.Abs(objective.delta.x)
+            : 0f;
+        bool groundAtSafeFlatDistance = HasGroundBelow(
+            GetProbePosition(direction, minSafeFlatDistanceForGroundedDiscipline));
+        bool hasImmediateGap =
+            context.gap.gapAhead ||
+            context.gap.farMissing ||
+            !groundAtSafeFlatDistance;
+        bool inHighCoinJumpWindow =
+            objective.exists &&
+            objective.type == ObjectAwareObjectiveType.Coin &&
+            context.coinNeedsJump &&
+            objectiveForwardDistance >= 0f &&
+            objectiveForwardDistance <= jumpPurposeWindowDistance;
+        bool inAndroidStompWindow =
+            objective.exists &&
+            objective.type == ObjectAwareObjectiveType.Android &&
+            context.androidStompContext;
+        bool landingOrGateContext = FinalLongOrderedLandingRequired();
+        bool existingJumpContext = context.jumpContextValid;
+        bool hasLegitimateJumpPurpose =
+            hasImmediateGap ||
+            inHighCoinJumpWindow ||
+            inAndroidStompWindow ||
+            landingOrGateContext ||
+            existingJumpContext;
+        bool safeFlatGrounded =
+            context.grounded &&
+            !context.gap.nearMissing &&
+            !context.gap.midMissing &&
+            !context.gap.farMissing &&
+            groundAtSafeFlatDistance;
+
+        bool unnecessaryJumpDetected =
+            jumpPressed &&
+            safeFlatGrounded &&
+            !hasLegitimateJumpPurpose;
+        bool handledByHighCoinApproachDiscipline =
+            unnecessaryJumpDetected &&
+            IsHighCoinApproachDisciplineActive() &&
+            objective.type == ObjectAwareObjectiveType.Coin &&
+            context.coinNeedsJump &&
+            objectiveDistanceX > highCoinEarlyJumpDistance;
+        bool unnecessaryJumpPenaltyApplied =
+            unnecessaryJumpDetected &&
+            !handledByHighCoinApproachDiscipline;
+        bool repeatedJumpPenaltyApplied =
+            unnecessaryJumpDetected &&
+            consecutiveUnnecessaryJumps > 0;
+
+        if (jumpPressed && hasLegitimateJumpPurpose)
+        {
+            ResetUnnecessaryJumpSequence();
+        }
+
+        if (unnecessaryJumpDetected)
+        {
+            if (unnecessaryJumpPenaltyApplied)
+            {
+                AddReward(unnecessaryJumpPenalty);
+            }
+
+            if (repeatedJumpPenaltyApplied)
+            {
+                AddReward(repeatedUnnecessaryJumpPenalty);
+            }
+
+            consecutiveUnnecessaryJumps++;
+            groundedDistanceSinceUnnecessaryJump = 0f;
+            trackingUnnecessaryJumpAirborne = true;
+            observedUnnecessaryJumpAirborne = false;
+        }
+
+        float groundedTraversalRewardApplied = 0f;
+        if (objective.exists &&
+            hasPreviousGroundedTraversalDistance &&
+            previousGroundedTraversalObjective == objective.target)
+        {
+            float progress = previousGroundedTraversalDistanceX - objectiveDistanceX;
+            if (safeFlatGrounded &&
+                !hasLegitimateJumpPurpose &&
+                Mathf.Abs(context.velocity.x) > 0.25f &&
+                progress > 0f)
+            {
+                float clampedProgress = Mathf.Clamp(progress, 0f, 1f);
+                groundedTraversalRewardApplied = clampedProgress * groundedTraversalReward;
+                AddReward(groundedTraversalRewardApplied);
+
+                if (consecutiveUnnecessaryJumps > 0)
+                {
+                    groundedDistanceSinceUnnecessaryJump += clampedProgress;
+                    if (groundedDistanceSinceUnnecessaryJump >=
+                        minSafeFlatDistanceForGroundedDiscipline)
+                    {
+                        consecutiveUnnecessaryJumps = 0;
+                        groundedDistanceSinceUnnecessaryJump = 0f;
+                    }
+                }
+            }
+        }
+
+        bool airborneNoPurposePenaltyApplied = false;
+        if (trackingUnnecessaryJumpAirborne && !context.grounded)
+        {
+            observedUnnecessaryJumpAirborne = true;
+            if (!hasLegitimateJumpPurpose)
+            {
+                AddReward(airborneNoPurposePenalty);
+                airborneNoPurposePenaltyApplied = true;
+            }
+        }
+        else if (trackingUnnecessaryJumpAirborne &&
+                 observedUnnecessaryJumpAirborne &&
+                 context.grounded)
+        {
+            trackingUnnecessaryJumpAirborne = false;
+            observedUnnecessaryJumpAirborne = false;
+        }
+
+        if (objective.exists)
+        {
+            if (previousGroundedTraversalObjective != objective.target)
+            {
+                previousGroundedTraversalObjective = objective.target;
+                groundedDistanceSinceUnnecessaryJump = 0f;
+                consecutiveUnnecessaryJumps = 0;
+            }
+
+            previousGroundedTraversalDistanceX = objectiveDistanceX;
+            hasPreviousGroundedTraversalDistance = true;
+        }
+        else
+        {
+            previousGroundedTraversalObjective = null;
+            previousGroundedTraversalDistanceX = 0f;
+            hasPreviousGroundedTraversalDistance = false;
+        }
+
+        if (debugGroundedTraversalDiscipline &&
+            (jumpPressed ||
+             groundedTraversalRewardApplied > 0f ||
+             airborneNoPurposePenaltyApplied ||
+             Time.time >= nextGroundedTraversalDebugTime))
+        {
+            nextGroundedTraversalDebugTime =
+                Time.time + Mathf.Max(0.05f, debugObjectAwareLogInterval);
+            string ignoredReason = GetGroundedTraversalIgnoredReason(
+                context,
+                jumpPressed,
+                safeFlatGrounded,
+                hasImmediateGap,
+                inHighCoinJumpWindow,
+                inAndroidStompWindow,
+                landingOrGateContext,
+                existingJumpContext,
+                handledByHighCoinApproachDiscipline);
+            Debug.Log(
+                $"[GROUNDED TRAVERSAL] currentObjective=" +
+                $"{(objective.exists ? objective.target.name : "none")} " +
+                $"grounded={context.grounded} " +
+                $"velocity=({context.velocity.x:F2},{context.velocity.y:F2}) " +
+                $"jumpAction={(jumpRequested ? 1 : 0)} " +
+                $"hasImmediateGap={hasImmediateGap} " +
+                $"inHighCoinJumpWindow={inHighCoinJumpWindow} " +
+                $"inAndroidStompWindow={inAndroidStompWindow} " +
+                $"unnecessaryJumpPenaltyApplied={unnecessaryJumpPenaltyApplied} " +
+                $"repeatedJumpPenaltyApplied={repeatedJumpPenaltyApplied} " +
+                $"groundedTraversalRewardApplied={groundedTraversalRewardApplied:F4} " +
+                $"ignoredReason={ignoredReason}",
+                this);
+        }
+    }
+
+    private bool IsFinalLongGroundedTraversalDisciplineActive()
+    {
+        return enableFinalLongGroundedTraversalDiscipline &&
+            objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge;
+    }
+
+    private static string GetGroundedTraversalIgnoredReason(
+        ObjectAwareContext context,
+        bool jumpPressed,
+        bool safeFlatGrounded,
+        bool hasImmediateGap,
+        bool inHighCoinJumpWindow,
+        bool inAndroidStompWindow,
+        bool landingOrGateContext,
+        bool existingJumpContext,
+        bool handledByHighCoinApproachDiscipline)
+    {
+        if (hasImmediateGap)
+        {
+            return "gap_or_unsafe_flat";
+        }
+
+        if (inHighCoinJumpWindow)
+        {
+            return "high_coin_jump_window";
+        }
+
+        if (inAndroidStompWindow)
+        {
+            return "android_stomp_window";
+        }
+
+        if (landingOrGateContext)
+        {
+            return "landing_or_gate";
+        }
+
+        if (existingJumpContext)
+        {
+            return "existing_jump_context";
+        }
+
+        if (handledByHighCoinApproachDiscipline)
+        {
+            return "high_coin_approach_discipline";
+        }
+
+        if (!context.grounded)
+        {
+            return "airborne";
+        }
+
+        if (!safeFlatGrounded)
+        {
+            return "not_safe_flat";
+        }
+
+        return jumpPressed ? "none" : "no_new_jump_request";
+    }
+
+    private void ResetUnnecessaryJumpSequence()
+    {
+        consecutiveUnnecessaryJumps = 0;
+        groundedDistanceSinceUnnecessaryJump = 0f;
+        trackingUnnecessaryJumpAirborne = false;
+        observedUnnecessaryJumpAirborne = false;
+    }
+
+    private void ResetFinalLongGroundedTraversalTracking()
+    {
+        previousGroundedTraversalObjective = null;
+        previousGroundedTraversalDistanceX = 0f;
+        hasPreviousGroundedTraversalDistance = false;
+        ResetUnnecessaryJumpSequence();
+        nextGroundedTraversalDebugTime = 0f;
+    }
+
     private bool EndEpisodeForMissedCoinIfNeeded()
     {
         float direction = GetForwardDirection();
@@ -1489,6 +1779,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         missedEnemyPenaltyAppliedThisEpisode = false;
         ResetHighCoinApproachDisciplineTracking();
         nextHighCoinDisciplineDebugTime = 0f;
+        ResetFinalLongGroundedTraversalTracking();
         ResetAntiLedgeStuckState();
         rewardedHighCoinJumpCues.Clear();
         rewardedEnemyStompWindows.Clear();
@@ -2936,12 +3227,17 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
             highCoinJumpWindowDistanceMax,
             highCoinEarlyJumpDistance);
         highCoinGroundedApproachReward = Mathf.Max(0f, highCoinGroundedApproachReward);
+        groundedTraversalReward = Mathf.Max(0f, groundedTraversalReward);
+        jumpPurposeWindowDistance = Mathf.Max(0f, jumpPurposeWindowDistance);
         missedCoinForwardMargin = Mathf.Max(0f, missedCoinForwardMargin);
         enemyStompWindowHorizontalRange = Mathf.Max(0f, enemyStompWindowHorizontalRange);
         missedEnemyForwardMargin = Mathf.Max(0f, missedEnemyForwardMargin);
         nearGapProbeDistance = Mathf.Max(0.1f, nearGapProbeDistance);
         midGapProbeDistance = Mathf.Max(nearGapProbeDistance, midGapProbeDistance);
         farGapProbeDistance = Mathf.Max(midGapProbeDistance, farGapProbeDistance);
+        minSafeFlatDistanceForGroundedDiscipline = Mathf.Max(
+            farGapProbeDistance,
+            minSafeFlatDistanceForGroundedDiscipline);
         landingProbeDistance = Mathf.Max(farGapProbeDistance, landingProbeDistance);
         gapProbeDepth = Mathf.Max(0.2f, gapProbeDepth);
         finalLongZone4WarmupLandingGateX = Mathf.Max(0f, finalLongZone4WarmupLandingGateX);
