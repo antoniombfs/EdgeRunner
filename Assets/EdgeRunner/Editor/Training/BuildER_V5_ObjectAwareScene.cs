@@ -2376,6 +2376,20 @@ public static class BuildER_V5_ObjectAwareScene
             "finalLongAndroid01LandingGateX");
         SerializedProperty android02LandingGate = serializedAgent.FindProperty(
             "finalLongAndroid02LandingGateX");
+        SerializedProperty highCoinApproachDiscipline = serializedAgent.FindProperty(
+            "enableHighCoinApproachDiscipline");
+        SerializedProperty highCoinEarlyJumpDistance = serializedAgent.FindProperty(
+            "highCoinEarlyJumpDistance");
+        SerializedProperty highCoinJumpWindowDistanceMin = serializedAgent.FindProperty(
+            "highCoinJumpWindowDistanceMin");
+        SerializedProperty highCoinJumpWindowDistanceMax = serializedAgent.FindProperty(
+            "highCoinJumpWindowDistanceMax");
+        SerializedProperty highCoinEarlyJumpPenalty = serializedAgent.FindProperty(
+            "highCoinEarlyJumpPenalty");
+        SerializedProperty highCoinGroundedApproachReward = serializedAgent.FindProperty(
+            "highCoinGroundedApproachReward");
+        SerializedProperty debugHighCoinApproachDiscipline = serializedAgent.FindProperty(
+            "debugHighCoinApproachDiscipline");
         SerializedProperty jumpForce = serializedAgent.FindProperty("jumpForce");
         SerializedProperty debugObservationCount = serializedAgent.FindProperty(
             "debugObjectAwareObservationCount");
@@ -2422,6 +2436,20 @@ public static class BuildER_V5_ObjectAwareScene
             Mathf.Abs(
                 android02LandingGate.floatValue -
                 FinalLongChallengeAndroid02LandingGateX) > 0.0001f ||
+            highCoinApproachDiscipline == null ||
+            !highCoinApproachDiscipline.boolValue ||
+            highCoinEarlyJumpDistance == null ||
+            Mathf.Abs(highCoinEarlyJumpDistance.floatValue - 4f) > 0.0001f ||
+            highCoinJumpWindowDistanceMin == null ||
+            Mathf.Abs(highCoinJumpWindowDistanceMin.floatValue - 1f) > 0.0001f ||
+            highCoinJumpWindowDistanceMax == null ||
+            Mathf.Abs(highCoinJumpWindowDistanceMax.floatValue - 3f) > 0.0001f ||
+            highCoinEarlyJumpPenalty == null ||
+            Mathf.Abs(highCoinEarlyJumpPenalty.floatValue - -0.02f) > 0.0001f ||
+            highCoinGroundedApproachReward == null ||
+            Mathf.Abs(highCoinGroundedApproachReward.floatValue - 0.005f) > 0.0001f ||
+            debugHighCoinApproachDiscipline == null ||
+            debugHighCoinApproachDiscipline.boolValue ||
             playerBody.collisionDetectionMode != CollisionDetectionMode2D.Continuous ||
             jumpForce == null || prefabJumpForce == null ||
             Mathf.Abs(jumpForce.floatValue - prefabJumpForce.floatValue) > 0.0001f ||
@@ -2779,7 +2807,7 @@ public static class BuildER_V5_ObjectAwareScene
             "GoalLock=all objectives, safeFlatLowCoins=true, antiLedge=true, " +
             "sameGapJumpHighCoinAllowed=false, sameGapJumpStompAllowed=false, " +
             "postAndroidLandingRequired=true, " +
-            "sameStompArcHighCoinAllowed=false.");
+            "sameStompArcHighCoinAllowed=false, highCoinApproachDiscipline=true.");
     }
 
     private static void ValidateFinalLongZone4Warmup(
@@ -3687,6 +3715,13 @@ public static class BuildER_V5_ObjectAwareScene
         SetBool(agent, "requireGroundedBetweenLowAndHigh", true);
         SetFloat(agent, "sameJumpHighCoinPenalty", -2f);
         SetBool(agent, "endEpisodeOnSameJumpHighCoin", true);
+        SetBool(agent, "enableHighCoinApproachDiscipline", true);
+        SetFloat(agent, "highCoinEarlyJumpDistance", 4f);
+        SetFloat(agent, "highCoinJumpWindowDistanceMin", 1f);
+        SetFloat(agent, "highCoinJumpWindowDistanceMax", 3f);
+        SetFloat(agent, "highCoinEarlyJumpPenalty", -0.02f);
+        SetFloat(agent, "highCoinGroundedApproachReward", 0.005f);
+        SetBool(agent, "debugHighCoinApproachDiscipline", false);
         SetFloat(
             agent,
             "finalLongHighCoin01LandingGateX",
@@ -3737,6 +3772,7 @@ public static class BuildER_V5_ObjectAwareScene
             agent,
             "objectAwarePhase",
             (int)EdgeRunnerObjectAwarePhase.FinalLongZone4Warmup);
+        SetBool(agent, "enableHighCoinApproachDiscipline", false);
         SetFloat(agent, "maxObjectiveDistance", 55f);
         SetFloat(
             agent,

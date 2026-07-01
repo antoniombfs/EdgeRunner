@@ -97,6 +97,15 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     [SerializeField] private float earlyJumpPenalty = -0.01f;
     [SerializeField] private float jumpSpamPenalty = -0.01f;
 
+    [Header("ObjectAware High Coin Approach Discipline")]
+    [SerializeField] private bool enableHighCoinApproachDiscipline = false;
+    [SerializeField] private float highCoinEarlyJumpDistance = 4f;
+    [SerializeField] private float highCoinJumpWindowDistanceMin = 1f;
+    [SerializeField] private float highCoinJumpWindowDistanceMax = 3f;
+    [SerializeField] private float highCoinEarlyJumpPenalty = -0.02f;
+    [SerializeField] private float highCoinGroundedApproachReward = 0.005f;
+    [SerializeField] private bool debugHighCoinApproachDiscipline = false;
+
     [Header("ObjectAware Static Android Stomp")]
     [SerializeField] private float enemyApproachReward = 0.01f;
     [SerializeField] private float enemyStompWindowReward = 0.05f;
@@ -189,6 +198,10 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     private float antiLedgeCandidateStartTime = -1f;
     private Vector2 antiLedgeCandidateAnchor;
     private bool antiLedgeEpisodeEnding;
+    private Transform previousHighCoinDisciplineTarget;
+    private float previousHighCoinDisciplineDistanceX;
+    private bool hasPreviousHighCoinDisciplineDistance;
+    private float nextHighCoinDisciplineDebugTime;
     private readonly HashSet<Transform> rewardedHighCoinJumpCues = new HashSet<Transform>();
     private readonly HashSet<Transform> rewardedEnemyStompWindows = new HashSet<Transform>();
 
@@ -1108,6 +1121,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         if (objective.type != ObjectAwareObjectiveType.Coin || !objective.exists)
         {
             ClearPreviousTrainingObjective();
+            ResetHighCoinApproachDisciplineTracking();
             return false;
         }
 
@@ -1115,10 +1129,12 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
 
         if (context.coinRunCollectable)
         {
+            ResetHighCoinApproachDisciplineTracking();
             ApplyLowCoinRunReward(context, jumpRequested);
         }
         else if (context.coinNeedsJump)
         {
+            ApplyHighCoinApproachDiscipline(context, jumpPressed, jumpRequested);
             ApplyHighCoinJumpReward(context, jumpPressed);
         }
 
@@ -1262,17 +1278,111 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
             return;
         }
 
-        if (context.coinNeedsJump)
+        bool disciplineActive = IsHighCoinApproachDisciplineActive();
+        if (context.coinNeedsJump && !disciplineActive)
         {
             AddReward(earlyJumpPenalty);
         }
 
-        if (!context.gap.gapAhead &&
+        if (!disciplineActive &&
+            !context.gap.gapAhead &&
             !context.highCoinJumpContext &&
             !context.androidStompContext)
         {
             AddReward(jumpSpamPenalty);
         }
+    }
+
+    private void ApplyHighCoinApproachDiscipline(
+        ObjectAwareContext context,
+        bool jumpPressed,
+        bool jumpRequested)
+    {
+        if (!IsHighCoinApproachDisciplineActive() ||
+            context.nextObjective.type != ObjectAwareObjectiveType.Coin ||
+            !context.nextObjective.exists ||
+            !context.coinNeedsJump)
+        {
+            ResetHighCoinApproachDisciplineTracking();
+            return;
+        }
+
+        Transform target = context.nextObjective.target;
+        float distanceX = Mathf.Abs(context.nextObjective.delta.x);
+        bool inJumpWindow =
+            distanceX >= highCoinJumpWindowDistanceMin &&
+            distanceX <= highCoinJumpWindowDistanceMax;
+        bool farFromJumpWindow = distanceX > highCoinEarlyJumpDistance;
+        bool ignoredBecauseGapOrAndroid =
+            context.gap.gapAhead ||
+            context.androidStompContext ||
+            context.nextObjective.type == ObjectAwareObjectiveType.Android;
+        bool canExecuteJump = context.grounded || context.coyoteTimer > 0f;
+        bool earlyJumpPenaltyApplied =
+            jumpPressed &&
+            canExecuteJump &&
+            farFromJumpWindow &&
+            !inJumpWindow &&
+            !ignoredBecauseGapOrAndroid;
+
+        float groundedApproachRewardApplied = 0f;
+        if (hasPreviousHighCoinDisciplineDistance &&
+            previousHighCoinDisciplineTarget == target)
+        {
+            float progress = previousHighCoinDisciplineDistanceX - distanceX;
+            if (context.grounded &&
+                farFromJumpWindow &&
+                progress > 0f &&
+                !ignoredBecauseGapOrAndroid)
+            {
+                groundedApproachRewardApplied =
+                    Mathf.Clamp(progress, 0f, 1f) *
+                    highCoinGroundedApproachReward;
+                AddReward(groundedApproachRewardApplied);
+            }
+        }
+
+        if (earlyJumpPenaltyApplied)
+        {
+            AddReward(highCoinEarlyJumpPenalty);
+        }
+
+        previousHighCoinDisciplineTarget = target;
+        previousHighCoinDisciplineDistanceX = distanceX;
+        hasPreviousHighCoinDisciplineDistance = true;
+
+        if (debugHighCoinApproachDiscipline &&
+            (jumpPressed ||
+             groundedApproachRewardApplied > 0f ||
+             Time.time >= nextHighCoinDisciplineDebugTime))
+        {
+            nextHighCoinDisciplineDebugTime =
+                Time.time + Mathf.Max(0.05f, debugObjectAwareLogInterval);
+            Debug.Log(
+                $"[HIGH COIN APPROACH] currentHighCoin={target.name} " +
+                $"distanceX={distanceX:F2} grounded={context.grounded} " +
+                $"verticalVelocity={context.velocity.y:F2} " +
+                $"jumpAction={(jumpRequested ? 1 : 0)} " +
+                $"inJumpWindow={inJumpWindow} " +
+                $"earlyJumpPenaltyApplied={earlyJumpPenaltyApplied} " +
+                $"groundedApproachRewardApplied=" +
+                $"{groundedApproachRewardApplied > 0f} " +
+                $"ignoredBecauseGapOrAndroid={ignoredBecauseGapOrAndroid}",
+                this);
+        }
+    }
+
+    private bool IsHighCoinApproachDisciplineActive()
+    {
+        return enableHighCoinApproachDiscipline &&
+            objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge;
+    }
+
+    private void ResetHighCoinApproachDisciplineTracking()
+    {
+        previousHighCoinDisciplineTarget = null;
+        previousHighCoinDisciplineDistanceX = 0f;
+        hasPreviousHighCoinDisciplineDistance = false;
     }
 
     private bool EndEpisodeForMissedCoinIfNeeded()
@@ -1377,6 +1487,8 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         lastCoinCollectionReason = "not_attempted";
         lastCoinCollectionObjective = "none";
         missedEnemyPenaltyAppliedThisEpisode = false;
+        ResetHighCoinApproachDisciplineTracking();
+        nextHighCoinDisciplineDebugTime = 0f;
         ResetAntiLedgeStuckState();
         rewardedHighCoinJumpCues.Clear();
         rewardedEnemyStompWindows.Clear();
@@ -2815,6 +2927,15 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         highCoinJumpWindowX = Mathf.Max(0f, highCoinJumpWindowX);
         androidContextWindowX = Mathf.Max(0f, androidContextWindowX);
         androidVerticalTolerance = Mathf.Max(0f, androidVerticalTolerance);
+        highCoinEarlyJumpDistance = Mathf.Max(0f, highCoinEarlyJumpDistance);
+        highCoinJumpWindowDistanceMin = Mathf.Max(0f, highCoinJumpWindowDistanceMin);
+        highCoinJumpWindowDistanceMax = Mathf.Max(
+            highCoinJumpWindowDistanceMin,
+            highCoinJumpWindowDistanceMax);
+        highCoinEarlyJumpDistance = Mathf.Max(
+            highCoinJumpWindowDistanceMax,
+            highCoinEarlyJumpDistance);
+        highCoinGroundedApproachReward = Mathf.Max(0f, highCoinGroundedApproachReward);
         missedCoinForwardMargin = Mathf.Max(0f, missedCoinForwardMargin);
         enemyStompWindowHorizontalRange = Mathf.Max(0f, enemyStompWindowHorizontalRange);
         missedEnemyForwardMargin = Mathf.Max(0f, missedEnemyForwardMargin);
