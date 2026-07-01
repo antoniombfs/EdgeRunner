@@ -2406,6 +2406,20 @@ public static class BuildER_V5_ObjectAwareScene
             "jumpPurposeWindowDistance");
         SerializedProperty debugGroundedTraversalDiscipline = serializedAgent.FindProperty(
             "debugGroundedTraversalDiscipline");
+        SerializedProperty finalLongContextualJumpMask = serializedAgent.FindProperty(
+            "enableFinalLongContextualJumpMask");
+        SerializedProperty debugFinalLongContextualJumpMask = serializedAgent.FindProperty(
+            "debugFinalLongContextualJumpMask");
+        SerializedProperty finalLongJumpMaskSafeFlatDistance = serializedAgent.FindProperty(
+            "finalLongJumpMaskSafeFlatDistance");
+        SerializedProperty finalLongJumpMaskHighCoinWindowMin = serializedAgent.FindProperty(
+            "finalLongJumpMaskHighCoinWindowMin");
+        SerializedProperty finalLongJumpMaskHighCoinWindowMax = serializedAgent.FindProperty(
+            "finalLongJumpMaskHighCoinWindowMax");
+        SerializedProperty finalLongJumpMaskAndroidWindow = serializedAgent.FindProperty(
+            "finalLongJumpMaskAndroidWindow");
+        SerializedProperty finalLongPostLandingGroundedRunRequired = serializedAgent.FindProperty(
+            "finalLongPostLandingGroundedRunRequired");
         SerializedProperty jumpForce = serializedAgent.FindProperty("jumpForce");
         SerializedProperty debugObservationCount = serializedAgent.FindProperty(
             "debugObjectAwareObservationCount");
@@ -2473,7 +2487,7 @@ public static class BuildER_V5_ObjectAwareScene
             repeatedUnnecessaryJumpPenalty == null ||
             Mathf.Abs(repeatedUnnecessaryJumpPenalty.floatValue - -0.015f) > 0.0001f ||
             groundedTraversalReward == null ||
-            Mathf.Abs(groundedTraversalReward.floatValue - 0.006f) > 0.0001f ||
+            Mathf.Abs(groundedTraversalReward.floatValue - 0.008f) > 0.0001f ||
             airborneNoPurposePenalty == null ||
             Mathf.Abs(airborneNoPurposePenalty.floatValue - -0.003f) > 0.0001f ||
             minSafeFlatDistance == null ||
@@ -2482,6 +2496,20 @@ public static class BuildER_V5_ObjectAwareScene
             Mathf.Abs(jumpPurposeWindowDistance.floatValue - 3.5f) > 0.0001f ||
             debugGroundedTraversalDiscipline == null ||
             debugGroundedTraversalDiscipline.boolValue ||
+            finalLongContextualJumpMask == null ||
+            !finalLongContextualJumpMask.boolValue ||
+            debugFinalLongContextualJumpMask == null ||
+            debugFinalLongContextualJumpMask.boolValue ||
+            finalLongJumpMaskSafeFlatDistance == null ||
+            Mathf.Abs(finalLongJumpMaskSafeFlatDistance.floatValue - 3f) > 0.0001f ||
+            finalLongJumpMaskHighCoinWindowMin == null ||
+            Mathf.Abs(finalLongJumpMaskHighCoinWindowMin.floatValue - 1f) > 0.0001f ||
+            finalLongJumpMaskHighCoinWindowMax == null ||
+            Mathf.Abs(finalLongJumpMaskHighCoinWindowMax.floatValue - 3.5f) > 0.0001f ||
+            finalLongJumpMaskAndroidWindow == null ||
+            Mathf.Abs(finalLongJumpMaskAndroidWindow.floatValue - 3.5f) > 0.0001f ||
+            finalLongPostLandingGroundedRunRequired == null ||
+            Mathf.Abs(finalLongPostLandingGroundedRunRequired.floatValue - 1f) > 0.0001f ||
             playerBody.collisionDetectionMode != CollisionDetectionMode2D.Continuous ||
             jumpForce == null || prefabJumpForce == null ||
             Mathf.Abs(jumpForce.floatValue - prefabJumpForce.floatValue) > 0.0001f ||
@@ -2840,7 +2868,7 @@ public static class BuildER_V5_ObjectAwareScene
             "sameGapJumpHighCoinAllowed=false, sameGapJumpStompAllowed=false, " +
             "postAndroidLandingRequired=true, " +
             "sameStompArcHighCoinAllowed=false, highCoinApproachDiscipline=true, " +
-            "groundedTraversalDiscipline=true.");
+            "groundedTraversalDiscipline=true, contextualJumpMask=true.");
     }
 
     private static void ValidateFinalLongZone4Warmup(
@@ -3758,11 +3786,18 @@ public static class BuildER_V5_ObjectAwareScene
         SetBool(agent, "enableFinalLongGroundedTraversalDiscipline", true);
         SetFloat(agent, "unnecessaryJumpPenalty", -0.05f);
         SetFloat(agent, "repeatedUnnecessaryJumpPenalty", -0.015f);
-        SetFloat(agent, "groundedTraversalReward", 0.006f);
+        SetFloat(agent, "groundedTraversalReward", 0.008f);
         SetFloat(agent, "airborneNoPurposePenalty", -0.003f);
         SetFloat(agent, "minSafeFlatDistanceForGroundedDiscipline", 3f);
         SetFloat(agent, "jumpPurposeWindowDistance", 3.5f);
         SetBool(agent, "debugGroundedTraversalDiscipline", false);
+        SetBool(agent, "enableFinalLongContextualJumpMask", true);
+        SetBool(agent, "debugFinalLongContextualJumpMask", false);
+        SetFloat(agent, "finalLongJumpMaskSafeFlatDistance", 3f);
+        SetFloat(agent, "finalLongJumpMaskHighCoinWindowMin", 1f);
+        SetFloat(agent, "finalLongJumpMaskHighCoinWindowMax", 3.5f);
+        SetFloat(agent, "finalLongJumpMaskAndroidWindow", 3.5f);
+        SetFloat(agent, "finalLongPostLandingGroundedRunRequired", 1f);
         SetFloat(
             agent,
             "finalLongHighCoin01LandingGateX",
@@ -3815,6 +3850,7 @@ public static class BuildER_V5_ObjectAwareScene
             (int)EdgeRunnerObjectAwarePhase.FinalLongZone4Warmup);
         SetBool(agent, "enableHighCoinApproachDiscipline", false);
         SetBool(agent, "enableFinalLongGroundedTraversalDiscipline", false);
+        SetBool(agent, "enableFinalLongContextualJumpMask", false);
         SetFloat(agent, "maxObjectiveDistance", 55f);
         SetFloat(
             agent,

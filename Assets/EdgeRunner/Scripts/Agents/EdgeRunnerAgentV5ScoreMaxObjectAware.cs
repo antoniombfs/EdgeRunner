@@ -110,11 +110,20 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     [SerializeField] private bool enableFinalLongGroundedTraversalDiscipline = false;
     [SerializeField] private float unnecessaryJumpPenalty = -0.05f;
     [SerializeField] private float repeatedUnnecessaryJumpPenalty = -0.015f;
-    [SerializeField] private float groundedTraversalReward = 0.006f;
+    [SerializeField] private float groundedTraversalReward = 0.008f;
     [SerializeField] private float airborneNoPurposePenalty = -0.003f;
     [SerializeField] private float minSafeFlatDistanceForGroundedDiscipline = 3f;
     [SerializeField] private float jumpPurposeWindowDistance = 3.5f;
     [SerializeField] private bool debugGroundedTraversalDiscipline = false;
+
+    [Header("ObjectAware Final Long Contextual Jump Mask")]
+    [SerializeField] private bool enableFinalLongContextualJumpMask = false;
+    [SerializeField] private bool debugFinalLongContextualJumpMask = false;
+    [SerializeField] private float finalLongJumpMaskSafeFlatDistance = 3f;
+    [SerializeField] private float finalLongJumpMaskHighCoinWindowMin = 1f;
+    [SerializeField] private float finalLongJumpMaskHighCoinWindowMax = 3.5f;
+    [SerializeField] private float finalLongJumpMaskAndroidWindow = 3.5f;
+    [SerializeField] private float finalLongPostLandingGroundedRunRequired = 1f;
 
     [Header("ObjectAware Static Android Stomp")]
     [SerializeField] private float enemyApproachReward = 0.01f;
@@ -220,6 +229,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     private bool trackingUnnecessaryJumpAirborne;
     private bool observedUnnecessaryJumpAirborne;
     private float nextGroundedTraversalDebugTime;
+    private float nextFinalLongJumpMaskDebugTime;
     private readonly HashSet<Transform> rewardedHighCoinJumpCues = new HashSet<Transform>();
     private readonly HashSet<Transform> rewardedEnemyStompWindows = new HashSet<Transform>();
 
@@ -290,6 +300,18 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         public bool enemyStompWindow;
     }
 
+    private struct FinalLongJumpMaskDecision
+    {
+        public bool safeFlat;
+        public bool hasImmediateGap;
+        public bool inHighCoinJumpWindow;
+        public bool inAndroidStompWindow;
+        public bool landingRequired;
+        public bool otherJumpContext;
+        public bool jumpMasked;
+        public string reason;
+    }
+
     public override void Initialize()
     {
         ConfigureFinalLongFailureDebug();
@@ -330,9 +352,15 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     {
         base.WriteDiscreteActionMask(actionMask);
 
-        if (!enableContextualJumpMask ||
-            (objectAwarePhase != EdgeRunnerObjectAwarePhase.LowCoinRun &&
-             !IsMixedWarmupCurriculum()))
+        bool canUseLowCoinMask =
+            enableContextualJumpMask &&
+            (objectAwarePhase == EdgeRunnerObjectAwarePhase.LowCoinRun ||
+             IsMixedWarmupCurriculum());
+        bool canUseFinalLongMask =
+            enableFinalLongContextualJumpMask &&
+            objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongChallenge;
+
+        if (!canUseLowCoinMask && !canUseFinalLongMask)
         {
             return;
         }
@@ -340,10 +368,18 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         ResolveObjectAwareReferences();
         RefreshObjectCache(false);
         ObjectAwareContext context = BuildContext();
+        bool blockFinalLongJump = ShouldBlockFinalLongContextualJump(context);
         if (ShouldBlockLowCoinJump(context))
         {
             actionMask.SetActionEnabled(JumpBranchIndex, JumpAction, false);
         }
+
+        if (blockFinalLongJump)
+        {
+            actionMask.SetActionEnabled(JumpBranchIndex, JumpAction, false);
+        }
+
+        LogFinalLongContextualJumpMask(context, blockFinalLongJump);
     }
 
     public override void OnActionReceived(ActionBuffers actions)
@@ -358,6 +394,8 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         bool jumpRequested = jumpAction == JumpAction;
         bool jumpPressed = jumpRequested && previousObjectAwareJumpAction == NoJumpAction;
         bool blockLowCoinJump = ShouldBlockLowCoinJump(context);
+        bool blockFinalLongJump = ShouldBlockFinalLongContextualJump(context);
+        bool blockJump = blockLowCoinJump || blockFinalLongJump;
 
         bool endedForMissedCoin = ApplyObjectAwareCurriculumRewards(
             context,
@@ -375,7 +413,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         }
 
         base.OnActionReceived(
-            blockLowCoinJump && jumpRequested
+            blockJump && jumpRequested
                 ? WithoutJumpAction(actions)
                 : actions);
     }
@@ -2425,6 +2463,144 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
             delta.y <= lowCoinHeightThreshold;
     }
 
+    private bool ShouldBlockFinalLongContextualJump(ObjectAwareContext context)
+    {
+        return GetFinalLongContextualJumpMaskDecision(context).jumpMasked;
+    }
+
+    private FinalLongJumpMaskDecision GetFinalLongContextualJumpMaskDecision(
+        ObjectAwareContext context)
+    {
+        FinalLongJumpMaskDecision decision = new FinalLongJumpMaskDecision
+        {
+            reason = "disabled"
+        };
+
+        if (!enableFinalLongContextualJumpMask)
+        {
+            return decision;
+        }
+
+        if (objectAwarePhase != EdgeRunnerObjectAwarePhase.FinalLongChallenge)
+        {
+            decision.reason = "not_final_long_challenge";
+            return decision;
+        }
+
+        if (!context.grounded)
+        {
+            decision.reason = "airborne";
+            return decision;
+        }
+
+        float direction = GetForwardDirection();
+        float safeFlatDistance = Mathf.Max(
+            finalLongJumpMaskSafeFlatDistance,
+            finalLongPostLandingGroundedRunRequired);
+        bool groundAtSafeFlatDistance = HasGroundBelow(
+            GetProbePosition(direction, safeFlatDistance));
+        decision.hasImmediateGap =
+            context.gap.gapAhead ||
+            context.gap.farMissing ||
+            !groundAtSafeFlatDistance;
+        decision.safeFlat =
+            !context.gap.nearMissing &&
+            !context.gap.midMissing &&
+            !context.gap.farMissing &&
+            groundAtSafeFlatDistance;
+
+        TargetSnapshot objective = context.nextObjective;
+        float objectiveForwardDistance = objective.exists
+            ? objective.delta.x * direction
+            : 0f;
+        decision.inHighCoinJumpWindow =
+            objective.exists &&
+            objective.type == ObjectAwareObjectiveType.Coin &&
+            context.coinNeedsJump &&
+            objectiveForwardDistance >= finalLongJumpMaskHighCoinWindowMin &&
+            objectiveForwardDistance <= finalLongJumpMaskHighCoinWindowMax;
+        decision.inAndroidStompWindow =
+            objective.exists &&
+            objective.type == ObjectAwareObjectiveType.Android &&
+            objectiveForwardDistance >= 0f &&
+            objectiveForwardDistance <= finalLongJumpMaskAndroidWindow &&
+            Mathf.Abs(objective.delta.y) <= androidVerticalTolerance;
+        decision.landingRequired = FinalLongOrderedLandingRequired();
+        decision.otherJumpContext =
+            context.jumpContextValid &&
+            (context.gap.gapAhead ||
+             context.androidStompContext ||
+             context.enemyAvoidContext);
+
+        if (!decision.safeFlat || decision.hasImmediateGap)
+        {
+            decision.reason = "gap_or_unsafe_flat";
+            return decision;
+        }
+
+        if (decision.inHighCoinJumpWindow)
+        {
+            decision.reason = "high_coin_jump_window";
+            return decision;
+        }
+
+        if (decision.inAndroidStompWindow)
+        {
+            decision.reason = "android_stomp_window";
+            return decision;
+        }
+
+        if (decision.landingRequired)
+        {
+            decision.reason = "landing_required";
+            return decision;
+        }
+
+        if (decision.otherJumpContext)
+        {
+            decision.reason = "existing_objectaware_jump_context";
+            return decision;
+        }
+
+        decision.jumpMasked = true;
+        decision.reason = "safe_flat_no_jump_purpose";
+        return decision;
+    }
+
+    private void LogFinalLongContextualJumpMask(
+        ObjectAwareContext context,
+        bool jumpMasked)
+    {
+        if (!debugFinalLongContextualJumpMask ||
+            objectAwarePhase != EdgeRunnerObjectAwarePhase.FinalLongChallenge)
+        {
+            return;
+        }
+
+        FinalLongJumpMaskDecision decision =
+            GetFinalLongContextualJumpMaskDecision(context);
+        if (!jumpMasked && Time.time < nextFinalLongJumpMaskDebugTime)
+        {
+            return;
+        }
+
+        nextFinalLongJumpMaskDebugTime =
+            Time.time + Mathf.Max(0.05f, debugObjectAwareLogInterval);
+        TargetSnapshot objective = context.nextObjective;
+        Debug.Log(
+            $"[FINAL LONG JUMP MASK] currentObjective=" +
+            $"{(objective.exists && objective.target != null ? objective.target.name : "none")} " +
+            $"grounded={context.grounded} " +
+            $"hasImmediateGap={decision.hasImmediateGap} " +
+            $"inHighCoinJumpWindow={decision.inHighCoinJumpWindow} " +
+            $"inAndroidStompWindow={decision.inAndroidStompWindow} " +
+            $"landingRequired={decision.landingRequired} " +
+            $"safeFlat={decision.safeFlat} " +
+            $"jumpMasked={decision.jumpMasked} " +
+            $"reason={decision.reason}",
+            this);
+    }
+
     private bool ShouldBlockLowCoinJump(ObjectAwareContext context)
     {
         if (!enableContextualJumpMask ||
@@ -2786,7 +2962,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
                 $"highCoinLockedUntilLanding={context.highCoinLockedUntilLanding} " +
                 $"sameJumpHighCoinAttempt={context.sameJumpHighCoinAttempt} " +
                 $"airborneLowCoinAttempt={context.airborneLowCoinAttempt} " +
-                $"jumpMasked={ShouldBlockLowCoinJump(context)} " +
+                $"jumpMasked={ShouldBlockLowCoinJump(context) || ShouldBlockFinalLongContextualJump(context)} " +
                 $"coinsRemaining={context.coinsRemaining} " +
                 $"enemiesRemaining={context.enemiesRemaining} " +
                 $"enemyAhead={context.enemyAhead} " +
@@ -2804,7 +2980,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
                 $"highCoin={context.highCoinJumpContext} android={context.androidStompContext} " +
                 $"enemyStompWindow={context.enemyStompWindow} " +
                 $"enemyAvoidContext={context.enemyAvoidContext} " +
-                $"jumpMasked={ShouldBlockLowCoinJump(context)} " +
+                $"jumpMasked={ShouldBlockLowCoinJump(context) || ShouldBlockFinalLongContextualJump(context)} " +
                 $"valid={context.jumpContextValid} shouldNotJump={context.shouldNotJumpNow}",
                 this);
         }
@@ -3235,6 +3411,19 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         nearGapProbeDistance = Mathf.Max(0.1f, nearGapProbeDistance);
         midGapProbeDistance = Mathf.Max(nearGapProbeDistance, midGapProbeDistance);
         farGapProbeDistance = Mathf.Max(midGapProbeDistance, farGapProbeDistance);
+        finalLongJumpMaskSafeFlatDistance = Mathf.Max(
+            farGapProbeDistance,
+            finalLongJumpMaskSafeFlatDistance);
+        finalLongJumpMaskHighCoinWindowMin = Mathf.Max(
+            0f,
+            finalLongJumpMaskHighCoinWindowMin);
+        finalLongJumpMaskHighCoinWindowMax = Mathf.Max(
+            finalLongJumpMaskHighCoinWindowMin,
+            finalLongJumpMaskHighCoinWindowMax);
+        finalLongJumpMaskAndroidWindow = Mathf.Max(0f, finalLongJumpMaskAndroidWindow);
+        finalLongPostLandingGroundedRunRequired = Mathf.Max(
+            0f,
+            finalLongPostLandingGroundedRunRequired);
         minSafeFlatDistanceForGroundedDiscipline = Mathf.Max(
             farGapProbeDistance,
             minSafeFlatDistanceForGroundedDiscipline);
