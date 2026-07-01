@@ -77,9 +77,9 @@ public static class BuildER_V5_ObjectAwareScene
     private const int FinalLongChallengeHighCoinCount = 3;
     private const int FinalLongChallengeAndroidCount = 2;
     private const float FinalLongChallengeSafeFlatRadius = 2f;
-    private const float FinalLongZone4WarmupGoalX = 44.3f;
+    private const float FinalLongZone4WarmupGoalX = 60f;
     private const float FinalLongZone4WarmupAndroidX = 15.3f;
-    private const float FinalLongZone4WarmupHighCoinX = 21.3f;
+    private const float FinalLongZone4WarmupHighCoinX = 37f;
     private const float FinalLongZone4WarmupLandingGateX = 11f;
 
     private const string TraversalScenePath =
@@ -585,11 +585,12 @@ public static class BuildER_V5_ObjectAwareScene
         GameObject root = new GameObject("ER_V5_ScoreMaxOA_FinalLongZone4Warmup");
         Sprite sprite = GetSharedSprite();
 
-        // Exact translation of FinalLongChallenge from LowCoin_04 onward.
+        // Zone 4 curriculum with the original gap sizes plus explicit recovery
+        // space before the Android and after its stomp bounce.
         CreatePlatform(root.transform, "FinalLongZone4Warmup_StartLow", 2.75f, 0f, 9.5f, sprite);
-        CreatePlatform(root.transform, "FinalLongZone4Warmup_AndroidHigh", 17.7f, 0f, 14.8f, sprite);
-        CreatePlatform(root.transform, "FinalLongZone4Warmup_FinalRecovery", 31.3f, 0f, 8f, sprite);
-        CreatePlatform(root.transform, "FinalLongZone4Warmup_GoalPlatform", 42.45f, 0f, 9.7f, sprite);
+        CreatePlatform(root.transform, "FinalLongZone4Warmup_AndroidHigh", 25.55f, 0f, 30.5f, sprite);
+        CreatePlatform(root.transform, "FinalLongZone4Warmup_FinalRecovery", 47f, 0f, 8f, sprite);
+        CreatePlatform(root.transform, "FinalLongZone4Warmup_GoalPlatform", 58.15f, 0f, 9.7f, sprite);
 
         ScoreAttackManager manager = CreateFinalLongZone4WarmupManager(root.transform);
         GameObject goal = CreateLockedGoal(
@@ -618,7 +619,7 @@ public static class BuildER_V5_ObjectAwareScene
             manager);
 
         ConfigureFinalLongZone4WarmupPlayer(player, manager);
-        CreateDeathZone(23.65f, 60f, "DeathZone_ScoreMaxOA_FinalLongZone4Warmup");
+        CreateDeathZone(30.5f, 75f, "DeathZone_ScoreMaxOA_FinalLongZone4Warmup");
         CreateCamera(player.transform);
         ValidateFinalLongZone4Warmup(scene, player, manager, goal);
     }
@@ -2872,7 +2873,10 @@ public static class BuildER_V5_ObjectAwareScene
             Mathf.Abs(finalGap02 - 2.3f) > 0.01f ||
             lowEdgeDistance < 3.49f ||
             Mathf.Abs(androidFromLanding - 5f) > 0.01f ||
-            Mathf.Abs(highCoin.transform.position.x - android.transform.position.x - 6f) > 0.01f ||
+            Mathf.Abs(highCoin.transform.position.x - android.transform.position.x - 21.7f) > 0.01f ||
+            Mathf.Abs(
+                platforms[platformNames[1]].bounds.max.x -
+                highCoin.transform.position.x - 3.8f) > 0.01f ||
             lowCoin.transform.position.y - player.transform.position.y > LowCoinRunHeightThreshold ||
             highCoin.transform.position.y - player.transform.position.y <= LowCoinRunHeightThreshold)
         {
@@ -2900,7 +2904,8 @@ public static class BuildER_V5_ObjectAwareScene
             $"gaps=[{transitionGap:F1},{finalGap01:F1},{finalGap02:F1}], " +
             $"androidFromLanding={androidFromLanding:F1}, GoalLock=2coins+1Android, " +
             $"landingGateX={FinalLongZone4WarmupLandingGateX:F1}, " +
-            "sameGapJumpStompAllowed=false, sideHitFail=true, antiLedge=true.");
+            "sameGapJumpStompAllowed=false, postAndroidLandingRequired=true, " +
+            "sameStompArcHighCoinAllowed=false, sideHitFail=true, antiLedge=true.");
     }
 
     private static void ValidateObjectAwarePlayer(GameObject player, string phaseName)
