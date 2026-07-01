@@ -82,6 +82,9 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     [SerializeField] private float sameJumpHighCoinPenalty = -2f;
     [SerializeField] private bool endEpisodeOnSameJumpHighCoin = false;
     [SerializeField] private float finalLongZone4WarmupLandingGateX = 11f;
+    [SerializeField] private float finalLongHighCoin01LandingGateX = 16.5f;
+    [SerializeField] private float finalLongAndroid01LandingGateX = 33.9f;
+    [SerializeField] private float finalLongAndroid02LandingGateX = 78.3f;
 
     [Header("ObjectAware Low Coin Rewards")]
     [SerializeField] private float lowCoinGroundApproachReward = 0.01f;
@@ -164,9 +167,13 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     private bool finalLongHasLandedAfterHighCoin;
     private int finalLongHighCoinCollectionFrame = -1;
     private bool finalLongZone4WarmupHasLandedAfterGap;
-    private bool finalLongZone4WarmupAwaitingGroundedAfterAndroid;
-    private bool finalLongZone4WarmupHasLandedAfterAndroid;
-    private int finalLongZone4WarmupAndroidStompFrame = -1;
+    private bool finalLongHasLandedBeforeHighCoin01;
+    private bool finalLongHasLandedBeforeAndroid01;
+    private bool finalLongHasLandedBeforeAndroid02;
+    private bool finalLongAwaitingGroundedAfterAndroid;
+    private bool finalLongHasLandedAfterAndroid;
+    private int finalLongAndroidStompFrame = -1;
+    private string finalLongLastStompedAndroidName = "none";
     private string lastCompletedFinalLongObjective = "none";
     private bool lastCoinCollectionWasNextObjective;
     private bool lastCoinCollectionGrounded;
@@ -615,7 +622,8 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     {
         RefreshObjectCache(true);
         UpdateFinalLongChallengeLandingState();
-        UpdateFinalLongZone4WarmupAndroidLandingState();
+        UpdateFinalLongHighCoin01ApproachLandingGate();
+        UpdateFinalLongAndroidLandingState();
 
         TargetSnapshot expectedObjective = FindFinalLongChallengeObjective(
             CreateTargetSnapshot(objectAwareGoal, ObjectAwareObjectiveType.Goal));
@@ -777,8 +785,8 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         if (IsFinalLongOrderedCurriculum())
         {
             UpdateFinalLongChallengeLandingState();
-            UpdateFinalLongZone4WarmupLandingGate();
-            UpdateFinalLongZone4WarmupAndroidLandingState();
+            UpdateFinalLongAndroidApproachLandingGate();
+            UpdateFinalLongAndroidLandingState();
             TargetSnapshot expectedObjective = FindFinalLongChallengeObjective(
                 CreateTargetSnapshot(objectAwareGoal, ObjectAwareObjectiveType.Goal));
             bool accepted = expectedObjective.type == ObjectAwareObjectiveType.Android &&
@@ -786,12 +794,10 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
             if (accepted)
             {
                 lastCompletedFinalLongObjective = android.name;
-                if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongZone4Warmup)
-                {
-                    finalLongZone4WarmupAwaitingGroundedAfterAndroid = true;
-                    finalLongZone4WarmupHasLandedAfterAndroid = false;
-                    finalLongZone4WarmupAndroidStompFrame = Time.frameCount;
-                }
+                finalLongAwaitingGroundedAfterAndroid = true;
+                finalLongHasLandedAfterAndroid = false;
+                finalLongAndroidStompFrame = Time.frameCount;
+                finalLongLastStompedAndroidName = android.name;
             }
 
             return accepted;
@@ -932,8 +938,9 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         UpdateHighCoinLandingState();
         UpdateMixedRandomLowHighLandingState();
         UpdateFinalLongChallengeLandingState();
-        UpdateFinalLongZone4WarmupLandingGate();
-        UpdateFinalLongZone4WarmupAndroidLandingState();
+        UpdateFinalLongHighCoin01ApproachLandingGate();
+        UpdateFinalLongAndroidApproachLandingGate();
+        UpdateFinalLongAndroidLandingState();
         TargetSnapshot nearestCoin = FindNearestCoin(null);
         TargetSnapshot lowCoin = FindNearestCoin(true);
         TargetSnapshot highCoin = FindNearestCoin(false);
@@ -1356,9 +1363,13 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         finalLongHasLandedAfterHighCoin = true;
         finalLongHighCoinCollectionFrame = -1;
         finalLongZone4WarmupHasLandedAfterGap = false;
-        finalLongZone4WarmupAwaitingGroundedAfterAndroid = false;
-        finalLongZone4WarmupHasLandedAfterAndroid = false;
-        finalLongZone4WarmupAndroidStompFrame = -1;
+        finalLongHasLandedBeforeHighCoin01 = false;
+        finalLongHasLandedBeforeAndroid01 = false;
+        finalLongHasLandedBeforeAndroid02 = false;
+        finalLongAwaitingGroundedAfterAndroid = false;
+        finalLongHasLandedAfterAndroid = false;
+        finalLongAndroidStompFrame = -1;
+        finalLongLastStompedAndroidName = "none";
         lastCompletedFinalLongObjective = "none";
         lastCoinCollectionWasNextObjective = false;
         lastCoinCollectionGrounded = false;
@@ -1748,9 +1759,28 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         return null;
     }
 
+    private ScoreAttackAndroid FindAndroidByName(string expectedName)
+    {
+        for (int i = 0; i < cachedAndroids.Length; i++)
+        {
+            ScoreAttackAndroid android = cachedAndroids[i];
+            if (android != null && android.name == expectedName)
+            {
+                return android;
+            }
+        }
+
+        return null;
+    }
+
     private static bool IsLiveCoin(ScoreAttackCoin coin)
     {
         return coin != null && coin.IsAvailable && coin.gameObject.activeInHierarchy;
+    }
+
+    private static bool IsLiveAndroid(ScoreAttackAndroid android)
+    {
+        return android != null && android.IsAlive && android.gameObject.activeInHierarchy;
     }
 
     private bool UsesHighCoinLandingCurriculum()
@@ -1841,58 +1871,138 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         }
     }
 
-    private bool FinalLongZone4WarmupLandingRequiredBeforeAndroid()
+    private bool FinalLongLandingRequiredBeforeAndroid()
     {
-        if (objectAwarePhase != EdgeRunnerObjectAwarePhase.FinalLongZone4Warmup ||
-            finalLongZone4WarmupHasLandedAfterGap)
+        if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongZone4Warmup)
+        {
+            if (finalLongZone4WarmupHasLandedAfterGap)
+            {
+                return false;
+            }
+
+            ScoreAttackCoin warmupLowCoin = FindCoinByName(
+                "FinalLongChallenge_LowCoin_04");
+            return !IsLiveCoin(warmupLowCoin);
+        }
+
+        if (objectAwarePhase != EdgeRunnerObjectAwarePhase.FinalLongChallenge)
         {
             return false;
         }
 
-        ScoreAttackCoin lowCoin = FindCoinByName("FinalLongChallenge_LowCoin_04");
-        return !IsLiveCoin(lowCoin);
+        ScoreAttackAndroid android01 = FindAndroidByName(
+            "FinalLongChallenge_Android_01");
+        if (IsLiveAndroid(android01) && !finalLongHasLandedBeforeAndroid01)
+        {
+            ScoreAttackCoin lowCoin03 = FindCoinByName(
+                "FinalLongChallenge_LowCoin_03");
+            return !IsLiveCoin(lowCoin03);
+        }
+
+        ScoreAttackAndroid android02 = FindAndroidByName(
+            "FinalLongChallenge_Android_02");
+        if (IsLiveAndroid(android02) && !finalLongHasLandedBeforeAndroid02)
+        {
+            ScoreAttackCoin lowCoin04 = FindCoinByName(
+                "FinalLongChallenge_LowCoin_04");
+            return !IsLiveCoin(lowCoin04);
+        }
+
+        return false;
     }
 
-    private void UpdateFinalLongZone4WarmupLandingGate()
+    private bool FinalLongLandingRequiredBeforeHighCoin01()
     {
-        if (!FinalLongZone4WarmupLandingRequiredBeforeAndroid() ||
+        if (objectAwarePhase != EdgeRunnerObjectAwarePhase.FinalLongChallenge ||
+            finalLongHasLandedBeforeHighCoin01)
+        {
+            return false;
+        }
+
+        ScoreAttackCoin lowCoin02 = FindCoinByName("FinalLongChallenge_LowCoin_02");
+        ScoreAttackCoin highCoin01 = FindCoinByName("FinalLongChallenge_HighCoin_01");
+        return !IsLiveCoin(lowCoin02) && IsLiveCoin(highCoin01);
+    }
+
+    private void UpdateFinalLongHighCoin01ApproachLandingGate()
+    {
+        if (!FinalLongLandingRequiredBeforeHighCoin01() ||
             objectAwareEpisodeEnding ||
-            transform.position.x < finalLongZone4WarmupLandingGateX)
+            transform.position.x < finalLongHighCoin01LandingGateX ||
+            !IsCurrentlyGroundedForEvaluation())
         {
             return;
         }
 
-        if (IsCurrentlyGroundedForEvaluation())
+        finalLongHasLandedBeforeHighCoin01 = true;
+        ClearPreviousTrainingObjective();
+    }
+
+    private void UpdateFinalLongAndroidApproachLandingGate()
+    {
+        if (!FinalLongLandingRequiredBeforeAndroid() || objectAwareEpisodeEnding)
+        {
+            return;
+        }
+
+        float gateX;
+        if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongZone4Warmup)
+        {
+            gateX = finalLongZone4WarmupLandingGateX;
+        }
+        else if (IsLiveAndroid(FindAndroidByName("FinalLongChallenge_Android_01")))
+        {
+            gateX = finalLongAndroid01LandingGateX;
+        }
+        else
+        {
+            gateX = finalLongAndroid02LandingGateX;
+        }
+
+        if (transform.position.x < gateX || !IsCurrentlyGroundedForEvaluation())
+        {
+            return;
+        }
+
+        if (objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongZone4Warmup)
         {
             finalLongZone4WarmupHasLandedAfterGap = true;
-            ClearPreviousTrainingObjective();
         }
+        else if (IsLiveAndroid(FindAndroidByName("FinalLongChallenge_Android_01")))
+        {
+            finalLongHasLandedBeforeAndroid01 = true;
+        }
+        else
+        {
+            finalLongHasLandedBeforeAndroid02 = true;
+        }
+
+        ClearPreviousTrainingObjective();
     }
 
-    private bool FinalLongZone4WarmupLandingRequiredAfterAndroid()
+    private bool FinalLongLandingRequiredAfterAndroid()
     {
-        return objectAwarePhase == EdgeRunnerObjectAwarePhase.FinalLongZone4Warmup &&
-            finalLongZone4WarmupAwaitingGroundedAfterAndroid &&
-            !finalLongZone4WarmupHasLandedAfterAndroid;
+        return IsFinalLongOrderedCurriculum() &&
+            finalLongAwaitingGroundedAfterAndroid &&
+            !finalLongHasLandedAfterAndroid;
     }
 
-    private void UpdateFinalLongZone4WarmupAndroidLandingState()
+    private void UpdateFinalLongAndroidLandingState()
     {
-        if (!FinalLongZone4WarmupLandingRequiredAfterAndroid() ||
-            objectAwareEpisodeEnding)
+        if (!FinalLongLandingRequiredAfterAndroid() || objectAwareEpisodeEnding)
         {
             return;
         }
 
         bool observedAfterStomp =
-            finalLongZone4WarmupAndroidStompFrame >= 0 &&
-            Time.frameCount > finalLongZone4WarmupAndroidStompFrame;
+            finalLongAndroidStompFrame >= 0 &&
+            Time.frameCount > finalLongAndroidStompFrame;
         if (observedAfterStomp && IsCurrentlyGroundedForEvaluation())
         {
-            finalLongZone4WarmupHasLandedAfterAndroid = true;
-            finalLongZone4WarmupAwaitingGroundedAfterAndroid = false;
+            finalLongHasLandedAfterAndroid = true;
+            finalLongAwaitingGroundedAfterAndroid = false;
             lastCompletedFinalLongObjective =
-                "landing_required_after_FinalLongChallenge_Android_02";
+                $"landing_required_after_{finalLongLastStompedAndroidName}";
             ClearPreviousTrainingObjective();
         }
     }
@@ -1900,8 +2010,9 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
     private bool FinalLongOrderedLandingRequired()
     {
         return FinalLongChallengeLandingRequired() ||
-            FinalLongZone4WarmupLandingRequiredBeforeAndroid() ||
-            FinalLongZone4WarmupLandingRequiredAfterAndroid();
+            FinalLongLandingRequiredBeforeHighCoin01() ||
+            FinalLongLandingRequiredBeforeAndroid() ||
+            FinalLongLandingRequiredAfterAndroid();
     }
 
     private bool IsLowCoin(Vector2 delta)
@@ -2506,7 +2617,7 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         }
 
         float x = transform.position.x;
-        return x < 29f ? 1 : x < 53f ? 2 : x < 68.8f ? 3 : 4;
+        return x < 35f ? 1 : x < 79f ? 2 : x < 112.3f ? 3 : 4;
     }
 
     private static bool HasConsistentGroundUnder(
@@ -2713,6 +2824,9 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
         landingProbeDistance = Mathf.Max(farGapProbeDistance, landingProbeDistance);
         gapProbeDepth = Mathf.Max(0.2f, gapProbeDepth);
         finalLongZone4WarmupLandingGateX = Mathf.Max(0f, finalLongZone4WarmupLandingGateX);
+        finalLongHighCoin01LandingGateX = Mathf.Max(0f, finalLongHighCoin01LandingGateX);
+        finalLongAndroid01LandingGateX = Mathf.Max(0f, finalLongAndroid01LandingGateX);
+        finalLongAndroid02LandingGateX = Mathf.Max(0f, finalLongAndroid02LandingGateX);
         debugObjectAwareLogInterval = Mathf.Max(0.05f, debugObjectAwareLogInterval);
     }
 }

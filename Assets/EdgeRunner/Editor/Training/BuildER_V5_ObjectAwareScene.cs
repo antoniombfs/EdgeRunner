@@ -70,13 +70,21 @@ public static class BuildER_V5_ObjectAwareScene
     private const float FinalRandomLedgeStuckMaxVelocity = 0.25f;
     private const float FinalRandomLedgeStuckProgressEpsilon = 0.03f;
     private const float FinalRandomLedgeStuckPenalty = -4f;
-    private const float FinalLongChallengeGoalX = 88f;
+    private const float FinalLongChallengeGoalX = 131.5f;
     private const float FinalLongChallengeLevelStartX = -2f;
-    private const float FinalLongChallengeLevelEndX = 91f;
+    private const float FinalLongChallengeLevelEndX = 134.5f;
     private const int FinalLongChallengeLowCoinCount = 4;
     private const int FinalLongChallengeHighCoinCount = 3;
     private const int FinalLongChallengeAndroidCount = 2;
     private const float FinalLongChallengeSafeFlatRadius = 2f;
+    private const float FinalLongChallengeHighCoin01X = 21.5f;
+    private const float FinalLongChallengeAndroid01X = 42.4f;
+    private const float FinalLongChallengeAndroid02X = 86.8f;
+    private const float FinalLongChallengeHighCoin02X = 64.1f;
+    private const float FinalLongChallengeHighCoin03X = 108.5f;
+    private const float FinalLongChallengeHighCoin01LandingGateX = 16.5f;
+    private const float FinalLongChallengeAndroid01LandingGateX = 37.9f;
+    private const float FinalLongChallengeAndroid02LandingGateX = 82.3f;
     private const float FinalLongZone4WarmupGoalX = 60f;
     private const float FinalLongZone4WarmupAndroidX = 15.3f;
     private const float FinalLongZone4WarmupHighCoinX = 37f;
@@ -537,11 +545,11 @@ public static class BuildER_V5_ObjectAwareScene
         Sprite sprite = GetSharedSprite();
 
         CreatePlatform(root.transform, "FinalLongChallenge_Zone1_Start", 6f, 0f, 16f, sprite);
-        CreatePlatform(root.transform, "FinalLongChallenge_Zone1_Recovery", 22.5f, 0f, 13f, sprite);
-        CreatePlatform(root.transform, "FinalLongChallenge_Zone2_AndroidRecovery", 42.2f, 0f, 21.6f, sprite);
-        CreatePlatform(root.transform, "FinalLongChallenge_Zone4_AndroidHigh", 62.3f, 0f, 13f, sprite);
-        CreatePlatform(root.transform, "FinalLongChallenge_FinalRecovery", 75f, 0f, 8f, sprite);
-        CreatePlatform(root.transform, "FinalLongChallenge_GoalPlatform", 86.15f, 0f, 9.7f, sprite);
+        CreatePlatform(root.transform, "FinalLongChallenge_Zone1_Recovery", 25.5f, 0f, 19f, sprite);
+        CreatePlatform(root.transform, "FinalLongChallenge_Zone2_AndroidRecovery", 58.2f, 0f, 41.6f, sprite);
+        CreatePlatform(root.transform, "FinalLongChallenge_Zone4_AndroidHigh", 97.05f, 0f, 30.5f, sprite);
+        CreatePlatform(root.transform, "FinalLongChallenge_FinalRecovery", 118.5f, 0f, 8f, sprite);
+        CreatePlatform(root.transform, "FinalLongChallenge_GoalPlatform", 129.65f, 0f, 9.7f, sprite);
 
         ScoreAttackManager manager = CreateFinalLongChallengeManager(root.transform);
         GameObject goal = CreateLockedGoal(
@@ -552,28 +560,28 @@ public static class BuildER_V5_ObjectAwareScene
 
         CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_01", new Vector3(4f, MixedWarmupLowCoinY, 0f), sprite, manager);
         CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_02", new Vector3(8f, MixedWarmupLowCoinY, 0f), sprite, manager);
-        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_HighCoin_01", new Vector3(19.5f, MixedWarmupHighCoinY, 0f), sprite, manager);
-        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_03", new Vector3(27f, MixedWarmupLowCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_HighCoin_01", new Vector3(FinalLongChallengeHighCoin01X, MixedWarmupHighCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_03", new Vector3(31f, MixedWarmupLowCoinY, 0f), sprite, manager);
 
         CreateStaticAndroid(
             root.transform,
             "FinalLongChallenge_Android_01",
-            new Vector3(35.5f, 1.02f, 0f),
+            new Vector3(FinalLongChallengeAndroid01X, 1.02f, 0f),
             sprite,
             manager);
-        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_HighCoin_02", new Vector3(40.5f, MixedWarmupHighCoinY, 0f), sprite, manager);
-        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_04", new Vector3(49.5f, MixedWarmupLowCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_HighCoin_02", new Vector3(FinalLongChallengeHighCoin02X, MixedWarmupHighCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_LowCoin_04", new Vector3(75f, MixedWarmupLowCoinY, 0f), sprite, manager);
 
         CreateStaticAndroid(
             root.transform,
             "FinalLongChallenge_Android_02",
-            new Vector3(59f, 1.02f, 0f),
+            new Vector3(FinalLongChallengeAndroid02X, 1.02f, 0f),
             sprite,
             manager);
-        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_HighCoin_03", new Vector3(65f, MixedWarmupHighCoinY, 0f), sprite, manager);
+        CreateFinalLongChallengeCoin(root.transform, "FinalLongChallenge_HighCoin_03", new Vector3(FinalLongChallengeHighCoin03X, MixedWarmupHighCoinY, 0f), sprite, manager);
 
         ConfigureFinalLongChallengePlayer(player, manager);
-        CreateDeathZone(44.5f, 100f, "DeathZone_ScoreMaxOA_FinalLongChallenge");
+        CreateDeathZone(66.25f, 150f, "DeathZone_ScoreMaxOA_FinalLongChallenge");
         CreateCamera(player.transform);
         ValidateFinalLongChallenge(scene, player, manager, goal);
     }
@@ -2362,8 +2370,12 @@ public static class BuildER_V5_ObjectAwareScene
             "requireGroundedBetweenLowAndHigh");
         SerializedProperty antiLedge = serializedAgent.FindProperty(
             "enableAntiLedgeStuckFailSafe");
-        SerializedProperty landingGate = serializedAgent.FindProperty(
-            "finalLongZone4WarmupLandingGateX");
+        SerializedProperty highCoin01LandingGate = serializedAgent.FindProperty(
+            "finalLongHighCoin01LandingGateX");
+        SerializedProperty android01LandingGate = serializedAgent.FindProperty(
+            "finalLongAndroid01LandingGateX");
+        SerializedProperty android02LandingGate = serializedAgent.FindProperty(
+            "finalLongAndroid02LandingGateX");
         SerializedProperty jumpForce = serializedAgent.FindProperty("jumpForce");
         SerializedProperty debugObservationCount = serializedAgent.FindProperty(
             "debugObjectAwareObservationCount");
@@ -2398,8 +2410,18 @@ public static class BuildER_V5_ObjectAwareScene
             groundedLowCoin == null || !groundedLowCoin.boolValue ||
             groundedSequence == null || !groundedSequence.boolValue ||
             antiLedge == null || !antiLedge.boolValue ||
-            landingGate == null ||
-            Mathf.Abs(landingGate.floatValue - FinalLongZone4WarmupLandingGateX) > 0.0001f ||
+            highCoin01LandingGate == null ||
+            Mathf.Abs(
+                highCoin01LandingGate.floatValue -
+                FinalLongChallengeHighCoin01LandingGateX) > 0.0001f ||
+            android01LandingGate == null ||
+            Mathf.Abs(
+                android01LandingGate.floatValue -
+                FinalLongChallengeAndroid01LandingGateX) > 0.0001f ||
+            android02LandingGate == null ||
+            Mathf.Abs(
+                android02LandingGate.floatValue -
+                FinalLongChallengeAndroid02LandingGateX) > 0.0001f ||
             playerBody.collisionDetectionMode != CollisionDetectionMode2D.Continuous ||
             jumpForce == null || prefabJumpForce == null ||
             Mathf.Abs(jumpForce.floatValue - prefabJumpForce.floatValue) > 0.0001f ||
@@ -2508,11 +2530,11 @@ public static class BuildER_V5_ObjectAwareScene
             {
                 { "FinalLongChallenge_LowCoin_01", new Vector3(4f, MixedWarmupLowCoinY, 0f) },
                 { "FinalLongChallenge_LowCoin_02", new Vector3(8f, MixedWarmupLowCoinY, 0f) },
-                { "FinalLongChallenge_HighCoin_01", new Vector3(19.5f, MixedWarmupHighCoinY, 0f) },
-                { "FinalLongChallenge_LowCoin_03", new Vector3(27f, MixedWarmupLowCoinY, 0f) },
-                { "FinalLongChallenge_HighCoin_02", new Vector3(40.5f, MixedWarmupHighCoinY, 0f) },
-                { "FinalLongChallenge_LowCoin_04", new Vector3(49.5f, MixedWarmupLowCoinY, 0f) },
-                { "FinalLongChallenge_HighCoin_03", new Vector3(65f, MixedWarmupHighCoinY, 0f) }
+                { "FinalLongChallenge_HighCoin_01", new Vector3(FinalLongChallengeHighCoin01X, MixedWarmupHighCoinY, 0f) },
+                { "FinalLongChallenge_LowCoin_03", new Vector3(31f, MixedWarmupLowCoinY, 0f) },
+                { "FinalLongChallenge_HighCoin_02", new Vector3(FinalLongChallengeHighCoin02X, MixedWarmupHighCoinY, 0f) },
+                { "FinalLongChallenge_LowCoin_04", new Vector3(75f, MixedWarmupLowCoinY, 0f) },
+                { "FinalLongChallenge_HighCoin_03", new Vector3(FinalLongChallengeHighCoin03X, MixedWarmupHighCoinY, 0f) }
             };
         Dictionary<string, BoxCollider2D> lowCoinPlatforms =
             new Dictionary<string, BoxCollider2D>
@@ -2624,10 +2646,10 @@ public static class BuildER_V5_ObjectAwareScene
                 platforms[platformNames[0]].bounds.max.x - 4f),
             Mathf.Min(8f - platforms[platformNames[0]].bounds.min.x,
                 platforms[platformNames[0]].bounds.max.x - 8f),
-            Mathf.Min(27f - platforms[platformNames[1]].bounds.min.x,
-                platforms[platformNames[1]].bounds.max.x - 27f),
-            Mathf.Min(49.5f - platforms[platformNames[2]].bounds.min.x,
-                platforms[platformNames[2]].bounds.max.x - 49.5f)
+            Mathf.Min(31f - platforms[platformNames[1]].bounds.min.x,
+                platforms[platformNames[1]].bounds.max.x - 31f),
+            Mathf.Min(75f - platforms[platformNames[2]].bounds.min.x,
+                platforms[platformNames[2]].bounds.max.x - 75f)
         };
         for (int i = 0; i < lowCoinEdgeDistances.Length; i++)
         {
@@ -2668,11 +2690,47 @@ public static class BuildER_V5_ObjectAwareScene
         float android02FromLanding = android02 != null
             ? android02.transform.position.x - platforms[platformNames[3]].bounds.min.x
             : -1f;
-        if (android01FromLanding < 3f || android02FromLanding < 3f)
+        float android01FromGate = android01 != null
+            ? android01.transform.position.x - FinalLongChallengeAndroid01LandingGateX
+            : -1f;
+        float android02FromGate = android02 != null
+            ? android02.transform.position.x - FinalLongChallengeAndroid02LandingGateX
+            : -1f;
+        ScoreAttackCoin highCoin02 = System.Array.Find(
+            coins,
+            coin => coin != null && coin.name == "FinalLongChallenge_HighCoin_02");
+        ScoreAttackCoin highCoin03 = System.Array.Find(
+            coins,
+            coin => coin != null && coin.name == "FinalLongChallenge_HighCoin_03");
+        ScoreAttackCoin highCoin01 = System.Array.Find(
+            coins,
+            coin => coin != null && coin.name == "FinalLongChallenge_HighCoin_01");
+        float highCoin01FromLanding = highCoin01 != null
+            ? highCoin01.transform.position.x - platforms[platformNames[1]].bounds.min.x
+            : -1f;
+        float highCoin01FromGate = highCoin01 != null
+            ? highCoin01.transform.position.x - FinalLongChallengeHighCoin01LandingGateX
+            : -1f;
+        float android01ToHigh = android01 != null && highCoin02 != null
+            ? highCoin02.transform.position.x - android01.transform.position.x
+            : -1f;
+        float android02ToHigh = android02 != null && highCoin03 != null
+            ? highCoin03.transform.position.x - android02.transform.position.x
+            : -1f;
+        if (highCoin01FromLanding < 4.5f || highCoin01FromLanding > 6f ||
+            highCoin01FromGate < 4.5f ||
+            android01FromLanding < 4.5f || android01FromLanding > 6f ||
+            android02FromLanding < 4.5f || android02FromLanding > 6f ||
+            android01FromGate < 4.5f || android02FromGate < 4.5f ||
+            android01ToHigh < 20f || android02ToHigh < 20f ||
+            android01 == null ||
+            Mathf.Abs(android01.transform.position.x - FinalLongChallengeAndroid01X) > 0.01f ||
+            android02 == null ||
+            Mathf.Abs(android02.transform.position.x - FinalLongChallengeAndroid02X) > 0.01f)
         {
             throw new System.InvalidOperationException(
-                "FinalLongChallenge Androids must remain at least 3 units after their " +
-                "preceding landing edge.");
+                "FinalLongChallenge Android landing gates or post-stomp high-coin " +
+                "recovery distances are invalid.");
         }
 
         float levelLength = FinalLongChallengeLevelEndX - FinalLongChallengeLevelStartX;
@@ -2685,18 +2743,31 @@ public static class BuildER_V5_ObjectAwareScene
         ValidateCommonSceneObjects(scene, phaseName);
         Debug.Log(
             "[OBJECT AWARE BUILDER ZONES] " +
-            "Zone1=LowCoin_01->LowCoin_02->gap1->HighCoin_01->landing; " +
-            "Zone2=LowCoin_03->gap2->Android_01; " +
+            "Zone1=LowCoin_01->LowCoin_02->gap1->landingGate->HighCoin_01->landing; " +
+            "Zone2=LowCoin_03->gap2->landingGate->Android_01->landing; " +
             "Zone3=HighCoin_02->landing->LowCoin_04; " +
-            "Zone4=gap3->Android_02->HighCoin_03->landing->gap4->gap5->Goal.");
+            "Zone4=gap3->landingGate->Android_02->landing->HighCoin_03->" +
+            "landing->gap4->gap5->Goal.");
         Debug.Log(
             $"[OBJECT AWARE BUILDER GEOMETRY] gaps=[{string.Join(", ", gaps)}] " +
             $"high01ToLow03={firstHighToRecoveryLow:F2} " +
+            $"gap1ToHigh01={highCoin01FromLanding:F2} " +
+            $"gateHigh01ToHigh01={highCoin01FromGate:F2} " +
             $"high02ToLow04={secondHighToRecoveryLow:F2} " +
-            $"high03LandingRoom={platforms[platformNames[3]].bounds.max.x - 65f:F2} " +
-            $"android01FromLanding={android01FromLanding:F2} " +
-            $"android02FromLanding={android02FromLanding:F2} " +
+            $"high03LandingRoom={platforms[platformNames[3]].bounds.max.x - FinalLongChallengeHighCoin03X:F2} " +
+            $"gap2ToAndroid01={android01FromLanding:F2} " +
+            $"gate01ToAndroid01={android01FromGate:F2} " +
+            $"android01ToHigh02={android01ToHigh:F2} " +
+            $"gap3ToAndroid02={android02FromLanding:F2} " +
+            $"gate02ToAndroid02={android02FromGate:F2} " +
+            $"android02ToHigh03={android02ToHigh:F2} " +
             $"lowCoinNearestEdges=[{string.Join(", ", lowCoinEdgeDistances)}].");
+        Debug.Log(
+            "[OBJECT AWARE BUILDER CURRICULUM GATES] " +
+            "sameGapJumpHighCoinAllowed=false for HighCoin_01; " +
+            "sameGapJumpStompAllowed=false for Android_01/Android_02; " +
+            "postAndroidLandingRequired=true; " +
+            "sameStompArcHighCoinAllowed=false for HighCoin_02/HighCoin_03.");
         Debug.Log(
             $"[OBJECT AWARE BUILDER GOAL LOCK] enabled=true coinsRequired={expectedCoins} " +
             $"enemiesRequired={FinalLongChallengeAndroidCount} " +
@@ -2705,7 +2776,10 @@ public static class BuildER_V5_ObjectAwareScene
         Debug.Log(
             $"[OBJECT AWARE BUILDER] FinalLongChallenge validated: length={levelLength:F1}, " +
             $"lowCoins={lowCount}, highCoins={highCount}, Androids={androids.Length}, " +
-            "GoalLock=all objectives, safeFlatLowCoins=true, antiLedge=true.");
+            "GoalLock=all objectives, safeFlatLowCoins=true, antiLedge=true, " +
+            "sameGapJumpHighCoinAllowed=false, sameGapJumpStompAllowed=false, " +
+            "postAndroidLandingRequired=true, " +
+            "sameStompArcHighCoinAllowed=false.");
     }
 
     private static void ValidateFinalLongZone4Warmup(
@@ -3613,6 +3687,18 @@ public static class BuildER_V5_ObjectAwareScene
         SetBool(agent, "requireGroundedBetweenLowAndHigh", true);
         SetFloat(agent, "sameJumpHighCoinPenalty", -2f);
         SetBool(agent, "endEpisodeOnSameJumpHighCoin", true);
+        SetFloat(
+            agent,
+            "finalLongHighCoin01LandingGateX",
+            FinalLongChallengeHighCoin01LandingGateX);
+        SetFloat(
+            agent,
+            "finalLongAndroid01LandingGateX",
+            FinalLongChallengeAndroid01LandingGateX);
+        SetFloat(
+            agent,
+            "finalLongAndroid02LandingGateX",
+            FinalLongChallengeAndroid02LandingGateX);
         SetBool(agent, "enableAntiLedgeStuckFailSafe", true);
         SetFloat(agent, "ledgeStuckGraceTime", FinalRandomLedgeStuckGraceTime);
         SetFloat(agent, "ledgeStuckMinYBelowGround", FinalRandomLedgeStuckMinYBelowGround);
