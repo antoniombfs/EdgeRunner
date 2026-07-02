@@ -1,0 +1,41 @@
+engine_settings:
+  time_scale: 10
+  target_frame_rate: -1
+  capture_frame_rate: 60
+  no_graphics: false
+
+# SpeedRunObstacleAware StaticAndroid: one static Android is a terminal contact hazard.
+# Behavior Name: EdgeRunnerV5SpeedRunObstacleAware
+# Observation Space Size in Unity: 67
+# Actions/Branches: [3,2,2]
+# Intended later use: initialize from a validated TraversalBase run via the CLI,
+# without hard-coding a checkpoint path in this configuration.
+behaviors:
+  EdgeRunnerV5SpeedRunObstacleAware:
+    trainer_type: ppo
+
+    hyperparameters:
+      batch_size: 128
+      buffer_size: 4096
+      learning_rate: 1.0e-4
+      beta: 1.0e-3
+      epsilon: 0.15
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+
+    network_settings:
+      normalize: false
+      hidden_units: 256
+      num_layers: 2
+
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+
+    max_steps: 200000
+    time_horizon: 64
+    summary_freq: 500
+    checkpoint_interval: 10000
+    keep_checkpoints: 10
