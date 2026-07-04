@@ -380,7 +380,10 @@ public class FinalDemoController : MonoBehaviour
         float leftX = contentX;
         float rightX = contentX + columnWidth + columnGap;
         float headerY = panel.y + 164f;
-        float footerHeight = 66f;
+        // Footer height follows the actual wrapped chip layout (never a fixed guess), so the
+        // footer box is always tall enough and never clips a row of controls against its edge.
+        ChipLayout footerChipLayout = ComputeChipRows(contentWidth - 24f, ControlKeys, ControlLabels);
+        float footerHeight = Mathf.Max(66f, footerChipLayout.Height + 40f);
         float footerY = panel.yMax - footerHeight - 24f;
         float columnHeight = footerY - headerY - 18f;
 
@@ -441,7 +444,7 @@ public class FinalDemoController : MonoBehaviour
 
     private void DrawLevelOverlay()
     {
-        const float margin = 16f;
+        const float margin = 22f;
         bool maxScoreMode = (levelIndex >= 3 && levelIndex < 6) || levelIndex == 7;
         Texture2D modeAccent = maxScoreMode ? maxScoreAccentTexture : speedAccentTexture;
         Texture2D modeBorder = maxScoreMode ? maxScoreBorderTexture : borderTexture;
@@ -449,7 +452,7 @@ public class FinalDemoController : MonoBehaviour
 
         // ---- Top-left identity panel: icon + level + mode badge + time ----
         float identityWidth = Mathf.Min(474f, Screen.width - margin * 2f);
-        Rect identityPanel = new Rect(margin, margin, identityWidth, 86f);
+        Rect identityPanel = new Rect(margin, margin, identityWidth, 96f);
         GUI.Box(identityPanel, GUIContent.none, hudPanelStyle);
         DrawBorder(identityPanel, 1f, modeBorder);
         DrawSideAccent(identityPanel, modeAccent);
@@ -479,7 +482,7 @@ public class FinalDemoController : MonoBehaviour
         float statsY = margin;
         bool stackPanels = statsX < identityPanel.xMax + 12f;
         if (stackPanels) { statsX = margin; statsY = identityPanel.yMax + 8f; }
-        Rect statsPanel = new Rect(statsX, statsY, statsWidth, 86f);
+        Rect statsPanel = new Rect(statsX, statsY, statsWidth, 96f);
         GUI.Box(statsPanel, GUIContent.none, hudPanelStyle);
         DrawBorder(statsPanel, 1f, modeBorder);
         DrawSideAccent(statsPanel, modeAccent);
@@ -510,11 +513,17 @@ public class FinalDemoController : MonoBehaviour
         }
     }
 
-    private const float ChipHeight = 26f;
+    private const float ChipHeight = 24f;
     private const float ChipInnerGap = 7f;
     private const float ChipItemGap = 14f;
     private const float ChipRowGap = 8f;
     private const float ChipKeyPad = 14f;
+    private const float ChipLabelSafetyPad = 4f;
+
+    // Shared, short labels for both the menu footer and the in-game controls overlay —
+    // kept identical in both places so the wrap-safe layout never has to fit long strings.
+    private static readonly string[] ControlKeys = { "1–6", "G", "H", "R", "N", "M/Esc", "F", "U", "+/-" };
+    private static readonly string[] ControlLabels = { "Level", "Speed", "Score", "Restart", "Next", "Menu", "FPS", "Audio", "Vol" };
 
     private readonly struct ChipLayout
     {
@@ -540,7 +549,7 @@ public class FinalDemoController : MonoBehaviour
         for (int i = 0; i < keys.Length; i++)
         {
             keyWidths[i] = Mathf.Max(24f, menuKeycapStyle.CalcSize(new GUIContent(keys[i])).x + ChipKeyPad);
-            labelWidths[i] = menuControlLabelStyle.CalcSize(new GUIContent(labels[i])).x;
+            labelWidths[i] = menuControlLabelStyle.CalcSize(new GUIContent(labels[i])).x + ChipLabelSafetyPad;
             itemWidths[i] = keyWidths[i] + ChipInnerGap + labelWidths[i];
         }
 
@@ -596,7 +605,7 @@ public class FinalDemoController : MonoBehaviour
 
     private void DrawHudHint(Texture2D modeAccent)
     {
-        const float margin = 16f;
+        const float margin = 22f;
         const string hint = "TAB Controls   ·   M Menu   ·   R Restart";
         float w = hudCaptionStyle.CalcSize(new GUIContent(hint)).x + 30f;
         const float h = 26f;
@@ -608,24 +617,67 @@ public class FinalDemoController : MonoBehaviour
 
     private void DrawControlsHelpOverlay(Texture2D modeAccent, Texture2D modeBorder)
     {
+        const float screenMargin = 30f;
+        // Extra clearance beyond screenMargin so the border/top-accent/corner-bracket
+        // decorations (drawn flush with the panel's own edges) never touch the screen edge.
+        const float visualBleed = 12f;
+        const float margin = screenMargin + visualBleed;
+        const float titleTopPadding = 16f;
+        const float titleHeight = 40f;
+        const float titleAreaHeight = 60f;
+        const float chipsTopPad = 12f;
+        const float bottomPad = 20f;
+        const float contentPadding = 44f; // 22px of inner padding on each side of the panel
+
         DrawSolid(new Rect(0f, 0f, Screen.width, Screen.height), new Color(0.01f, 0.02f, 0.04f, 0.42f));
 
-        string audio = FinalDemoAudioSystem.IsMuted ? "MUTED" : $"{FinalDemoAudioSystem.CurrentVolume:P0}";
-        string[] keys = { "1–6", "R", "N", "G", "H", "U", "±", "M/Esc", "F" };
-        string[] labels = { "Level", "Restart", "Next", "Rnd Speed", "Rnd Score", audio, "Vol", "Menu", "FPS" };
+        // First pass (unwrapped): measure every chip with the styles/font actually active at
+        // runtime — the Standalone Player can measure text a bit wider than the Editor preview,
+        // so we size the panel off this real measurement instead of assuming the Editor's numbers.
+        ChipLayout unwrapped = ComputeChipRows(float.MaxValue, ControlKeys, ControlLabels);
+        float widestItemWidth = 0f;
+        for (int i = 0; i < ControlKeys.Length; i++)
+        {
+            widestItemWidth = Mathf.Max(widestItemWidth, unwrapped.KeyWidths[i] + ChipInnerGap + unwrapped.LabelWidths[i]);
+        }
 
-        float w = Mathf.Min(1160f, Screen.width - 80f);
-        ChipLayout layout = ComputeChipRows(w - 44f, keys, labels);
-        float h = 56f + layout.Height;
-        Rect panel = new Rect((Screen.width - w) * 0.5f, Screen.height - h - 54f, w, h);
+        // The panel must never be narrower than the single widest chip (otherwise that chip
+        // alone would spill past the border no matter how the rows wrap), and never wider than
+        // the screen minus margins. Only once both bounds are known do we pick the final width.
+        float maxPanelWidth = Screen.width - margin * 2f;
+        float minPanelWidth = widestItemWidth + contentPadding;
+        float w = Mathf.Clamp(1160f, minPanelWidth, Mathf.Max(minPanelWidth, maxPanelWidth));
+
+        // Second pass: wrap the chips into rows using the final, screen-safe panel width.
+        ChipLayout layout = ComputeChipRows(w - contentPadding, ControlKeys, ControlLabels);
+        float h = titleAreaHeight + chipsTopPad + layout.Height + bottomPad;
+
+        // Anchored near the bottom/centre of the screen, but always fully clamped within it —
+        // never lets the panel or any of its edge decorations spill past the screen bounds.
+        float maxX = Mathf.Max(margin, Screen.width - w - margin);
+        float x = Mathf.Clamp((Screen.width - w) * 0.5f, margin, maxX);
+        float maxY = Mathf.Max(margin, Screen.height - h - margin);
+        float y = Mathf.Clamp(Screen.height - h - 54f, margin, maxY);
+        Rect panel = new Rect(x, y, w, h);
         GUI.Box(panel, GUIContent.none, hudPanelStyle);
         DrawBorder(panel, 1f, modeBorder);
         DrawTopAccent(panel, modeAccent);
         DrawMenuCorners(panel);
-        GUI.Label(new Rect(panel.x + 22f, panel.y + 13f, 260f, 28f), "CONTROLS", hudTitleStyle);
-        GUI.Label(new Rect(panel.xMax - 240f, panel.y + 19f, 220f, 18f), "Hold TAB to view", hudCaptionStyle);
-        DrawSolid(new Rect(panel.x + 22f, panel.y + 44f, panel.width - 44f, 1f), new Color(0.2f, 0.62f, 0.82f, 0.5f));
-        DrawChipRows(new Rect(panel.x, panel.y + 48f, panel.width, layout.Height), layout, keys, labels);
+        // Dedicated, vertically-centred title style: the shared hudTitleStyle (also used by the
+        // top-left level title) has no explicit alignment, and the Standalone Player can measure/
+        // render that font a hair taller than the Editor preview, clipping the top of "CONTROLS"
+        // against the rect's top edge. Middle-anchoring plus a taller rect removes that dependency.
+        GUIStyle controlsTitleStyle = new GUIStyle(hudTitleStyle) { alignment = TextAnchor.MiddleLeft };
+        Rect titleRect = new Rect(panel.x + 22f, panel.y + titleTopPadding, 260f, titleHeight);
+        GUI.Label(titleRect, "CONTROLS", controlsTitleStyle);
+        GUI.Label(
+            new Rect(panel.xMax - 240f, panel.y + titleTopPadding + (titleHeight - 18f) * 0.5f, 220f, 18f),
+            "Hold TAB to view",
+            hudCaptionStyle);
+        DrawSolid(new Rect(panel.x + 22f, panel.y + titleAreaHeight, panel.width - 44f, 1f), new Color(0.2f, 0.62f, 0.82f, 0.5f));
+        DrawChipRows(
+            new Rect(panel.x, panel.y + titleAreaHeight + chipsTopPad, panel.width, layout.Height),
+            layout, ControlKeys, ControlLabels);
     }
 
     private void DrawObjectiveStats(Rect panel, Color accent)
@@ -637,7 +689,7 @@ public class FinalDemoController : MonoBehaviour
             GUI.Label(new Rect(x, panel.y + 10f, width, 20f), "POWERCELLS", hudStatLabelStyle);
             int total = visualCollectibleTotal;
             string value = total > 0 ? $"{visualCollectiblesCollected}/{total}" : "—";
-            GUI.Label(new Rect(x, panel.y + 28f, width, 36f), value, hudStatValueStyle);
+            GUI.Label(new Rect(x, panel.y + 28f, width, 40f), value, hudStatValueStyle);
             if (total > 0)
             {
                 DrawProgressBar(new Rect(x, panel.yMax - 18f, width, 10f), visualCollectiblesCollected / (float)total, accent);
@@ -656,7 +708,7 @@ public class FinalDemoController : MonoBehaviour
         int androids = cachedScoreAttackManager.EnemiesRemaining;
         GUI.Label(new Rect(x, panel.y + 9f, 130f, 20f), "MOEDAS", hudStatLabelStyle);
         GUI.Label(new Rect(x + 128f, panel.y + 11f, width - 128f, 18f), $"ANDROIDS  {androids}", hudCaptionStyle);
-        GUI.Label(new Rect(x, panel.y + 27f, width, 34f), $"{coins}/{coinTotal}", hudStatValueStyle);
+        GUI.Label(new Rect(x, panel.y + 27f, width, 40f), $"{coins}/{coinTotal}", hudStatValueStyle);
         if (coinTotal > 0)
         {
             DrawProgressBar(new Rect(x, panel.yMax - 18f, width, 10f), coins / (float)coinTotal, accent);
@@ -990,7 +1042,7 @@ public class FinalDemoController : MonoBehaviour
         };
         menuKeycapStyle = new GUIStyle(GUI.skin.box)
         {
-            fontSize = 15,
+            fontSize = 14,
             fontStyle = FontStyle.Bold,
             alignment = TextAnchor.MiddleCenter,
             normal =
@@ -1001,7 +1053,7 @@ public class FinalDemoController : MonoBehaviour
         };
         menuControlLabelStyle = new GUIStyle(GUI.skin.label)
         {
-            fontSize = 15,
+            fontSize = 14,
             alignment = TextAnchor.MiddleLeft,
             normal = { textColor = new Color(0.76f, 0.88f, 0.95f) }
         };
@@ -1166,12 +1218,9 @@ public class FinalDemoController : MonoBehaviour
 
     private void DrawMenuControls(Rect footer)
     {
-        string[] keys = { "1–6", "G", "H", "R", "N", "M/Esc", "F", "U", "+/−" };
-        string[] labels = { "Level", "Rnd Speed", "Rnd Score", "Restart", "Next", "Menu", "FPS", "Mute", "Vol" };
-
         // Measured, wrap-safe layout: never lets a chip/label spill past the footer edge,
         // regardless of window size (the build's window is resizable).
-        ChipLayout layout = ComputeChipRows(footer.width - 24f, keys, labels);
+        ChipLayout layout = ComputeChipRows(footer.width - 24f, ControlKeys, ControlLabels);
         float y = footer.center.y - layout.Height * 0.5f;
         for (int r = 0; r < layout.Rows.Count; r++)
         {
@@ -1193,10 +1242,10 @@ public class FinalDemoController : MonoBehaviour
                         new Rect(keyRect.x - 4f, keyRect.y - 4f, keyRect.width + 8f, keyRect.height + 8f),
                         menuCyanHaloTexture);
                 }
-                GUI.Box(keyRect, keys[idx], menuKeycapStyle);
+                GUI.Box(keyRect, ControlKeys[idx], menuKeycapStyle);
                 GUI.Label(
                     new Rect(keyRect.xMax + ChipInnerGap, y, layout.LabelWidths[idx], ChipHeight),
-                    labels[idx],
+                    ControlLabels[idx],
                     menuControlLabelStyle);
                 x += layout.KeyWidths[idx] + ChipInnerGap + layout.LabelWidths[idx] + ChipItemGap;
             }
