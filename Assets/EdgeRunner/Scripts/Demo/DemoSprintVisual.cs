@@ -19,6 +19,8 @@ public class DemoSprintVisual : MonoBehaviour
     private float smoothedAbsSpeed;
     private float sprintVisualActivatedAt;
 
+    public bool IsSprintVisualActive => isSprintVisualActive;
+
     public void Configure(Rigidbody2D newRb, SpriteRenderer newSpriteRenderer, TrailRenderer newTrailRenderer)
     {
         rb = newRb;

@@ -21,10 +21,12 @@ public static class BuildER_FinalDemo
     private const string FinalLongReferenceScenePath =
         "Assets/EdgeRunner/Scenes/Training/ER_V5_ScoreMaxOA_FinalLongChallenge.unity";
     private const string NoFrictionPath = "Assets/EdgeRunner/Physics/Agent_NoFriction.physicsMaterial2D";
-    private const string SpeedModelPath = "Assets/EdgeRunner/ML/Models/FinalCandidates/FINAL_GoalRunner_Base_EasyBridge.onnx";
+    private const string SpeedModelPath = "Assets/EdgeRunner/ML/Models/FinalCandidates/FINAL_SpeedRunOA_FinalDemo03_207k_67obs.onnx";
     private const string MaxScoreModelPath = "Assets/EdgeRunner/ML/Models/FinalCandidates/FINAL_ScoreMaxOA_FinalLongChallenge_BEST_200k.onnx";
     private const string MenuLogoPath = "Assets/Resources/DemoFinal/EdgeRunners_Logo.jpg";
-    private const string OutputPath = "Builds/EdgeRunner_FinalDemo/EdgeRunner_FinalDemo.exe";
+    private const string OutputPath = "Builds/EdgeRunner_FinalDemo_Windows/EdgeRunner_FinalDemo.exe";
+    private const float SpeedObstaclePlatformClearance = 0.01f;
+    private const float SpeedObstacleAlignmentTolerance = 0.02f;
 
     private static readonly string[] SceneNames =
     {
@@ -34,10 +36,12 @@ public static class BuildER_FinalDemo
         "ER_FinalDemo_SpeedRun_Hard",
         "ER_FinalDemo_MaxScore_Easy",
         "ER_FinalDemo_MaxScore_Normal",
-        "ER_FinalDemo_MaxScore_Hard"
+        "ER_FinalDemo_MaxScore_Hard",
+        FinalDemoController.RandomScene,
+        FinalDemoController.RandomMaxScoreScene
     };
 
-    private static readonly float[] SpeedGoalX = { 110f, 163f, 211f };
+    private static readonly float[] SpeedGoalX = { 172.5f, 197.8f, 256.6f };
 
     private readonly struct PlatformSpec
     {
@@ -76,10 +80,11 @@ public static class BuildER_FinalDemo
         BuildMaxScoreSceneFromReference(3, CreateMaxEasy(), CreateMaxEasyObjectives(), "Sequência funcional preservada, com cenário vertical e patrulha visual em background.");
         BuildMaxScoreSceneFromReference(4, CreateMaxNormal(), CreateMaxNormalObjectives(), "Ritmo funcional preservado, mais camadas visuais e recuperações bem marcadas.");
         BuildMaxScoreSceneFromReference(5, CreateMaxHard(), CreateMaxHardObjectives(), "Sete powercells, dois stomps e cenário neon mais variado sem alterar a sequência.");
+        BuildRandomMaxScoreSceneFromReference();
 
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
-        Debug.Log("[FINAL DEMO] Built menu and six handcrafted levels.");
+        Debug.Log("[FINAL DEMO] Built menu, six handcrafted levels and two random modes.");
     }
 
     [MenuItem("EdgeRunner/Demo Final/Rebuild Menu + SpeedRun")]
@@ -92,13 +97,35 @@ public static class BuildER_FinalDemo
         ValidateSpeedLayoutSet();
 
         BuildMenuScene();
-        BuildSpeedScene(0, CreateSpeedEasy(), SpeedGoalX[0], 0.55f, "110 m · gaps simples, ondulação suave e zonas largas de recuperação.");
-        BuildSpeedScene(1, CreateSpeedNormal(), SpeedGoalX[1], 0.55f, "163 m · subidas e descidas curtas, gaps médios e ritmo mais variado.");
-        BuildSpeedScene(2, CreateSpeedHard(), SpeedGoalX[2], 0.75f, "211 m · maior verticalidade controlada e sequências de salto mais longas.");
+        BuildSpeedRunLevelsCore();
+        BuildRandomSpeedScene();
 
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
         Debug.Log("[FINAL DEMO] Rebuilt menu and three SpeedRun levels.");
+    }
+
+    [MenuItem("EdgeRunner/Demo Final/Rebuild SpeedRun Only")]
+    public static void BuildSpeedRunLevelsOnly()
+    {
+        EnsureFolder("Assets/EdgeRunner/Scenes", "DemoFinal");
+        RequireAsset<GameObject>(PlayerPrefabPath);
+        RequireAsset<ModelAsset>(SpeedModelPath);
+        ValidateSpeedLayoutSet();
+
+        BuildSpeedRunLevelsCore();
+        BuildRandomSpeedScene();
+
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+        Debug.Log("[FINAL DEMO] Rebuilt three SpeedRunObstacleAware levels only.");
+    }
+
+    private static void BuildSpeedRunLevelsCore()
+    {
+        BuildSpeedScene(0, CreateSpeedEasy(), SpeedGoalX[0], 0.55f, "172 m · primeiro Android numa aproximação plana e longa, depois escadaria suave e drops controlados.");
+        BuildSpeedScene(1, CreateSpeedNormal(), SpeedGoalX[1], 0.55f, "198 m · dois Androids em patrulha, uma zona elevada clara e ritmo de saltos na banda de treino (2,0–2,4 m).");
+        BuildSpeedScene(2, CreateSpeedHard(), SpeedGoalX[2], 0.6f, "257 m · dois Androids em patrulha, subidas por degraus até duas zonas elevadas e ritmo de saltos constante.");
     }
 
     [MenuItem("EdgeRunner/Demo Final/Build Windows Application %#g")]
@@ -184,6 +211,34 @@ public static class BuildER_FinalDemo
         BuildMenuAndSpeedRunLevels();
     }
 
+    public static void BuildSpeedRunLevelsOnlyFromCommandLine()
+    {
+        BuildSpeedRunLevelsOnly();
+    }
+
+    [MenuItem("EdgeRunner/Demo Final/Rebuild Random SpeedRun Only")]
+    public static void BuildRandomSpeedRunOnlyFromCommandLine()
+    {
+        EnsureFolder("Assets/EdgeRunner/Scenes", "DemoFinal");
+        RequireAsset<GameObject>(PlayerPrefabPath);
+        RequireAsset<ModelAsset>(SpeedModelPath);
+        BuildRandomSpeedScene();
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+        Debug.Log("[FINAL DEMO] Rebuilt Random SpeedRun only.");
+    }
+
+    [MenuItem("EdgeRunner/Demo Final/Rebuild Random MaxScore Only")]
+    public static void BuildRandomMaxScoreOnlyFromCommandLine()
+    {
+        EnsureFolder("Assets/EdgeRunner/Scenes", "DemoFinal");
+        RequireAsset<ModelAsset>(MaxScoreModelPath);
+        BuildRandomMaxScoreSceneFromReference();
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+        Debug.Log("[FINAL DEMO] Rebuilt Random MaxScore only.");
+    }
+
     public static void BuildWindowsApplicationFromCommandLine()
     {
         BuildWindowsApplication();
@@ -215,7 +270,7 @@ public static class BuildER_FinalDemo
 
         FinalDemoController controller = CreateLevelController(
             levelIndex,
-            "FINAL_GoalRunner_Base_EasyBridge · EdgeRunnerV5 · 55 observações",
+            "FINAL_SpeedRunOA_FinalDemo03_207k_67obs · ObstacleAware · 67 observações",
             description);
         int visualCollectibleCount = CreateSpeedCollectibles(
             root.transform,
@@ -224,15 +279,137 @@ public static class BuildER_FinalDemo
             levelIndex,
             controller);
         controller.ConfigureVisualCollectibles(visualCollectibleCount);
-        CreateVisualPatrolAndroids(root.transform, platforms, sprite, levelIndex, false);
+        CreateSpeedRunObstacleAndroids(root.transform, platforms, sprite, levelIndex);
         GameObject goal = CreateGoal(new Vector2(goalX, goalY + 1.2f), controller, null);
         GameObject player = CreateSpeedPlayer(new Vector3(0f, 1.15f, 0f), goal.transform);
         ConfigureSprintVisual(player);
         CreateCamera(player.transform);
         CreateDeathZone(goalX * 0.5f, goalX + 50f);
 
-        ValidateSpeedScene(scene, player, goalX, platforms);
+        ValidateSpeedScene(scene, player, goalX, platforms, levelIndex);
         SaveScene(scene, levelIndex + 1);
+    }
+
+    private static void BuildRandomSpeedScene()
+    {
+        PlatformSpec[] specs =
+        {
+            new PlatformSpec("R01_Start", 8f, 0f, 20f),
+            new PlatformSpec("R02_AndroidDeck01", 40f, 0f, 42f),
+            new PlatformSpec("R03_Recovery", 70f, 0f, 16f),
+            new PlatformSpec("R04_Rise", 88f, 0.6f, 16f),
+            new PlatformSpec("R05_Middle", 106f, 0.2f, 16f),
+            new PlatformSpec("R06_AndroidDeck02", 131f, 0.4f, 30f),
+            new PlatformSpec("R07_GoalDeck", 157f, 0.6f, 20f)
+        };
+
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        GameObject root = new GameObject(FinalDemoController.RandomScene);
+        Sprite sprite = GetSharedSprite();
+        CreateBackdrop(85f, 215f, 3);
+        CreatePlatforms(root.transform, specs, sprite, false);
+        CreateSecondaryPlatforms(root.transform, specs, sprite, 7);
+
+        FinalDemoController controller = CreateLevelController(
+            6,
+            "FINAL_SpeedRunOA_FinalDemo03_207k_67obs · ObstacleAware · 67 observações",
+            "Random conservador · seed definido ao entrar");
+        int collectibleCount = CreateSpeedCollectibles(
+            root.transform,
+            specs,
+            sprite,
+            1,
+            controller);
+        controller.ConfigureVisualCollectibles(collectibleCount);
+
+        GameObject obstacleRoot = new GameObject("RandomSpeedRun_ObstacleAndroids");
+        obstacleRoot.transform.SetParent(root.transform, false);
+        GameObject[] androids =
+        {
+            CreateSpeedRunObstacleAndroid(
+                obstacleRoot.transform,
+                "RandomSpeedRun_Android_01",
+                specs[1],
+                2f,
+                0.2f,
+                0.5f,
+                sprite),
+            CreateSpeedRunObstacleAndroid(
+                obstacleRoot.transform,
+                "RandomSpeedRun_Android_02",
+                specs[5],
+                0f,
+                0.35f,
+                0.8f,
+                sprite)
+        };
+        FinalDemoRandomPatrol[] randomPatrols = new FinalDemoRandomPatrol[androids.Length];
+        for (int i = 0; i < androids.Length; i++)
+        {
+            DemoAndroidPatrol oldPatrol = androids[i].GetComponent<DemoAndroidPatrol>();
+            if (oldPatrol != null)
+            {
+                Object.DestroyImmediate(oldPatrol);
+            }
+            randomPatrols[i] = androids[i].AddComponent<FinalDemoRandomPatrol>();
+        }
+
+        GameObject goal = CreateGoal(new Vector2(160f, 1.8f), controller, null);
+        GameObject player = CreateSpeedPlayer(new Vector3(0f, 1.15f, 0f), goal.transform);
+        ConfigureSprintVisual(player);
+        CreateCamera(player.transform);
+        CreateDeathZone(90f, 230f);
+
+        Transform[] platformTransforms = new Transform[specs.Length];
+        Transform[] stripTransforms = new Transform[specs.Length];
+        for (int i = 0; i < specs.Length; i++)
+        {
+            GameObject platform = GameObject.Find(specs[i].Name);
+            GameObject strip = GameObject.Find(specs[i].Name + "_NeonTop");
+            platformTransforms[i] = platform != null ? platform.transform : null;
+            stripTransforms[i] = strip != null ? strip.transform : null;
+        }
+
+        FinalDemoRandomSpeedRun generator = root.AddComponent<FinalDemoRandomSpeedRun>();
+        generator.Configure(
+            platformTransforms,
+            stripTransforms,
+            androids,
+            randomPatrols,
+            goal.transform,
+            controller,
+            Object.FindObjectsByType<FinalDemoVisualCollectible>(FindObjectsInactive.Include));
+
+        ValidateRandomSpeedScene(scene, player, generator, platformTransforms, androids, randomPatrols);
+        SaveScene(scene, 7);
+    }
+
+    private static void ValidateRandomSpeedScene(
+        Scene scene,
+        GameObject player,
+        FinalDemoRandomSpeedRun generator,
+        Transform[] platforms,
+        GameObject[] androids,
+        FinalDemoRandomPatrol[] patrols)
+    {
+        BehaviorParameters behavior = player.GetComponent<BehaviorParameters>();
+        SpeedRunObstacleHazard[] hazards =
+            Object.FindObjectsByType<SpeedRunObstacleHazard>(FindObjectsInactive.Include);
+        EdgeRunnerEnemyMarker[] markers =
+            Object.FindObjectsByType<EdgeRunnerEnemyMarker>(FindObjectsInactive.Include);
+        if (scene.GetRootGameObjects().Length == 0 || generator == null ||
+            platforms.Length != 7 || androids.Length != 2 || patrols.Length != 2 ||
+            hazards.Length != 2 || markers.Length != 2 ||
+            player.GetComponent<EdgeRunnerAgentV5SpeedRunObstacleAware>() == null ||
+            !HasBehaviorContract(
+                behavior,
+                EdgeRunnerAgentV5SpeedRunObstacleAware.ExpectedBehaviorName,
+                EdgeRunnerAgentV5SpeedRunObstacleAware.DefaultExpectedObservationSize,
+                RequireAsset<ModelAsset>(SpeedModelPath)))
+        {
+            throw new System.InvalidOperationException(
+                "Random SpeedRun scene failed its conservative model/layout contract.");
+        }
     }
 
     private static void BuildMaxScoreScene(
@@ -346,6 +523,118 @@ public static class BuildER_FinalDemo
         SaveScene(scene, levelIndex + 1);
     }
 
+    private static void BuildRandomMaxScoreSceneFromReference()
+    {
+        Scene scene = EditorSceneManager.OpenScene(FinalLongReferenceScenePath, OpenSceneMode.Single);
+        EdgeRunnerAgentV5ScoreMaxObjectAware agent =
+            Object.FindAnyObjectByType<EdgeRunnerAgentV5ScoreMaxObjectAware>();
+        ScoreAttackManager manager = Object.FindAnyObjectByType<ScoreAttackManager>();
+        ScoreAttackGoalLock goalLock = Object.FindAnyObjectByType<ScoreAttackGoalLock>();
+        if (agent == null || manager == null || goalLock == null)
+        {
+            throw new System.InvalidOperationException(
+                "FinalLong reference scene is missing its validated agent, manager, or GoalLock.");
+        }
+
+        ApplyReferencePlatformDifficulty(3);
+        NormalizeMaxScoreCollectibles();
+        ApplyUnifiedMaxScorePowerCellVisuals();
+        ConfigureBehavior(agent.gameObject, "EdgeRunnerV5ScoreMaxObjectAware", 111, MaxScoreModelPath);
+        EnableDecisions(agent.gameObject);
+        ConfigureMaxScoreStartup(agent);
+
+        FinalDemoController controller = CreateLevelController(
+            7,
+            "FINAL_ScoreMaxOA_FinalLongChallenge_BEST_200k · ObjectAware · 111 observações",
+            "Random conservador · seed definido ao entrar · 7 powercells · 2 Androids estáticos");
+        GameObject observerZone = new GameObject("FinalDemoGoalObserverZone");
+        observerZone.transform.position = goalLock.transform.position + new Vector3(-1.5f, 0f, 0f);
+        BoxCollider2D observerCollider = observerZone.AddComponent<BoxCollider2D>();
+        observerCollider.isTrigger = true;
+        observerCollider.size = new Vector2(3f, 4f);
+        FinalDemoGoalObserver observer = observerZone.AddComponent<FinalDemoGoalObserver>();
+        observer.Configure(controller, manager);
+
+        string[] platformNames =
+        {
+            "FinalLongChallenge_Zone1_Start",
+            "FinalLongChallenge_Zone1_Recovery",
+            "FinalLongChallenge_Zone2_AndroidRecovery",
+            "FinalLongChallenge_Zone4_AndroidHigh",
+            "FinalLongChallenge_FinalRecovery",
+            "FinalLongChallenge_GoalPlatform"
+        };
+        Transform[] platforms = new Transform[platformNames.Length];
+        for (int i = 0; i < platformNames.Length; i++)
+        {
+            GameObject platform = GameObject.Find(platformNames[i]);
+            if (platform == null)
+            {
+                throw new System.InvalidOperationException(
+                    $"Random MaxScore reference platform is missing: {platformNames[i]}.");
+            }
+            platforms[i] = platform.transform;
+        }
+
+        ScoreAttackCoin[] coins = Object.FindObjectsByType<ScoreAttackCoin>(FindObjectsInactive.Include);
+        ScoreAttackAndroid[] androids = Object.FindObjectsByType<ScoreAttackAndroid>(FindObjectsInactive.Include);
+        System.Array.Sort(coins, (left, right) => string.CompareOrdinal(left.name, right.name));
+        System.Array.Sort(androids, (left, right) => string.CompareOrdinal(left.name, right.name));
+
+        FinalDemoRandomMaxScore generator =
+            new GameObject("FinalDemoRandomMaxScore").AddComponent<FinalDemoRandomMaxScore>();
+        generator.Configure(platforms, coins, androids, goalLock.transform, controller);
+
+        GameObject artRoot = new GameObject("FinalDemo_RandomMaxScore_Art");
+        Sprite sprite = GetSharedSprite();
+        CreateBackdrop(66f, 170f, 8);
+        CreateSecondaryPlatforms(artRoot.transform, CreateMaxEasy(), sprite, 8);
+
+        Camera camera = Object.FindAnyObjectByType<Camera>();
+        if (camera != null)
+        {
+            camera.orthographic = true;
+            camera.orthographicSize = 6.8f;
+            camera.backgroundColor = new Color(0.04f, 0.025f, 0.085f, 1f);
+            DemoCameraFollow2D follow = camera.GetComponent<DemoCameraFollow2D>();
+            if (follow == null)
+            {
+                follow = camera.gameObject.AddComponent<DemoCameraFollow2D>();
+            }
+            follow.SetTarget(agent.transform);
+            SetVector3(follow, "offset", new Vector3(4.8f, 2.8f, -10f));
+            SetFloat(follow, "smoothTime", 0.14f);
+        }
+
+        ValidateRandomMaxScoreScene(scene, agent.gameObject, manager, goalLock, generator, platforms);
+        SaveScene(scene, 8);
+    }
+
+    private static void ValidateRandomMaxScoreScene(
+        Scene scene,
+        GameObject player,
+        ScoreAttackManager manager,
+        ScoreAttackGoalLock goalLock,
+        FinalDemoRandomMaxScore generator,
+        Transform[] platforms)
+    {
+        BehaviorParameters behavior = player.GetComponent<BehaviorParameters>();
+        ScoreAttackCoin[] coins = Object.FindObjectsByType<ScoreAttackCoin>(FindObjectsInactive.Include);
+        ScoreAttackAndroid[] androids = Object.FindObjectsByType<ScoreAttackAndroid>(FindObjectsInactive.Include);
+        if (!scene.IsValid() || generator == null || manager == null || goalLock == null ||
+            platforms == null || platforms.Length != 6 || coins.Length != 7 || androids.Length != 2 ||
+            player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>() == null ||
+            !HasBehaviorContract(
+                behavior,
+                "EdgeRunnerV5ScoreMaxObjectAware",
+                111,
+                RequireAsset<ModelAsset>(MaxScoreModelPath)))
+        {
+            throw new System.InvalidOperationException(
+                "Random MaxScore scene failed its conservative model/objective contract.");
+        }
+    }
+
     private static void ApplyReferencePlatformDifficulty(int levelIndex)
     {
         string[] names =
@@ -424,16 +713,38 @@ public static class BuildER_FinalDemo
 
     private static GameObject CreateSpeedPlayer(Vector3 position, Transform goal)
     {
-        GameObject player = InstantiatePrefab(PlayerPrefabPath, "Player_V5_FinalDemo_SpeedRun");
+        GameObject player = InstantiatePrefab(
+            PlayerPrefabPath,
+            "Player_V5_FinalDemo_SpeedRunObstacleAware");
         player.transform.position = position;
-        EdgeRunnerAgentV5 agent = player.GetComponent<EdgeRunnerAgentV5>();
-        if (agent == null)
+        EdgeRunnerAgentV5 baseAgent = player.GetComponent<EdgeRunnerAgentV5>();
+        if (baseAgent == null)
         {
             throw new System.InvalidOperationException("Player_V5 has no EdgeRunnerAgentV5.");
         }
 
+        string serializedBase = JsonUtility.ToJson(baseAgent);
+        Transform groundCheck =
+            new SerializedObject(baseAgent).FindProperty("groundCheck")?.objectReferenceValue as Transform;
+        EdgeRunnerAgentV5SpeedRunObstacleAware agent =
+            player.AddComponent<EdgeRunnerAgentV5SpeedRunObstacleAware>();
+        JsonUtility.FromJsonOverwrite(serializedBase, agent);
+        Object.DestroyImmediate(baseAgent);
+
         ConfigureBaseAgent(agent, player, goal, null);
-        ConfigureBehavior(player, "EdgeRunnerV5", 55, SpeedModelPath);
+        SetObjectReference(agent, "groundCheck", groundCheck);
+        agent.SetObstacleAwareGoal(goal);
+        SetBool(agent, "maskUselessJumps", true);
+        SetBool(agent, "enforceContextualJumpDiscipline", true);
+        SetBool(agent, "allowElevatedLandingJump", true);
+        SetFloat(agent, "obstacleCollisionPenalty", -6f);
+        SetFloat(agent, "passedAndroidReward", 0.5f);
+        SetBool(agent, "debugObstacleAwareEvents", false);
+        ConfigureBehavior(
+            player,
+            EdgeRunnerAgentV5SpeedRunObstacleAware.ExpectedBehaviorName,
+            EdgeRunnerAgentV5SpeedRunObstacleAware.DefaultExpectedObservationSize,
+            SpeedModelPath);
         EnableDecisions(player);
         return player;
     }
@@ -782,7 +1093,7 @@ public static class BuildER_FinalDemo
             Color color = maxScore
                 ? new Color(0.19f + (i % 3) * 0.015f, 0.22f + (i % 2) * 0.025f, 0.31f, 1f)
                 : new Color(0.15f + (i % 3) * 0.018f, 0.23f, 0.29f + (i % 2) * 0.02f, 1f);
-            CreatePlatform(platformsRoot.transform, spec, sprite, color);
+            CreatePlatform(platformsRoot.transform, spec, sprite, color, !maxScore);
             CreateVisualStrip(
                 platformsRoot.transform,
                 spec.Name + "_NeonTop",
@@ -794,7 +1105,12 @@ public static class BuildER_FinalDemo
         }
     }
 
-    private static void CreatePlatform(Transform parent, PlatformSpec spec, Sprite sprite, Color color)
+    private static void CreatePlatform(
+        Transform parent,
+        PlatformSpec spec,
+        Sprite sprite,
+        Color color,
+        bool useSafeSpeedRunEdges)
     {
         GameObject platform = new GameObject(spec.Name);
         platform.layer = LayerMask.NameToLayer("Ground");
@@ -807,6 +1123,10 @@ public static class BuildER_FinalDemo
         BoxCollider2D collider = platform.AddComponent<BoxCollider2D>();
         collider.isTrigger = false;
         collider.size = Vector2.one;
+        if (useSafeSpeedRunEdges)
+        {
+            collider.edgeRadius = 0.08f;
+        }
     }
 
     private static void CreateSecondaryPlatforms(Transform parent, PlatformSpec[] specs, Sprite sprite, int seed)
@@ -847,23 +1167,61 @@ public static class BuildER_FinalDemo
         GameObject decorations = new GameObject("Speed_Collectible_PowerCells");
         decorations.transform.SetParent(parent, false);
         int count = 0;
-        int stride = levelIndex == 0 ? 3 : 2;
+        const int stride = 2;
         for (int i = 2; i < specs.Length - 1; i += stride)
         {
             PlatformSpec spec = specs[i];
-            GameObject coin = new GameObject($"SpeedPowerCell_{i:00}");
-            coin.transform.SetParent(decorations.transform, false);
-            coin.layer = LayerMask.NameToLayer("Ignore Raycast");
-            coin.transform.position = new Vector3(spec.X, spec.TopY + 1.25f, 0.8f);
-            ConfigurePowerCellVisual(coin, sprite, 0.48f, 8);
-            CircleCollider2D trigger = coin.AddComponent<CircleCollider2D>();
-            trigger.isTrigger = true;
-            trigger.radius = 1.05f;
-            FinalDemoVisualCollectible collectible = coin.AddComponent<FinalDemoVisualCollectible>();
-            collectible.Configure(controller);
-            count++;
+            count += CreateVisualPowerCell(
+                decorations.transform,
+                $"SpeedPowerCell_{i:00}",
+                new Vector3(spec.X, spec.TopY + 1.25f, 0.8f),
+                0.48f,
+                sprite,
+                controller);
+        }
+
+        // One powercell hovering at the apex of every real jump gives the level a legible
+        // "collect trail" and makes long decks feel intentional instead of empty. These are
+        // isolated visual triggers on Ignore Raycast, identical in kind to the deck cells.
+        for (int i = 1; i < specs.Length - 1; i++)
+        {
+            float leftRight = specs[i].X + specs[i].Width * 0.5f;
+            float rightLeft = specs[i + 1].X - specs[i + 1].Width * 0.5f;
+            if (rightLeft - leftRight < 1.5f)
+            {
+                continue;
+            }
+            float apexY = Mathf.Max(specs[i].TopY, specs[i + 1].TopY) + 1.9f;
+            count += CreateVisualPowerCell(
+                decorations.transform,
+                $"SpeedArcPowerCell_{i:00}",
+                new Vector3((leftRight + rightLeft) * 0.5f, apexY, 0.8f),
+                0.42f,
+                sprite,
+                controller);
         }
         return count;
+    }
+
+    private static int CreateVisualPowerCell(
+        Transform parent,
+        string name,
+        Vector3 position,
+        float scale,
+        Sprite sprite,
+        FinalDemoController controller)
+    {
+        GameObject coin = new GameObject(name);
+        coin.transform.SetParent(parent, false);
+        coin.layer = LayerMask.NameToLayer("Ignore Raycast");
+        coin.transform.position = position;
+        ConfigurePowerCellVisual(coin, sprite, scale, 8);
+        CircleCollider2D trigger = coin.AddComponent<CircleCollider2D>();
+        trigger.isTrigger = true;
+        trigger.radius = 1.05f;
+        FinalDemoVisualCollectible collectible = coin.AddComponent<FinalDemoVisualCollectible>();
+        collectible.Configure(controller);
+        return 1;
     }
 
     private static void ConfigurePowerCellVisual(
@@ -899,6 +1257,233 @@ public static class BuildER_FinalDemo
         haloRenderer.sprite = sprite;
         haloRenderer.color = new Color(1f, 0.62f, 0.08f, 0.18f);
         haloRenderer.sortingOrder = sortingOrder - 1;
+    }
+
+    private static void CreateSpeedRunObstacleAndroids(
+        Transform parent,
+        PlatformSpec[] specs,
+        Sprite fallbackSprite,
+        int levelIndex)
+    {
+        GameObject root = new GameObject("SpeedRun_Active_Obstacle_Androids");
+        root.transform.SetParent(parent, false);
+
+        if (levelIndex == 0)
+        {
+            CreateSpeedRunObstacleAndroid(
+                root.transform,
+                "SpeedRunObstacle_Easy_01",
+                specs[1],
+                2f,
+                0.30f,
+                1.0f,
+                fallbackSprite);
+            return;
+        }
+
+        if (levelIndex == 1)
+        {
+            CreateSpeedRunObstacleAndroid(
+                root.transform,
+                "SpeedRunObstacle_Normal_01",
+                specs[1],
+                2f,
+                0.45f,
+                1.2f,
+                fallbackSprite);
+            CreateSpeedRunObstacleAndroid(
+                root.transform,
+                "SpeedRunObstacle_Normal_02",
+                specs[6],
+                0f,
+                0.55f,
+                1.3f,
+                fallbackSprite);
+            return;
+        }
+
+        CreateSpeedRunObstacleAndroid(
+            root.transform,
+            "SpeedRunObstacle_Hard_01",
+            specs[1],
+            1f,
+            0.55f,
+            1.3f,
+            fallbackSprite);
+        CreateSpeedRunObstacleAndroid(
+            root.transform,
+            "SpeedRunObstacle_Hard_02",
+            specs[7],
+            0f,
+            0.68f,
+            1.5f,
+            fallbackSprite);
+    }
+
+    private static GameObject CreateSpeedRunObstacleAndroid(
+        Transform parent,
+        string name,
+        PlatformSpec platform,
+        float xOffset,
+        float patrolSpeed,
+        float patrolDistance,
+        Sprite fallbackSprite)
+    {
+        GameObject androidPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(AndroidPrefabPath);
+        GameObject android = androidPrefab != null
+            ? PrefabUtility.InstantiatePrefab(androidPrefab) as GameObject
+            : CreateSimpleAndroid(name, fallbackSprite, new Color(0.42f, 0.48f, 0.55f, 1f));
+        if (android == null)
+        {
+            throw new System.InvalidOperationException($"Could not instantiate {AndroidPrefabPath}.");
+        }
+        android.name = name;
+        android.transform.SetParent(parent, false);
+        Vector3 targetPosition = new Vector3(
+            platform.X + xOffset,
+            platform.TopY + 1f,
+            0f);
+        android.transform.position = targetPosition;
+        android.transform.localScale = new Vector3(0.95f, 1.2f, 1f);
+
+        DestroyAndroidComponents<DemoEnemyHazard>(android);
+        DestroyAndroidComponents<ScoreAttackAndroid>(android);
+        DestroyAndroidComponents<StompableAndroidEnemy>(android);
+        DestroyAndroidComponents<StompableAndroidStompZone>(android);
+        DestroyAndroidComponents<StompableAndroidSideHazard>(android);
+
+        Collider2D collider = android.GetComponent<Collider2D>();
+        if (collider == null)
+        {
+            collider = android.AddComponent<BoxCollider2D>();
+        }
+        collider.enabled = true;
+        collider.isTrigger = true;
+
+        Rigidbody2D body = android.GetComponent<Rigidbody2D>();
+        if (body == null)
+        {
+            body = android.AddComponent<Rigidbody2D>();
+        }
+        body.bodyType = RigidbodyType2D.Kinematic;
+        body.gravityScale = 0f;
+        body.freezeRotation = true;
+        body.linearVelocity = Vector2.zero;
+
+        DemoAndroidPatrol patrol = android.GetComponent<DemoAndroidPatrol>();
+        if (patrol == null)
+        {
+            patrol = android.AddComponent<DemoAndroidPatrol>();
+        }
+        patrol.Configure(patrolSpeed, patrolDistance);
+        patrol.enabled = patrolSpeed > 0.01f;
+
+        EdgeRunnerEnemyMarker marker = android.GetComponent<EdgeRunnerEnemyMarker>();
+        if (marker == null)
+        {
+            marker = android.AddComponent<EdgeRunnerEnemyMarker>();
+        }
+        marker.SetAffectsAgent(true);
+        marker.SetAlive(true);
+        SetBool(marker, "isActiveEnemy", true);
+        SetBool(marker, "isDangerous", true);
+        SetObjectReference(marker, "visualRoot", android.transform);
+        SetObjectReference(marker, "enemyCollider", collider);
+
+        SpeedRunObstacleHazard hazard = android.GetComponent<SpeedRunObstacleHazard>();
+        if (hazard == null)
+        {
+            hazard = android.AddComponent<SpeedRunObstacleHazard>();
+        }
+        hazard.SetAffectsAgent(true);
+        Collider2D obstacleCollider = FindSpeedRunObstacleCollider(android, hazard);
+        AlignSpeedRunObstacleToPlatform(
+            android,
+            body,
+            obstacleCollider,
+            platform.TopY);
+        SetObjectReference(marker, "enemyCollider", obstacleCollider);
+        android.name = name;
+        return android;
+    }
+
+    private static Collider2D FindSpeedRunObstacleCollider(
+        GameObject android,
+        SpeedRunObstacleHazard hazard)
+    {
+        Collider2D hazardCollider = hazard != null ? hazard.GetComponent<Collider2D>() : null;
+        if (hazardCollider != null && hazardCollider.enabled)
+        {
+            return hazardCollider;
+        }
+
+        Collider2D[] colliders = android.GetComponentsInChildren<Collider2D>(true);
+        Collider2D largest = null;
+        float largestArea = float.NegativeInfinity;
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            Collider2D candidate = colliders[i];
+            if (candidate == null || !candidate.enabled)
+            {
+                continue;
+            }
+
+            Vector2 size = candidate.bounds.size;
+            float area = size.x * size.y;
+            if (area > largestArea)
+            {
+                largest = candidate;
+                largestArea = area;
+            }
+        }
+
+        if (largest == null)
+        {
+            throw new System.InvalidOperationException(
+                $"SpeedRun obstacle '{android.name}' has no enabled Collider2D to align.");
+        }
+        return largest;
+    }
+
+    private static void AlignSpeedRunObstacleToPlatform(
+        GameObject android,
+        Rigidbody2D body,
+        Collider2D obstacleCollider,
+        float platformTopY)
+    {
+        Physics2D.SyncTransforms();
+        float targetBottomY = platformTopY + SpeedObstaclePlatformClearance;
+        float deltaY = targetBottomY - obstacleCollider.bounds.min.y;
+        Vector3 alignedPosition = android.transform.position + Vector3.up * deltaY;
+        android.transform.position = alignedPosition;
+        if (body != null)
+        {
+            body.position = alignedPosition;
+        }
+        Physics2D.SyncTransforms();
+
+        float finalClearance = obstacleCollider.bounds.min.y - platformTopY;
+        if (Mathf.Abs(finalClearance - SpeedObstaclePlatformClearance) >
+            SpeedObstacleAlignmentTolerance)
+        {
+            Debug.LogWarning(
+                $"[FINAL DEMO] SpeedRun obstacle '{android.name}' collider alignment differs " +
+                $"from its platform: clearance={finalClearance:F3} m, " +
+                $"expected={SpeedObstaclePlatformClearance:F3} m.",
+                android);
+        }
+    }
+
+    private static void DestroyAndroidComponents<T>(GameObject root) where T : Component
+    {
+        T[] components = root.GetComponentsInChildren<T>(true);
+        for (int i = 0; i < components.Length; i++)
+        {
+            if (components[i] != null)
+            {
+                Object.DestroyImmediate(components[i]);
+            }
+        }
     }
 
     private static void CreateVisualPatrolAndroids(
@@ -1094,24 +1679,50 @@ public static class BuildER_FinalDemo
         renderer.sortingOrder = sortingOrder;
     }
 
-    private static void ValidateSpeedScene(Scene scene, GameObject player, float goalX, PlatformSpec[] platforms)
+    private static void ValidateSpeedScene(
+        Scene scene,
+        GameObject player,
+        float goalX,
+        PlatformSpec[] platforms,
+        int levelIndex)
     {
         BehaviorParameters behavior = player.GetComponent<BehaviorParameters>();
+        EdgeRunnerAgentV5SpeedRunObstacleAware obstacleAwareAgent =
+            player.GetComponent<EdgeRunnerAgentV5SpeedRunObstacleAware>();
+        SpeedRunObstacleHazard[] hazards =
+            Object.FindObjectsByType<SpeedRunObstacleHazard>(FindObjectsInactive.Include);
+        EdgeRunnerEnemyMarker[] markers =
+            Object.FindObjectsByType<EdgeRunnerEnemyMarker>(FindObjectsInactive.Include);
+        DemoAndroidPatrol[] patrols =
+            Object.FindObjectsByType<DemoAndroidPatrol>(FindObjectsInactive.Include);
+        int expectedObstacleCount = levelIndex == 0 ? 1 : 2;
         if (scene.GetRootGameObjects().Length == 0 ||
             player.GetComponents<EdgeRunnerAgentV5>().Length != 1 ||
+            obstacleAwareAgent == null ||
             player.GetComponent<EdgeRunnerAgentV5ScoreMaxObjectAware>() != null ||
-            behavior == null || behavior.BehaviorName != "EdgeRunnerV5" ||
-            behavior.BehaviorType != BehaviorType.InferenceOnly ||
-            behavior.Model != RequireAsset<ModelAsset>(SpeedModelPath) ||
+            !HasBehaviorContract(
+                behavior,
+                EdgeRunnerAgentV5SpeedRunObstacleAware.ExpectedBehaviorName,
+                EdgeRunnerAgentV5SpeedRunObstacleAware.DefaultExpectedObservationSize,
+                RequireAsset<ModelAsset>(SpeedModelPath)) ||
             player.GetComponent<DemoSprintVisual>() == null ||
             player.GetComponent<TrailRenderer>() == null ||
-            goalX < 100f || platforms.Length < 9)
+            hazards.Length != expectedObstacleCount ||
+            markers.Length != expectedObstacleCount ||
+            patrols.Length != expectedObstacleCount ||
+            goalX < 100f || platforms.Length < 6)
         {
             throw new System.InvalidOperationException("SpeedRun final demo contract validation failed.");
         }
         if (Object.FindObjectsByType<ScoreAttackAndroid>(FindObjectsInactive.Include).Length != 0)
         {
-            throw new System.InvalidOperationException("SpeedRun demo must not contain active Android hazards.");
+            throw new System.InvalidOperationException("SpeedRun must not contain ScoreAttack Androids.");
+        }
+        if (Object.FindObjectsByType<StompableAndroidEnemy>(FindObjectsInactive.Include).Length != 0 ||
+            Object.FindObjectsByType<StompableAndroidStompZone>(FindObjectsInactive.Include).Length != 0 ||
+            Object.FindObjectsByType<StompableAndroidSideHazard>(FindObjectsInactive.Include).Length != 0)
+        {
+            throw new System.InvalidOperationException("SpeedRunObstacleAware must not contain stomp or bounce components.");
         }
         if (Object.FindObjectsByType<ScoreAttackCoin>(FindObjectsInactive.Include).Length != 0)
         {
@@ -1119,9 +1730,51 @@ public static class BuildER_FinalDemo
                 "SpeedRun visual coins must not use ScoreAttackCoin or affect the objective.");
         }
         ValidateSpeedCollectibles();
-        ValidateVisualPatrols(false);
+        ValidateSpeedRunObstacleAndroids(hazards, markers, patrols);
         ValidatePlatformFlow(platforms, 5.0f);
         ValidateCleanVisualDecorations();
+    }
+
+    private static void ValidateSpeedRunObstacleAndroids(
+        SpeedRunObstacleHazard[] hazards,
+        EdgeRunnerEnemyMarker[] markers,
+        DemoAndroidPatrol[] patrols)
+    {
+        for (int i = 0; i < hazards.Length; i++)
+        {
+            SpeedRunObstacleHazard hazard = hazards[i];
+            Collider2D collider = FindSpeedRunObstacleCollider(hazard.gameObject, hazard);
+            EdgeRunnerEnemyMarker marker = hazard.GetComponent<EdgeRunnerEnemyMarker>();
+            DemoAndroidPatrol patrol = hazard.GetComponent<DemoAndroidPatrol>();
+            bool hasSupport = TryGetSupportingPlatformTop(
+                hazard.transform.position.x,
+                hazard.transform.position.y,
+                out float topY);
+            if (!hazard.AffectsAgent || collider == null || !collider.enabled || !collider.isTrigger ||
+                marker == null || !marker.AffectsAgent || !marker.IsActiveEnemy ||
+                !marker.IsAlive || !marker.IsDangerous || patrol == null || !patrol.enabled ||
+                hazard.GetComponent<ScoreAttackAndroid>() != null ||
+                hazard.GetComponent<StompableAndroidEnemy>() != null ||
+                !hasSupport)
+            {
+                throw new System.InvalidOperationException(
+                    $"SpeedRun obstacle '{hazard.name}' is not a valid lethal Android patrol: " +
+                    $"position={hazard.transform.position}, affects={hazard.AffectsAgent}, " +
+                    $"collider={(collider != null ? $"enabled={collider.enabled},trigger={collider.isTrigger}" : "missing")}, " +
+                    $"marker={(marker != null ? $"affects={marker.AffectsAgent},active={marker.IsActiveEnemy},alive={marker.IsAlive},dangerous={marker.IsDangerous}" : "missing")}, " +
+                    $"patrol={(patrol != null ? $"enabled={patrol.enabled}" : "missing")}, support={hasSupport}.");
+            }
+
+            float colliderClearance = collider.bounds.min.y - topY;
+            if (Mathf.Abs(colliderClearance - SpeedObstaclePlatformClearance) >
+                SpeedObstacleAlignmentTolerance)
+            {
+                Debug.LogWarning(
+                    $"[FINAL DEMO] SpeedRun obstacle '{hazard.name}' is not flush with its " +
+                    $"supporting platform: clearance={colliderClearance:F3} m.",
+                    hazard);
+            }
+        }
     }
 
     private static void ValidateSpeedCollectibles()
@@ -1181,6 +1834,34 @@ public static class BuildER_FinalDemo
         ValidateMaxScoreObjectPlacement(coins, androids);
         ValidateVisualPatrols(true);
         ValidateCleanVisualDecorations();
+    }
+
+    private static bool HasBehaviorContract(
+        BehaviorParameters behavior,
+        string expectedName,
+        int expectedObservations,
+        ModelAsset expectedModel)
+    {
+        if (behavior == null || behavior.BehaviorName != expectedName ||
+            behavior.BehaviorType != BehaviorType.InferenceOnly ||
+            behavior.Model != expectedModel)
+        {
+            return false;
+        }
+
+        SerializedObject serialized = new SerializedObject(behavior);
+        SerializedProperty observationSize =
+            serialized.FindProperty("m_BrainParameters.VectorObservationSize");
+        SerializedProperty continuousActions =
+            serialized.FindProperty("m_BrainParameters.m_ActionSpec.m_NumContinuousActions");
+        SerializedProperty branches =
+            serialized.FindProperty("m_BrainParameters.m_ActionSpec.BranchSizes");
+        return observationSize != null && observationSize.intValue == expectedObservations &&
+               continuousActions != null && continuousActions.intValue == 0 &&
+               branches != null && branches.arraySize == 3 &&
+               branches.GetArrayElementAtIndex(0).intValue == 3 &&
+               branches.GetArrayElementAtIndex(1).intValue == 2 &&
+               branches.GetArrayElementAtIndex(2).intValue == 2;
     }
 
     private static void ValidateMaxScoreObjectPlacement(
@@ -1283,7 +1964,7 @@ public static class BuildER_FinalDemo
             }
             Bounds bounds = collider.bounds;
             if (x < bounds.min.x - 0.01f || x > bounds.max.x + 0.01f ||
-                bounds.max.y > objectY + 0.05f)
+                bounds.max.y > objectY - 0.2f)
             {
                 continue;
             }
@@ -1317,16 +1998,40 @@ public static class BuildER_FinalDemo
         PlatformSpec[] easy = CreateSpeedEasy();
         PlatformSpec[] normal = CreateSpeedNormal();
         PlatformSpec[] hard = CreateSpeedHard();
-        if (easy.Length != 9 || normal.Length != 13 || hard.Length != 16 ||
+        if (easy.Length != 9 || normal.Length != 10 || hard.Length != 13 ||
             easy.Length >= normal.Length || normal.Length >= hard.Length ||
             easy[easy.Length - 1].X >= normal[normal.Length - 1].X ||
             normal[normal.Length - 1].X >= hard[hard.Length - 1].X ||
-            SpeedGoalX[0] < 100f || SpeedGoalX[0] > 120f ||
-            SpeedGoalX[1] < 140f || SpeedGoalX[1] > 170f ||
-            SpeedGoalX[2] < 180f || SpeedGoalX[2] > 220f)
+            SpeedGoalX[0] < 160f || SpeedGoalX[0] > 190f ||
+            SpeedGoalX[1] < 190f || SpeedGoalX[1] > 230f ||
+            SpeedGoalX[2] < 230f || SpeedGoalX[2] > 280f)
         {
             throw new System.InvalidOperationException(
                 "SpeedRun Easy, Normal, and Hard must have clearly distinct lengths and platform counts.");
+        }
+
+        ValidateObstacleRunway(easy[1], 2f, 1.0f, "Easy Android 01");
+        ValidateObstacleRunway(normal[1], 2f, 1.2f, "Normal Android 01");
+        ValidateObstacleRunway(normal[6], 0f, 1.3f, "Normal Android 02");
+        ValidateObstacleRunway(hard[1], 1f, 1.3f, "Hard Android 01");
+        ValidateObstacleRunway(hard[7], 0f, 1.5f, "Hard Android 02");
+    }
+
+    private static void ValidateObstacleRunway(
+        PlatformSpec platform,
+        float androidOffset,
+        float patrolDistance,
+        string label)
+    {
+        float halfWidth = platform.Width * 0.5f;
+        float halfPatrol = patrolDistance * 0.5f;
+        float before = halfWidth + androidOffset - halfPatrol;
+        float after = halfWidth - androidOffset - halfPatrol;
+        if (before < 8f || after < 8f)
+        {
+            throw new System.InvalidOperationException(
+                $"{label} requires at least 8 m of flat runway before and after: " +
+                $"before={before:F2}, after={after:F2}.");
         }
     }
 
@@ -1442,52 +2147,46 @@ public static class BuildER_FinalDemo
 
     private static PlatformSpec[] CreateSpeedEasy() => new[]
     {
-        new PlatformSpec("E01_StartDeck", 6f, 0f, 16f),
-        new PlatformSpec("E02_FirstLanding", 19f, 0.2f, 7f),
-        new PlatformSpec("E03_SafeRise", 29.5f, 0.6f, 10f),
-        new PlatformSpec("E04_GentleDrop", 41f, 0.15f, 9f),
-        new PlatformSpec("E05_WideRecovery", 52.5f, 0.75f, 10f),
-        new PlatformSpec("E06_MidLanding", 65f, 0.3f, 9f),
-        new PlatformSpec("E07_UpperRun", 77f, 0.9f, 10f),
-        new PlatformSpec("E08_FinalRecovery", 90f, 0.4f, 10f),
-        new PlatformSpec("E09_GoalDeck", 104.5f, 0.55f, 15f)
+        new PlatformSpec("E01_StartDeck", 8f, 0f, 20f),
+        new PlatformSpec("E02_LongFlatAndroidDeck", 40.5f, 0f, 42f),
+        new PlatformSpec("E03_WideRecovery", 70.5f, 0f, 14f),
+        new PlatformSpec("E04_GentleRise", 86.3f, 0.8f, 14f),
+        new PlatformSpec("E05_HighStep", 102.1f, 1.4f, 14f),
+        new PlatformSpec("E06_ControlledDrop", 118.7f, 0.6f, 14f),
+        new PlatformSpec("E07_WideRecovery", 136.5f, 0f, 16f),
+        new PlatformSpec("E08_PreGoalRise", 154.5f, 0.5f, 16f),
+        new PlatformSpec("E09_GoalDeck", 172.5f, 0.55f, 16f)
     };
 
     private static PlatformSpec[] CreateSpeedNormal() => new[]
     {
-        new PlatformSpec("N01_StartDeck", 6f, 0f, 16f),
-        new PlatformSpec("N02_FirstStep", 20f, 0.4f, 8f),
-        new PlatformSpec("N03_UpperRoof", 31.5f, 0.9f, 11f),
-        new PlatformSpec("N04_LowLanding", 44f, 0.25f, 8f),
-        new PlatformSpec("N05_LongClimb", 56.5f, 1.1f, 11f),
-        new PlatformSpec("N06_MidDrop", 69.5f, 0.55f, 9f),
-        new PlatformSpec("N07_WideRecovery", 82.5f, 0.1f, 11f),
-        new PlatformSpec("N08_SecondRise", 95.5f, 0.75f, 9f),
-        new PlatformSpec("N09_HighRun", 108.5f, 1.25f, 11f),
-        new PlatformSpec("N10_DeepRecovery", 121.5f, 0.45f, 9f),
-        new PlatformSpec("N11_FinalRise", 134.5f, 0.9f, 11f),
-        new PlatformSpec("N12_LastDrop", 147.5f, 0.2f, 9f),
-        new PlatformSpec("N13_GoalDeck", 160f, 0.55f, 14f)
+        new PlatformSpec("N01_StartDeck", 8f, 0f, 20f),
+        new PlatformSpec("N02_LongFlatAndroidDeck", 40f, 0f, 40f),
+        new PlatformSpec("N03_Recovery", 69.2f, 0f, 14f),
+        new PlatformSpec("N04_Rise", 85.4f, 1f, 14f),
+        new PlatformSpec("N05_HighDeck", 102.6f, 1.8f, 16f),
+        new PlatformSpec("N06_ControlledDrop", 121f, 0.5f, 16f),
+        new PlatformSpec("N07_AndroidDeck02", 143.2f, 0.4f, 24f),
+        new PlatformSpec("N08_SecondRise", 164.4f, 1.1f, 14f),
+        new PlatformSpec("N09_PreGoalDrop", 180.6f, 0.5f, 14f),
+        new PlatformSpec("N10_GoalDeck", 197.8f, 0.55f, 16f)
     };
 
     private static PlatformSpec[] CreateSpeedHard() => new[]
     {
-        new PlatformSpec("H01_StartDeck", 6f, 0f, 16f),
-        new PlatformSpec("H02_NarrowRise", 21f, 0.6f, 8f),
-        new PlatformSpec("H03_HighRun", 33f, 1.2f, 10f),
-        new PlatformSpec("H04_DeepDrop", 46f, 0.3f, 10f),
-        new PlatformSpec("H05_ClimbA", 59.5f, 1f, 11f),
-        new PlatformSpec("H06_ClimbB", 73f, 1.6f, 10f),
-        new PlatformSpec("H07_LongDrop", 86.5f, 0.7f, 11f),
-        new PlatformSpec("H08_LowBridge", 100f, 0f, 10f),
-        new PlatformSpec("H09_RecoveryRise", 113.5f, 0.9f, 11f),
-        new PlatformSpec("H10_HighSequenceA", 127f, 1.5f, 10f),
-        new PlatformSpec("H11_HighSequenceB", 140.5f, 0.5f, 11f),
-        new PlatformSpec("H12_UpperRecovery", 154f, 1.2f, 10f),
-        new PlatformSpec("H13_LowSequence", 167.5f, 0.2f, 11f),
-        new PlatformSpec("H14_FinalRise", 181f, 1f, 10f),
-        new PlatformSpec("H15_LastLanding", 194.5f, 0.45f, 11f),
-        new PlatformSpec("H16_GoalDeck", 208f, 0.75f, 14f)
+        new PlatformSpec("H01_StartDeck", 8f, 0f, 20f),
+        new PlatformSpec("H02_LongFlatAndroidDeck01", 41f, 0f, 42f),
+        new PlatformSpec("H03_FirstRecovery", 72.2f, 0f, 16f),
+        new PlatformSpec("H04_LowStep", 89.4f, 0.7f, 14f),
+        new PlatformSpec("H05_HighDeck", 106.6f, 2f, 16f),
+        new PlatformSpec("H06_HighRecovery", 123.8f, 1.8f, 14f),
+        new PlatformSpec("H07_ControlledDrop", 141.2f, 0.6f, 16f),
+        new PlatformSpec("H08_LongFlatAndroidDeck02", 164.4f, 0.6f, 26f),
+        new PlatformSpec("H09_SecondStep", 186.6f, 1.3f, 14f),
+        new PlatformSpec("H10_SecondHigh", 203.8f, 2f, 16f),
+        new PlatformSpec("H11_DropRecovery", 222.2f, 0.5f, 16f),
+        new PlatformSpec("H12_PreGoalRise", 239.4f, 1f, 14f),
+        new PlatformSpec("H13_GoalDeck", 256.6f, 0.6f, 16f)
     };
 
     private static PlatformSpec[] CreateMaxEasy() => new[]
