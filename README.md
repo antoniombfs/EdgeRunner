@@ -2,7 +2,7 @@
 
 ## Versão de entrega
 
-A versão final de entrega deste projeto corresponde à tag **`v1.0-final-submission`** (branch `final-polish-training-levels`). Este repositório deve ser avaliado a partir dessa tag, e não a partir do estado geral da branch ou de protótipos mais antigos.
+A versão final de entrega deste projeto corresponde à tag **`v1.0-final-submission-readme`** (branch `final-polish-training-levels`). Este repositório deve ser avaliado a partir dessa tag, e não a partir do estado geral da branch ou de protótipos mais antigos.
 
 ## Sobre a demo
 
