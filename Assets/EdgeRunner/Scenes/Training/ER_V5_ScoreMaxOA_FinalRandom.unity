@@ -132,8 +132,16 @@ PrefabInstance:
       value: Player_V5_ScoreMaxObjectAware
       objectReference: {fileID: 0}
     - target: {fileID: 2447396281889591426, guid: 3c95d7c01229436088532f20210d1bb1, type: 3}
+      propertyPath: m_Model
+      value: 
+      objectReference: {fileID: 5022602860645237092, guid: e544cf563203f93458bc4913af34256f, type: 3}
+    - target: {fileID: 2447396281889591426, guid: 3c95d7c01229436088532f20210d1bb1, type: 3}
       propertyPath: m_BehaviorName
       value: EdgeRunnerV5ScoreMaxObjectAware
+      objectReference: {fileID: 0}
+    - target: {fileID: 2447396281889591426, guid: 3c95d7c01229436088532f20210d1bb1, type: 3}
+      propertyPath: m_BehaviorType
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 2447396281889591426, guid: 3c95d7c01229436088532f20210d1bb1, type: 3}
       propertyPath: m_BrainParameters.VectorObservationSize
@@ -395,6 +403,7 @@ MonoBehaviour:
   debugObjectAwareNextObjective: 0
   debugObjectAwareJumpContext: 0
   debugObjectAwareGizmos: 0
+  debugObjectAwareFinalLongValidation: 0
   debugObjectAwareLogInterval: 1
 --- !u!1 &205603945
 GameObject:

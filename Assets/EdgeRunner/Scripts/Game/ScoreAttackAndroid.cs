@@ -219,7 +219,13 @@ public class ScoreAttackAndroid : MonoBehaviour, IEdgeRunnerResettable
 
     private void KillByStomp(EdgeRunnerAgentV5 agent, Rigidbody2D playerBody)
     {
-        if (agent is EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent &&
+        // In Manual mode, skip the agent's ordered-curriculum accept/reject check entirely.
+        // TryAcceptScoreAttackAndroidStomp only accepts a stomp when this Android is exactly
+        // the model's "expected next objective" in trained order — a free-form human player
+        // has no reason to approach Androids/coins in that order. IsValidStomp (checked by the
+        // caller before KillByStomp is invoked) already confirmed this is a real, valid stomp.
+        if (!FinalDemoController.IsManualControlActive &&
+            agent is EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent &&
             !objectAwareAgent.TryAcceptScoreAttackAndroidStomp(this))
         {
             return;

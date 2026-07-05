@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Unity.MLAgents;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -85,6 +86,17 @@ public class FinalDemoController : MonoBehaviour
     private bool telemetryEnabled;
     private float nextTelemetryTime;
     private EdgeRunnerAgentV5 trackedAgent;
+    // Persists across scene loads (menu -> level, level -> level via N/1-6/R) so the choice
+    // made in the menu keeps applying without needing to revisit the menu each time.
+    // Agent (false) is the default and exactly matches pre-existing behavior when untouched.
+    private static bool manualControlEnabled = false;
+
+    // Read-only, so nothing outside this class can flip it — only ScoreAttackCoin/
+    // ScoreAttackAndroid check this, to bypass EdgeRunnerAgentV5ScoreMaxObjectAware's ordered-
+    // curriculum accept/reject checks (trained-order enforcement that a free-form human player
+    // cannot be expected to follow) while Manual is active. Agent mode never reads true here,
+    // so its behavior is completely unaffected.
+    public static bool IsManualControlActive => manualControlEnabled;
     private int visualCollectiblesCollected;
     [SerializeField]
     private int visualCollectibleTotal;
@@ -125,6 +137,203 @@ public class FinalDemoController : MonoBehaviour
         Debug.Log($"[FINAL DEMO SUCCESS] Level {levelIndex + 1} completed. Run={completedRuns}.");
     }
 
+    // Same restart path as the R key (and already used by Random Speed/Score's own reload).
+    // Reusing it for Manual's goal/DeathZone handling means Manual gets an identical, already
+    // proven reset — repositioning, ScoreAttackManager, coins/Androids and the manual
+    // controller are all re-created fresh by the scene reload, with zero dependency on
+    // EdgeRunnerAgentV5's own EndEpisode()/OnEpisodeBegin() pipeline.
+    public void RestartCurrentLevel()
+    {
+        if (levelIndex == 6)
+        {
+            FinalDemoRandomSpeedRun.ReloadSameSeed();
+        }
+        else if (levelIndex == 7)
+        {
+            FinalDemoRandomMaxScore.ReloadSameSeed();
+        }
+        else
+        {
+            SceneManager.LoadScene(SceneManager.GetActiveScene().name);
+        }
+    }
+
+    // Set while a Manual goal-completion restart is pending; checked every frame from Update()
+    // (see below) instead of a StartCoroutine/WaitForSeconds. WaitForSeconds is driven by
+    // Time.timeScale, and DeathZone's own Manual path (hotfix10, confirmed working) calls
+    // RestartCurrentLevel() immediately with no delay at all — the coroutine/delay was the one
+    // structural difference between the two paths, so this removes that dependency entirely
+    // and reuses the exact same Update() loop that already reliably drives HUD/hotkeys/
+    // ApplyControlMode() every frame in this class.
+    private bool manualGoalCompletionPending;
+    private float manualGoalCompletionRestartTime;
+
+    // Called by ScoreAttackGoalLock instead of EdgeRunnerAgentV5.GoalReached() when Manual is
+    // active. Manual cannot rely on the Agent's own EndEpisode()/OnEpisodeBegin() reset (that
+    // pipeline runs the ObjectAware curriculum's own internal state, which a free-form human
+    // player does not keep consistent — see ScoreAttackCoin/ScoreAttackAndroid's Manual bypass
+    // for the same reasoning). Shows the same "OBJETIVO CONCLUÍDO" banner as Agent mode, then
+    // reuses the exact same restart path as the R key/DeathZone after a short delay so the
+    // banner is actually visible before the scene reloads.
+    public void CompleteLevelManual()
+    {
+        if (manualGoalCompletionPending)
+        {
+            return;
+        }
+
+        manualGoalCompletionPending = true;
+        manualGoalCompletionRestartTime = Time.unscaledTime + 2.5f;
+        NotifyGoalReached();
+    }
+
+    // Tracks whether ApplyControlMode has already done its one-time setup (adding/configuring
+    // DemoManualPlayerController and, for MaxScore, DemoSprintVisual) for the current level.
+    private bool controlModeInitialized;
+    private bool warnedDecisionRequesterReenabled;
+    private bool warnedStartupGateReenabled;
+
+    // Switches between Agent (inference) and Manual control.
+    //
+    // hotfix7 disabled the whole Agent component (trackedAgent.enabled = false) while Manual
+    // was active. That broke MaxScore: ScoreAttackCoin/ScoreAttackAndroid call methods directly
+    // on EdgeRunnerAgentV5ScoreMaxObjectAware (TryAcceptScoreAttackCoinCollection /
+    // TryAcceptScoreAttackAndroidStomp) to decide whether a pickup/stomp counts, and those
+    // methods drive the ObjectAware curriculum's "next expected objective" bookkeeping and the
+    // reward/episode pipeline inherited from ML-Agents' Agent base class. Disabling the whole
+    // component mid-scene disrupts that bookkeeping (observed: high coins triggering a reset,
+    // the next low coin becoming uncollectable, Androids no longer stomping, any contact with
+    // an Android resetting the level) — plain C# method calls on a disabled component still run,
+    // but the Agent's own Unity/ML-Agents lifecycle (which that bookkeeping depends on) does not.
+    //
+    // Root cause of the original "auto-jump" bug this was trying to fix: for MaxScore levels,
+    // FinalDemoMaxScoreStartupGate (Assets/EdgeRunner/Scripts/Demo/FinalDemoMaxScoreStartupGate.cs)
+    // intentionally re-enables the agent component and its DecisionRequester over its own
+    // delayed coroutine (1-2 frames after scene start), silently overwriting a one-shot disable.
+    // The fix here is narrower: leave the Agent component enabled (so MaxScore's coin/Android/
+    // stomp/GoalLock logic keeps working exactly as before), and only ever block decision-making
+    // itself — disabling DecisionRequester (so OnActionReceived is never invoked) and, on
+    // MaxScore, also disabling FinalDemoMaxScoreStartupGate so it can't re-enable that
+    // DecisionRequester after the fact. Both are re-asserted every frame from Update(), so
+    // nothing can silently undo the Manual choice.
+    private void ApplyControlMode()
+    {
+        if (trackedAgent == null)
+        {
+            trackedAgent = FindAnyObjectByType<EdgeRunnerAgentV5>();
+        }
+        if (trackedAgent == null)
+        {
+            return;
+        }
+
+        DecisionRequester decisionRequester = trackedAgent.GetComponent<DecisionRequester>();
+        DemoManualPlayerController manualController = trackedAgent.GetComponent<DemoManualPlayerController>();
+        // Only present on MaxScore levels; re-enables the agent/requester itself a couple of
+        // frames after scene start, so it must be neutralized too while Manual is active.
+        FinalDemoMaxScoreStartupGate startupGate = trackedAgent.GetComponent<FinalDemoMaxScoreStartupGate>();
+
+        if (manualControlEnabled)
+        {
+            // Diagnostic: confirms (once) whenever something re-enabled either component behind
+            // our back since the last frame, before we force it off again this frame.
+            if (decisionRequester != null && decisionRequester.enabled && !warnedDecisionRequesterReenabled)
+            {
+                Debug.LogWarning("[MANUAL DIAGNOSTIC] DecisionRequester was re-enabled while Manual is active; forcing it off again.");
+                warnedDecisionRequesterReenabled = true;
+            }
+            if (startupGate != null && startupGate.enabled && !warnedStartupGateReenabled)
+            {
+                Debug.LogWarning("[MANUAL DIAGNOSTIC] FinalDemoMaxScoreStartupGate was (re-)enabled while Manual is active; forcing it off again.");
+                warnedStartupGateReenabled = true;
+            }
+
+            if (decisionRequester != null)
+            {
+                decisionRequester.enabled = false;
+            }
+            if (startupGate != null)
+            {
+                startupGate.enabled = false;
+            }
+
+            if (!controlModeInitialized)
+            {
+                Rigidbody2D rb = trackedAgent.GetComponent<Rigidbody2D>();
+                if (rb != null)
+                {
+                    rb.linearVelocity = Vector2.zero;
+                }
+
+                if (manualController == null)
+                {
+                    manualController = trackedAgent.gameObject.AddComponent<DemoManualPlayerController>();
+                }
+                Collider2D bodyCollider = trackedAgent.GetComponent<Collider2D>();
+                LayerMask groundMask = 1 << LayerMask.NameToLayer("Ground");
+                manualController.Configure(rb, bodyCollider, groundMask);
+                manualController.enabled = true;
+
+                // MaxScore's reference-scene player never has a DemoSprintVisual (only the
+                // SpeedRun builder adds one) — add it lazily here so Manual mode shows the same
+                // sprint feedback in both modes. It reads raw Rigidbody2D speed, so it works
+                // correctly regardless of whether Manual or the agent drives movement. Only
+                // done inside this Manual-only branch so MaxScore's Agent-mode look is untouched.
+                if (trackedAgent.GetComponent<DemoSprintVisual>() == null)
+                {
+                    AddSprintVisualIfMissing(trackedAgent.gameObject, rb);
+                }
+
+                controlModeInitialized = true;
+            }
+        }
+        else
+        {
+            if (manualController != null)
+            {
+                manualController.enabled = false;
+            }
+            if (decisionRequester != null)
+            {
+                decisionRequester.enabled = true;
+            }
+            // trackedAgent.enabled is deliberately never touched here — it must stay enabled
+            // at all times (see comment above ApplyControlMode).
+            controlModeInitialized = false;
+        }
+    }
+
+    // Mirrors BuildER_FinalDemo.ConfigureSprintVisual (used at scene-build time for SpeedRun)
+    // as closely as possible, minus the editor-only AssetDatabase material lookup — this runs
+    // in the built Player, so the trail reuses the player sprite's own material instead.
+    private static void AddSprintVisualIfMissing(GameObject player, Rigidbody2D rb)
+    {
+        SpriteRenderer spriteRenderer = player.GetComponentInChildren<SpriteRenderer>();
+        TrailRenderer trail = player.GetComponent<TrailRenderer>();
+        if (trail == null)
+        {
+            trail = player.AddComponent<TrailRenderer>();
+        }
+        trail.time = 0.28f;
+        trail.startWidth = 0.30f;
+        trail.endWidth = 0.02f;
+        trail.minVertexDistance = 0.05f;
+        trail.numCornerVertices = 3;
+        trail.numCapVertices = 2;
+        trail.autodestruct = false;
+        trail.enabled = true;
+        trail.emitting = false;
+        trail.startColor = new Color(0.25f, 0.95f, 1f, 0.68f);
+        trail.endColor = new Color(0.18f, 0.55f, 1f, 0f);
+        if (spriteRenderer != null && spriteRenderer.sharedMaterial != null)
+        {
+            trail.sharedMaterial = spriteRenderer.sharedMaterial;
+        }
+
+        DemoSprintVisual sprintVisual = player.AddComponent<DemoSprintVisual>();
+        sprintVisual.Configure(rb, spriteRenderer, trail);
+    }
+
     private void Start()
     {
         ApplyRuntimeVisualPolish();
@@ -135,6 +344,7 @@ public class FinalDemoController : MonoBehaviour
             levelStartUnscaledTime = Time.unscaledTime;
             fpsSampleStart = Time.unscaledTime;
             cachedScoreAttackManager = FindAnyObjectByType<ScoreAttackManager>();
+            ApplyControlMode();
             UpdateHudMetrics(true);
             Debug.Log(
                 $"[FINAL DEMO RUNTIME] Loaded level {levelIndex + 1}: " +
@@ -160,6 +370,27 @@ public class FinalDemoController : MonoBehaviour
         WriteTelemetryIfEnabled();
         UpdateHudMetrics(false);
 
+        // Control mode (Agent/Manual) is only toggled from the menu, to avoid adding another
+        // gameplay hotkey; the choice then persists into whichever level is loaded next.
+        if (levelIndex < 0 && Input.GetKeyDown(KeyCode.C))
+        {
+            manualControlEnabled = !manualControlEnabled;
+        }
+
+        // Re-asserted every frame (not just once in Start()) so nothing — including
+        // FinalDemoMaxScoreStartupGate's own delayed re-enable — can silently undo the
+        // Manual/Agent choice after the fact.
+        if (levelIndex >= 0)
+        {
+            ApplyControlMode();
+        }
+
+        if (manualGoalCompletionPending && Time.unscaledTime >= manualGoalCompletionRestartTime)
+        {
+            manualGoalCompletionPending = false;
+            RestartCurrentLevel();
+        }
+
         if (levelIndex >= 0 && Input.GetKeyDown(KeyCode.F))
         {
             showFps = !showFps;
@@ -176,18 +407,7 @@ public class FinalDemoController : MonoBehaviour
 
         if (Input.GetKeyDown(KeyCode.R))
         {
-            if (levelIndex == 6)
-            {
-                FinalDemoRandomSpeedRun.ReloadSameSeed();
-            }
-            else if (levelIndex == 7)
-            {
-                FinalDemoRandomMaxScore.ReloadSameSeed();
-            }
-            else
-            {
-                SceneManager.LoadScene(SceneManager.GetActiveScene().name);
-            }
+            RestartCurrentLevel();
             return;
         }
 
@@ -341,6 +561,19 @@ public class FinalDemoController : MonoBehaviour
         DrawBorder(heroArea, 1f, borderTexture);
         DrawTopAccent(heroArea, speedAccentTexture);
         DrawMenuHero(heroArea);
+
+        // ---- Control mode toggle: Agent (default, inference) / Manual (optional) ----
+        // Same button style/column as the RANDOM RUNS section below, so it reads as part of
+        // the same UI language instead of a default-Unity control bolted on top of the art.
+        GUI.Label(new Rect(heroArea.x + 20f, heroArea.yMax - 302f, heroArea.width - 40f, 18f), "CONTROL MODE", hudCaptionStyle);
+        DrawSolid(new Rect(heroArea.x + 20f, heroArea.yMax - 281f, heroArea.width - 40f, 1f), new Color(0.2f, 0.62f, 0.82f, 0.4f));
+        Rect controlModeButton = new Rect(heroArea.x + 20f, heroArea.yMax - 270f, heroArea.width - 40f, 52f);
+        string controlModeLabel = manualControlEnabled ? "C   CONTROL: MANUAL" : "C   CONTROL: AGENT";
+        if (GUI.Button(controlModeButton, controlModeLabel, menuRandomSpeedButtonStyle))
+        {
+            manualControlEnabled = !manualControlEnabled;
+            FinalDemoAudioSystem.Play(FinalDemoAudioCue.UIClick);
+        }
 
         GUI.Label(new Rect(heroArea.x + 20f, heroArea.yMax - 210f, heroArea.width - 40f, 18f), "RANDOM RUNS", hudCaptionStyle);
         DrawSolid(new Rect(heroArea.x + 20f, heroArea.yMax - 189f, heroArea.width - 40f, 1f), new Color(0.2f, 0.62f, 0.82f, 0.4f));
@@ -522,6 +755,8 @@ public class FinalDemoController : MonoBehaviour
 
     // Shared, short labels for both the menu footer and the in-game controls overlay —
     // kept identical in both places so the wrap-safe layout never has to fit long strings.
+    // The Agent/Manual toggle now lives as its own big button in the menu's hero column
+    // instead of a chip here, so it isn't duplicated/hidden in two places.
     private static readonly string[] ControlKeys = { "1–6", "G", "H", "R", "N", "M/Esc", "F", "U", "+/-" };
     private static readonly string[] ControlLabels = { "Level", "Speed", "Score", "Restart", "Next", "Menu", "FPS", "Audio", "Vol" };
 
@@ -631,10 +866,12 @@ public class FinalDemoController : MonoBehaviour
 
         DrawSolid(new Rect(0f, 0f, Screen.width, Screen.height), new Color(0.01f, 0.02f, 0.04f, 0.42f));
 
+        string[] labels = ControlLabels;
+
         // First pass (unwrapped): measure every chip with the styles/font actually active at
         // runtime — the Standalone Player can measure text a bit wider than the Editor preview,
         // so we size the panel off this real measurement instead of assuming the Editor's numbers.
-        ChipLayout unwrapped = ComputeChipRows(float.MaxValue, ControlKeys, ControlLabels);
+        ChipLayout unwrapped = ComputeChipRows(float.MaxValue, ControlKeys, labels);
         float widestItemWidth = 0f;
         for (int i = 0; i < ControlKeys.Length; i++)
         {
@@ -649,7 +886,7 @@ public class FinalDemoController : MonoBehaviour
         float w = Mathf.Clamp(1160f, minPanelWidth, Mathf.Max(minPanelWidth, maxPanelWidth));
 
         // Second pass: wrap the chips into rows using the final, screen-safe panel width.
-        ChipLayout layout = ComputeChipRows(w - contentPadding, ControlKeys, ControlLabels);
+        ChipLayout layout = ComputeChipRows(w - contentPadding, ControlKeys, labels);
         float h = titleAreaHeight + chipsTopPad + layout.Height + bottomPad;
 
         // Anchored near the bottom/centre of the screen, but always fully clamped within it —
@@ -670,14 +907,18 @@ public class FinalDemoController : MonoBehaviour
         GUIStyle controlsTitleStyle = new GUIStyle(hudTitleStyle) { alignment = TextAnchor.MiddleLeft };
         Rect titleRect = new Rect(panel.x + 22f, panel.y + titleTopPadding, 260f, titleHeight);
         GUI.Label(titleRect, "CONTROLS", controlsTitleStyle);
+        // Centred within the full title band (not just a thin sliver next to the title) and
+        // given a generous height — the previous, tighter Rect here (and a second cramped line
+        // below it) is exactly what clipped in the Standalone Player at 16:9. The current
+        // Agent/Manual mode now shows as its own chip below instead of a second squeezed line.
         GUI.Label(
-            new Rect(panel.xMax - 240f, panel.y + titleTopPadding + (titleHeight - 18f) * 0.5f, 220f, 18f),
+            new Rect(panel.xMax - 240f, panel.y + (titleAreaHeight - 22f) * 0.5f, 220f, 22f),
             "Hold TAB to view",
             hudCaptionStyle);
         DrawSolid(new Rect(panel.x + 22f, panel.y + titleAreaHeight, panel.width - 44f, 1f), new Color(0.2f, 0.62f, 0.82f, 0.5f));
         DrawChipRows(
             new Rect(panel.x, panel.y + titleAreaHeight + chipsTopPad, panel.width, layout.Height),
-            layout, ControlKeys, ControlLabels);
+            layout, ControlKeys, labels);
     }
 
     private void DrawObjectiveStats(Rect panel, Color accent)
@@ -1218,9 +1459,11 @@ public class FinalDemoController : MonoBehaviour
 
     private void DrawMenuControls(Rect footer)
     {
+        string[] labels = ControlLabels;
+
         // Measured, wrap-safe layout: never lets a chip/label spill past the footer edge,
         // regardless of window size (the build's window is resizable).
-        ChipLayout layout = ComputeChipRows(footer.width - 24f, ControlKeys, ControlLabels);
+        ChipLayout layout = ComputeChipRows(footer.width - 24f, ControlKeys, labels);
         float y = footer.center.y - layout.Height * 0.5f;
         for (int r = 0; r < layout.Rows.Count; r++)
         {
@@ -1245,7 +1488,7 @@ public class FinalDemoController : MonoBehaviour
                 GUI.Box(keyRect, ControlKeys[idx], menuKeycapStyle);
                 GUI.Label(
                     new Rect(keyRect.xMax + ChipInnerGap, y, layout.LabelWidths[idx], ChipHeight),
-                    ControlLabels[idx],
+                    labels[idx],
                     menuControlLabelStyle);
                 x += layout.KeyWidths[idx] + ChipInnerGap + layout.LabelWidths[idx] + ChipItemGap;
             }

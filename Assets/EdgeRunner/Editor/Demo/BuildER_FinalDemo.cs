@@ -698,7 +698,7 @@ public static class BuildER_FinalDemo
         ScoreAttackCoin[] coins = Object.FindObjectsByType<ScoreAttackCoin>(FindObjectsInactive.Include);
         for (int i = 0; i < coins.Length; i++)
         {
-            ConfigurePowerCellVisual(coins[i].gameObject, sprite, 0.58f, 8);
+            ConfigurePowerCellVisual(coins[i].gameObject, sprite, 0.58f, 8, BluePowerCellColor, BluePowerCellHaloColor);
         }
         Physics2D.SyncTransforms();
     }
@@ -1014,7 +1014,7 @@ public static class BuildER_FinalDemo
         GameObject coin = new GameObject(name);
         coin.transform.SetParent(parent, false);
         coin.transform.position = new Vector3(position.x, position.y, 0f);
-        ConfigurePowerCellVisual(coin, sprite, 0.58f, 8);
+        ConfigurePowerCellVisual(coin, sprite, 0.58f, 8, GoldPowerCellColor, GoldPowerCellHaloColor);
         CircleCollider2D collider = coin.AddComponent<CircleCollider2D>();
         collider.isTrigger = true;
         collider.radius = 0.65f;
@@ -1215,7 +1215,7 @@ public static class BuildER_FinalDemo
         coin.transform.SetParent(parent, false);
         coin.layer = LayerMask.NameToLayer("Ignore Raycast");
         coin.transform.position = position;
-        ConfigurePowerCellVisual(coin, sprite, scale, 8);
+        ConfigurePowerCellVisual(coin, sprite, scale, 8, GoldPowerCellColor, GoldPowerCellHaloColor);
         CircleCollider2D trigger = coin.AddComponent<CircleCollider2D>();
         trigger.isTrigger = true;
         trigger.radius = 1.05f;
@@ -1224,11 +1224,24 @@ public static class BuildER_FinalDemo
         return 1;
     }
 
+    // Existing gold/amber look, preserved unchanged for every caller that isn't the MaxScore
+    // powercell unification below (SpeedRun's decorative collectibles and the unused legacy
+    // BuildMaxScoreScene path both keep exactly this appearance).
+    private static readonly Color GoldPowerCellColor = new Color(1f, 0.82f, 0.18f, 0.96f);
+    private static readonly Color GoldPowerCellHaloColor = new Color(1f, 0.62f, 0.08f, 0.18f);
+
+    // Unified blue/cyan look for MaxScore powercells (both low and high coins), matching the
+    // project's existing cyan accent (e.g. speedAccentTexture's (0.1f, 0.88f, 1f)).
+    private static readonly Color BluePowerCellColor = new Color(0.15f, 0.85f, 1f, 0.96f);
+    private static readonly Color BluePowerCellHaloColor = new Color(0.08f, 0.65f, 1f, 0.18f);
+
     private static void ConfigurePowerCellVisual(
         GameObject powerCell,
         Sprite sprite,
         float scale,
-        int sortingOrder)
+        int sortingOrder,
+        Color coreColor,
+        Color haloColor)
     {
         powerCell.transform.localScale = new Vector3(scale, scale, 1f);
         powerCell.transform.rotation = Quaternion.Euler(0f, 0f, 45f);
@@ -1238,7 +1251,7 @@ public static class BuildER_FinalDemo
             renderer = powerCell.AddComponent<SpriteRenderer>();
         }
         renderer.sprite = sprite;
-        renderer.color = new Color(1f, 0.82f, 0.18f, 0.96f);
+        renderer.color = coreColor;
         renderer.sortingOrder = sortingOrder;
 
         Transform existingHalo = powerCell.transform.Find("FinalDemoPowerCellHalo");
@@ -1255,7 +1268,7 @@ public static class BuildER_FinalDemo
             haloRenderer = halo.AddComponent<SpriteRenderer>();
         }
         haloRenderer.sprite = sprite;
-        haloRenderer.color = new Color(1f, 0.62f, 0.08f, 0.18f);
+        haloRenderer.color = haloColor;
         haloRenderer.sortingOrder = sortingOrder - 1;
     }
 

@@ -21,7 +21,27 @@ public enum EdgeRunnerEpisodeEndReason
     NoProgress,
     Stuck,
     Timeout,
-    Other
+    Other,
+    ObjectAwareAirborneLowCoin,
+    ObjectAwareSameJumpHighCoin,
+    ObjectAwareMissedCoin,
+    ObjectAwareMissedEnemy,
+    ObjectAwareAntiLedgeStuck,
+    ObjectAwareBlockedGoal
+}
+
+public struct EdgeRunnerObjectAwareEvaluationSnapshot
+{
+    public bool valid;
+    public bool goalReached;
+    public bool allCoinsCollected;
+    public bool androidStomped;
+    public bool fullObjectiveSuccess;
+    public int coinsCollected;
+    public int coinsRemaining;
+    public int enemiesKilled;
+    public int enemiesRemaining;
+    public int prematureGoalTouches;
 }
 
 public class EdgeRunnerEvaluationManager : MonoBehaviour
@@ -33,6 +53,12 @@ public class EdgeRunnerEvaluationManager : MonoBehaviour
     [SerializeField] private bool saveCsvReport = true;
     [SerializeField] private bool saveTxtSummary = true;
     [SerializeField] private float evaluationTimeScale = 3f;
+    [SerializeField] private int evaluationRandomSeed = -1;
+
+    [Header("Optional ObjectAware Report")]
+    [SerializeField] private bool includeObjectAwareMetrics = false;
+    [SerializeField] private bool saveJsonReport = false;
+    [SerializeField] private string reportSubfolder = string.Empty;
 
     [Header("References")]
     [SerializeField] private EdgeRunnerAgentV3 agent;
@@ -61,6 +87,14 @@ public class EdgeRunnerEvaluationManager : MonoBehaviour
     private Agent activeAgent;
     private bool loggedAgentSelection;
     private bool loggedMultipleAgentWarning;
+
+    private void Awake()
+    {
+        if (evaluationRandomSeed >= 0)
+        {
+            UnityEngine.Random.InitState(evaluationRandomSeed);
+        }
+    }
 
     private void Start()
     {
@@ -202,6 +236,19 @@ public class EdgeRunnerEvaluationManager : MonoBehaviour
             return;
         }
 
+        bool instantBlockedGoalAtSpawn =
+            reason == EdgeRunnerEpisodeEndReason.ObjectAwareBlockedGoal &&
+            duration < 0.05f &&
+            Mathf.Abs(finalPosition.x - episodeStartPosition.x) < 0.1f;
+        if (instantBlockedGoalAtSpawn)
+        {
+            currentEpisodeOpen = false;
+            currentEpisodeClosed = true;
+            Debug.LogWarning(
+                "Ignored duplicate Goal callback immediately after an ObjectAware episode reset.");
+            return;
+        }
+
         float reward = sourceAgent.GetCumulativeReward();
         bool success = reason == EdgeRunnerEpisodeEndReason.Success;
         NearestGapSnapshot nearestGap = FindNearestGap(finalPosition.x);
@@ -210,6 +257,8 @@ public class EdgeRunnerEvaluationManager : MonoBehaviour
         SegmentGenerationStatsSnapshot generationStats = FindSegmentGenerationStats();
         bool groundedAtEnd = IsAgentGroundedForEvaluation(sourceAgent);
         Vector2 velocityAtEnd = GetAgentVelocityForEvaluation(sourceAgent);
+        EdgeRunnerObjectAwareEvaluationSnapshot objectAwareSnapshot =
+            CaptureObjectAwareSnapshot(sourceAgent, success);
 
         maxXReached = Mathf.Max(maxXReached, finalPosition.x);
 
@@ -258,7 +307,17 @@ public class EdgeRunnerEvaluationManager : MonoBehaviour
             maxStepUpHeightDelta = generationStats.maxStepUpHeightDelta,
             groundedAtEnd = groundedAtEnd,
             velocityXAtEnd = velocityAtEnd.x,
-            velocityYAtEnd = velocityAtEnd.y
+            velocityYAtEnd = velocityAtEnd.y,
+            objectAwareSnapshotValid = objectAwareSnapshot.valid,
+            goalReached = objectAwareSnapshot.goalReached,
+            allCoinsCollected = objectAwareSnapshot.allCoinsCollected,
+            androidStomped = objectAwareSnapshot.androidStomped,
+            fullObjectiveSuccess = objectAwareSnapshot.fullObjectiveSuccess,
+            coinsCollected = objectAwareSnapshot.coinsCollected,
+            coinsRemaining = objectAwareSnapshot.coinsRemaining,
+            enemiesKilled = objectAwareSnapshot.enemiesKilled,
+            enemiesRemaining = objectAwareSnapshot.enemiesRemaining,
+            prematureGoalTouches = objectAwareSnapshot.prematureGoalTouches
         });
 
         currentEpisodeOpen = false;
@@ -352,6 +411,23 @@ public class EdgeRunnerEvaluationManager : MonoBehaviour
         builder.AppendLine($"- Other: {CountReason(EdgeRunnerEpisodeEndReason.Other)}");
         builder.AppendLine($"Average Reward: {averageReward:F3}");
         builder.AppendLine($"Average Duration: {averageDuration:F2}s");
+        if (includeObjectAwareMetrics)
+        {
+            int fullObjectiveSuccesses = CountRecords(record => record.fullObjectiveSuccess);
+            float fullObjectiveSuccessRate = total > 0
+                ? fullObjectiveSuccesses * 100f / total
+                : 0f;
+            builder.AppendLine("ObjectAware FinalRandom Metrics:");
+            builder.AppendLine($"- Full Objective Successes: {fullObjectiveSuccesses}");
+            builder.AppendLine($"- Full Objective Success Rate: {fullObjectiveSuccessRate:F1}%");
+            builder.AppendLine($"- Goal Reached: {CountRecords(record => record.goalReached)}");
+            builder.AppendLine($"- All Coins Collected: {CountRecords(record => record.allCoinsCollected)}");
+            builder.AppendLine($"- Android Stomped: {CountRecords(record => record.androidStomped)}");
+            builder.AppendLine($"- Gap/DeathZone Failures: {CountReason(EdgeRunnerEpisodeEndReason.Fell)}");
+            builder.AppendLine($"- Anti Ledge Stuck Failures: {CountReason(EdgeRunnerEpisodeEndReason.ObjectAwareAntiLedgeStuck)}");
+            builder.AppendLine($"- Blocked Goal Failures: {CountReason(EdgeRunnerEpisodeEndReason.ObjectAwareBlockedGoal)}");
+            builder.AppendLine($"- Timeout Failures: {CountReason(EdgeRunnerEpisodeEndReason.Timeout)}");
+        }
         builder.AppendLine($"Average Final X: {averageFinalX:F2}");
         builder.AppendLine($"Average Max X: {averageMaxX:F2}");
         builder.AppendLine($"Average Failure Final X: {averageFailureFinalX:F2}");
@@ -377,12 +453,18 @@ public class EdgeRunnerEvaluationManager : MonoBehaviour
     private void SaveReports(string summary)
     {
         string folder = GetReportFolder();
+        if (!string.IsNullOrWhiteSpace(reportSubfolder))
+        {
+            folder = Path.Combine(folder, SanitizeFileName(reportSubfolder));
+        }
+
         string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
         string safeModelLabel = SanitizeFileName(modelLabel);
         string safeEvaluationLabel = SanitizeFileName(evaluationLabel);
         string baseName = $"EdgeRunnerEval_{timestamp}_{safeModelLabel}_{safeEvaluationLabel}";
         string txtPath = Path.Combine(folder, baseName + ".txt");
         string csvPath = Path.Combine(folder, baseName + ".csv");
+        string jsonPath = Path.Combine(folder, baseName + ".json");
 
         try
         {
@@ -405,6 +487,22 @@ public class EdgeRunnerEvaluationManager : MonoBehaviour
         {
             Debug.LogError($"Failed to save CSV report to: {csvPath}\n{exception}");
         }
+
+        if (!saveJsonReport)
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(jsonPath, BuildJson(), Encoding.UTF8);
+            Debug.Log("JSON saved to: " + jsonPath);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError($"Failed to save JSON report to: {jsonPath}\n{exception}");
+        }
     }
 
     private void LogIgnoredReportToggleWarnings()
@@ -423,7 +521,12 @@ public class EdgeRunnerEvaluationManager : MonoBehaviour
     private string BuildCsv()
     {
         StringBuilder builder = new StringBuilder();
-        builder.AppendLine("episodeIndex,result,reason,reward,duration,startX,finalX,maxXReached,success,nearestGapIndex,nearestGapStartX,nearestGapEndX,nearestGapWidth,distanceToGapStart,distanceToGapEnd,nearestSegmentIndex,nearestSegmentType,nearestSegmentStartX,nearestSegmentEndX,nearestSegmentY,distanceToSegmentStart,distanceToSegmentEnd,previousSegmentIndex,previousSegmentType,currentSegmentIndex,currentSegmentType,nextSegmentIndex,nextSegmentType,distanceToCurrentSegmentEnd,distanceToNextSegmentStart,groundedAtEnd,velocityXAtEnd,velocityYAtEnd");
+        builder.Append("episodeIndex,result,reason,reward,duration,startX,finalX,maxXReached,success,nearestGapIndex,nearestGapStartX,nearestGapEndX,nearestGapWidth,distanceToGapStart,distanceToGapEnd,nearestSegmentIndex,nearestSegmentType,nearestSegmentStartX,nearestSegmentEndX,nearestSegmentY,distanceToSegmentStart,distanceToSegmentEnd,previousSegmentIndex,previousSegmentType,currentSegmentIndex,currentSegmentType,nextSegmentIndex,nextSegmentType,distanceToCurrentSegmentEnd,distanceToNextSegmentStart,groundedAtEnd,velocityXAtEnd,velocityYAtEnd");
+        if (includeObjectAwareMetrics)
+        {
+            builder.Append(",goalReached,allCoinsCollected,androidStomped,fullObjectiveSuccess,coinsCollected,coinsRemaining,enemiesKilled,enemiesRemaining,prematureGoalTouches");
+        }
+        builder.AppendLine();
 
         foreach (EpisodeRecord record in episodeRecords)
         {
@@ -493,10 +596,198 @@ public class EdgeRunnerEvaluationManager : MonoBehaviour
             builder.Append(',');
             builder.Append(record.velocityXAtEnd.ToString("F6", CultureInfo.InvariantCulture));
             builder.Append(',');
-            builder.AppendLine(record.velocityYAtEnd.ToString("F6", CultureInfo.InvariantCulture));
+            builder.Append(record.velocityYAtEnd.ToString("F6", CultureInfo.InvariantCulture));
+            if (includeObjectAwareMetrics)
+            {
+                builder.Append(',');
+                builder.Append(record.goalReached ? "true" : "false");
+                builder.Append(',');
+                builder.Append(record.allCoinsCollected ? "true" : "false");
+                builder.Append(',');
+                builder.Append(record.androidStomped ? "true" : "false");
+                builder.Append(',');
+                builder.Append(record.fullObjectiveSuccess ? "true" : "false");
+                builder.Append(',');
+                builder.Append(record.coinsCollected.ToString(CultureInfo.InvariantCulture));
+                builder.Append(',');
+                builder.Append(record.coinsRemaining.ToString(CultureInfo.InvariantCulture));
+                builder.Append(',');
+                builder.Append(record.enemiesKilled.ToString(CultureInfo.InvariantCulture));
+                builder.Append(',');
+                builder.Append(record.enemiesRemaining.ToString(CultureInfo.InvariantCulture));
+                builder.Append(',');
+                builder.Append(record.prematureGoalTouches.ToString(CultureInfo.InvariantCulture));
+            }
+            builder.AppendLine();
         }
 
         return builder.ToString();
+    }
+
+    private string BuildJson()
+    {
+        int total = episodeRecords.Count;
+        int successes = CountReason(EdgeRunnerEpisodeEndReason.Success);
+        int fullObjectiveSuccesses = CountRecords(record => record.fullObjectiveSuccess);
+        float successRate = total > 0 ? successes * 100f / total : 0f;
+        float fullObjectiveSuccessRate = total > 0
+            ? fullObjectiveSuccesses * 100f / total
+            : 0f;
+
+        StringBuilder builder = new StringBuilder();
+        builder.AppendLine("{");
+        AppendJsonStringProperty(builder, "model", modelLabel, true, 2);
+        AppendJsonStringProperty(builder, "evaluation", evaluationLabel, true, 2);
+        AppendJsonNumberProperty(builder, "evaluationRandomSeed", evaluationRandomSeed, true, 2);
+        AppendJsonNumberProperty(builder, "totalEpisodes", total, true, 2);
+        AppendJsonNumberProperty(builder, "successRate", successRate, true, 2);
+        AppendJsonNumberProperty(
+            builder,
+            "fullObjectiveSuccessRate",
+            fullObjectiveSuccessRate,
+            true,
+            2);
+        AppendJsonNumberProperty(
+            builder,
+            "goalReachedCount",
+            CountRecords(record => record.goalReached),
+            true,
+            2);
+        AppendJsonNumberProperty(
+            builder,
+            "allCoinsCollectedCount",
+            CountRecords(record => record.allCoinsCollected),
+            true,
+            2);
+        AppendJsonNumberProperty(
+            builder,
+            "androidStompedCount",
+            CountRecords(record => record.androidStomped),
+            true,
+            2);
+        AppendJsonNumberProperty(
+            builder,
+            "deathsByGapOrDeathZone",
+            CountReason(EdgeRunnerEpisodeEndReason.Fell),
+            true,
+            2);
+        AppendJsonNumberProperty(
+            builder,
+            "antiLedgeStuckFailures",
+            CountReason(EdgeRunnerEpisodeEndReason.ObjectAwareAntiLedgeStuck),
+            true,
+            2);
+        AppendJsonNumberProperty(
+            builder,
+            "blockedGoalFailures",
+            CountReason(EdgeRunnerEpisodeEndReason.ObjectAwareBlockedGoal),
+            true,
+            2);
+        AppendJsonNumberProperty(
+            builder,
+            "timeoutFailures",
+            CountReason(EdgeRunnerEpisodeEndReason.Timeout),
+            true,
+            2);
+        AppendJsonNumberProperty(builder, "averageEpisodeTime", Average(record => record.duration), true, 2);
+        AppendJsonNumberProperty(builder, "averageReward", Average(record => record.reward), true, 2);
+        builder.AppendLine("  \"episodes\": [");
+
+        for (int i = 0; i < episodeRecords.Count; i++)
+        {
+            EpisodeRecord record = episodeRecords[i];
+            builder.AppendLine("    {");
+            AppendJsonNumberProperty(builder, "episodeIndex", record.episodeIndex, true, 6);
+            AppendJsonStringProperty(builder, "reason", record.reason.ToString(), true, 6);
+            AppendJsonBooleanProperty(builder, "success", record.success, true, 6);
+            AppendJsonNumberProperty(builder, "reward", record.reward, true, 6);
+            AppendJsonNumberProperty(builder, "duration", record.duration, true, 6);
+            AppendJsonBooleanProperty(builder, "goalReached", record.goalReached, true, 6);
+            AppendJsonBooleanProperty(
+                builder,
+                "allCoinsCollected",
+                record.allCoinsCollected,
+                true,
+                6);
+            AppendJsonBooleanProperty(builder, "androidStomped", record.androidStomped, true, 6);
+            AppendJsonBooleanProperty(
+                builder,
+                "fullObjectiveSuccess",
+                record.fullObjectiveSuccess,
+                true,
+                6);
+            AppendJsonNumberProperty(builder, "coinsCollected", record.coinsCollected, true, 6);
+            AppendJsonNumberProperty(builder, "coinsRemaining", record.coinsRemaining, true, 6);
+            AppendJsonNumberProperty(builder, "enemiesKilled", record.enemiesKilled, true, 6);
+            AppendJsonNumberProperty(builder, "enemiesRemaining", record.enemiesRemaining, false, 6);
+            builder.Append("    }");
+            builder.AppendLine(i + 1 < episodeRecords.Count ? "," : string.Empty);
+        }
+
+        builder.AppendLine("  ]");
+        builder.AppendLine("}");
+        return builder.ToString();
+    }
+
+    private void AppendJsonStringProperty(
+        StringBuilder builder,
+        string name,
+        string value,
+        bool trailingComma,
+        int indent)
+    {
+        builder.Append(' ', indent);
+        builder.Append('"');
+        builder.Append(EscapeJson(name));
+        builder.Append("\": \"");
+        builder.Append(EscapeJson(value));
+        builder.Append('"');
+        builder.AppendLine(trailingComma ? "," : string.Empty);
+    }
+
+    private void AppendJsonNumberProperty(
+        StringBuilder builder,
+        string name,
+        float value,
+        bool trailingComma,
+        int indent)
+    {
+        builder.Append(' ', indent);
+        builder.Append('"');
+        builder.Append(EscapeJson(name));
+        builder.Append("\": ");
+        builder.Append(value.ToString("0.######", CultureInfo.InvariantCulture));
+        builder.AppendLine(trailingComma ? "," : string.Empty);
+    }
+
+    private void AppendJsonBooleanProperty(
+        StringBuilder builder,
+        string name,
+        bool value,
+        bool trailingComma,
+        int indent)
+    {
+        builder.Append(' ', indent);
+        builder.Append('"');
+        builder.Append(EscapeJson(name));
+        builder.Append("\": ");
+        builder.Append(value ? "true" : "false");
+        builder.AppendLine(trailingComma ? "," : string.Empty);
+    }
+
+    private string EscapeJson(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        return value
+            .Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("\r", "\\r")
+            .Replace("\n", "\\n")
+            .Replace("\t", "\\t");
     }
 
     private string SanitizeCsvValue(string value)
@@ -549,6 +840,20 @@ public class EdgeRunnerEvaluationManager : MonoBehaviour
         for (int i = 0; i < episodeRecords.Count; i++)
         {
             if (episodeRecords[i].reason == reason)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private int CountRecords(Func<EpisodeRecord, bool> predicate)
+    {
+        int count = 0;
+        for (int i = 0; i < episodeRecords.Count; i++)
+        {
+            if (predicate(episodeRecords[i]))
             {
                 count++;
             }
@@ -1716,6 +2021,19 @@ public class EdgeRunnerEvaluationManager : MonoBehaviour
         return Vector2.zero;
     }
 
+    private EdgeRunnerObjectAwareEvaluationSnapshot CaptureObjectAwareSnapshot(
+        Agent sourceAgent,
+        bool goalReached)
+    {
+        if (!includeObjectAwareMetrics ||
+            !(sourceAgent is EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent))
+        {
+            return default;
+        }
+
+        return objectAwareAgent.GetEvaluationSnapshot(goalReached);
+    }
+
     private void EnsureGapGeneratorReference()
     {
         if (gapGenerator != null)
@@ -1794,6 +2112,16 @@ public class EdgeRunnerEvaluationManager : MonoBehaviour
         public bool groundedAtEnd;
         public float velocityXAtEnd;
         public float velocityYAtEnd;
+        public bool objectAwareSnapshotValid;
+        public bool goalReached;
+        public bool allCoinsCollected;
+        public bool androidStomped;
+        public bool fullObjectiveSuccess;
+        public int coinsCollected;
+        public int coinsRemaining;
+        public int enemiesKilled;
+        public int enemiesRemaining;
+        public int prematureGoalTouches;
     }
 
     private struct NearestGapSnapshot

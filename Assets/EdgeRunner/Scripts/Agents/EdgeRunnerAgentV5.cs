@@ -485,7 +485,13 @@ public class EdgeRunnerAgentV5 : Agent
             return;
         }
 
-        if (disableAgentMovementInDemo)
+        // Same bypass the (older, generic) demo already used for its own manual controller —
+        // reused here for the final demo's Manual mode. Whatever ends up invoking
+        // OnActionReceived (DecisionRequester, or ML-Agents' own EndEpisode()->NotifyAgentDone()
+        // requesting one last decision from the model directly — confirmed in the ML-Agents
+        // package source to bypass DecisionRequester entirely), this unconditionally stops
+        // before any movement/jump is ever applied to the Rigidbody2D.
+        if (disableAgentMovementInDemo || FinalDemoController.IsManualControlActive)
         {
             LogDemoManualMovementDisabledOnce();
             CheckGoalReachedByDistance();
@@ -1245,12 +1251,19 @@ public class EdgeRunnerAgentV5 : Agent
 
     private void LogDemoManualMovementDisabledOnce()
     {
-        if (!disableAgentMovementInDemo || warnedDemoManualMovementDisabled)
+        if ((!disableAgentMovementInDemo && !FinalDemoController.IsManualControlActive) ||
+            warnedDemoManualMovementDisabled)
         {
             return;
         }
 
-        Debug.Log("[DEMO MANUAL] EdgeRunnerAgentV5 movement disabled", this);
+        // Confirms empirically (once per episode) that OnActionReceived was in fact invoked
+        // while Manual was active, and that this guard is what stopped it from moving anything.
+        Debug.Log(
+            $"[DEMO MANUAL] EdgeRunnerAgentV5 movement blocked " +
+            $"(disableAgentMovementInDemo={disableAgentMovementInDemo}, " +
+            $"IsManualControlActive={FinalDemoController.IsManualControlActive})",
+            this);
         warnedDemoManualMovementDisabled = true;
     }
 

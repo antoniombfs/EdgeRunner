@@ -82,7 +82,14 @@ public class ScoreAttackCoin : MonoBehaviour, IEdgeRunnerResettable
         }
         EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent =
             agent as EdgeRunnerAgentV5ScoreMaxObjectAware;
-        bool accepted = objectAwareAgent == null ||
+        // In Manual mode, skip the agent's ordered-curriculum accept/reject check entirely.
+        // That check (EdgeRunnerAgentV5ScoreMaxObjectAware.TryAcceptFinalLongChallengeCoin)
+        // requires coins to be collected in the exact order the model was trained on, and
+        // rejects/penalizes (even ends the episode for high coins) otherwise — a free-form
+        // human player has no reason to follow that order. Low and high coins are accepted the
+        // same way either way; ScoreAttackManager.CollectCoin already treats them identically.
+        bool accepted = FinalDemoController.IsManualControlActive ||
+            objectAwareAgent == null ||
             objectAwareAgent.TryAcceptScoreAttackCoinCollection(this);
         if (!accepted)
         {

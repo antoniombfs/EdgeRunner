@@ -384,6 +384,21 @@ public class EdgeRunnerAgentV5ScoreMaxObjectAware : EdgeRunnerAgentV5
 
     public override void OnActionReceived(ActionBuffers actions)
     {
+        // Skip all ObjectAware curriculum pre-processing entirely while Manual is active.
+        // ApplyObjectAwareCurriculumRewards() below can end the episode on its own (e.g. a
+        // "missed coin" check) independent of the ScoreAttackCoin/ScoreAttackAndroid Manual
+        // bypass added for the coin/stomp fix — and ending an episode makes ML-Agents request
+        // one direct decision from the model via NotifyAgentDone() (confirmed in the ML-Agents
+        // package source: Agent.cs calls m_Brain.RequestDecision(...) there), bypassing
+        // DecisionRequester entirely. That extra, real model decision — often a jump, since
+        // this logic triggers near high coins/edges — was the actual source of the auto-jump.
+        // base.OnActionReceived() already blocks all movement/jump application in Manual.
+        if (FinalDemoController.IsManualControlActive)
+        {
+            base.OnActionReceived(actions);
+            return;
+        }
+
         ConfigureFinalLongFailureDebug();
         ResolveObjectAwareReferences();
         RefreshObjectCache(false);

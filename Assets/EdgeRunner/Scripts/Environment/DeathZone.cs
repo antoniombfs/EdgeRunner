@@ -12,6 +12,17 @@ public class DeathZone : MonoBehaviour
         EdgeRunnerAgentV5 agentV5 = other.GetComponentInParent<EdgeRunnerAgentV5>();
         if (agentV5 != null)
         {
+            // Manual mode does not go through EdgeRunnerAgentV5.FellOffMap() -> EndEpisode() ->
+            // OnEpisodeBegin() — same reasoning as ScoreAttackGoalLock's Manual bypass: that
+            // pipeline resets ObjectAware curriculum state a free-form human player does not
+            // keep consistent with. Reuse FinalDemoController's own restart path directly.
+            if (FinalDemoController.IsManualControlActive)
+            {
+                FinalDemoController controller = FindAnyObjectByType<FinalDemoController>();
+                controller?.RestartCurrentLevel();
+                return;
+            }
+
             Debug.LogWarning("DeathZone.cs intercepted EdgeRunnerAgentV5. Calling FellOffMap instead of reloading scene.");
             agentV5.FellOffMap();
             return;

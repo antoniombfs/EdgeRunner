@@ -4,6 +4,8 @@ using UnityEngine;
 public class ScoreAttackGoalLock : MonoBehaviour
 {
     [SerializeField] private ScoreAttackManager manager;
+    private FinalDemoController demoController;
+    private bool manualCompletionTriggered;
 
     private void Awake()
     {
@@ -46,6 +48,27 @@ public class ScoreAttackGoalLock : MonoBehaviour
         if (manager != null && !manager.ObjectivesComplete)
         {
             manager.TryHandleGoalReached(agent);
+            return;
+        }
+
+        // Manual mode does not go through EdgeRunnerAgentV5.GoalReached() -> EndEpisode() ->
+        // OnEpisodeBegin(). That pipeline resets the ObjectAware curriculum's own internal
+        // state, which a free-form human player does not keep consistent with what the
+        // pipeline expects (the same reasoning as the Manual bypass in ScoreAttackCoin /
+        // ScoreAttackAndroid). Instead, reuse FinalDemoController's own restart path directly.
+        if (FinalDemoController.IsManualControlActive)
+        {
+            if (manualCompletionTriggered)
+            {
+                return;
+            }
+            manualCompletionTriggered = true;
+
+            if (demoController == null)
+            {
+                demoController = FindAnyObjectByType<FinalDemoController>();
+            }
+            demoController?.CompleteLevelManual();
             return;
         }
 

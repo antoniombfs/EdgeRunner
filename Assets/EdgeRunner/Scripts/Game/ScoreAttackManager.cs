@@ -475,7 +475,15 @@ public class ScoreAttackManager : MonoBehaviour
 
             if (endEpisodeOnPrematureGoal && targetAgent != null)
             {
-                targetAgent.EndEpisode();
+                if (targetAgent is EdgeRunnerAgentV5ScoreMaxObjectAware objectAwareAgent)
+                {
+                    objectAwareAgent.EndEpisodeWithObjectAwareEvaluationReason(
+                        EdgeRunnerEpisodeEndReason.ObjectAwareBlockedGoal);
+                }
+                else
+                {
+                    targetAgent.EndEpisode();
+                }
             }
 
             return false;

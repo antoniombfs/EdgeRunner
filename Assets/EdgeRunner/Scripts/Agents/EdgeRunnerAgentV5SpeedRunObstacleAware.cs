@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Reflection;
 using Unity.MLAgents.Actuators;
 using Unity.MLAgents.Policies;
 using Unity.MLAgents.Sensors;
@@ -13,6 +14,37 @@ public class EdgeRunnerAgentV5SpeedRunObstacleAware : EdgeRunnerAgentV5
     public const int MovementActionBranchSize = 3;
     public const int JumpActionBranchSize = 2;
     public const int SprintActionBranchSize = 2;
+    private const int JumpBranchIndex = 1;
+    private const int JumpActionIndex = 1;
+
+    private static readonly FieldInfo BaseMaskUselessJumpsField =
+        typeof(EdgeRunnerAgentV5).GetField(
+            "maskUselessJumps",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo BaseAllowJumpField =
+        typeof(EdgeRunnerAgentV5).GetField(
+            "allowJump",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo BaseJumpConsumedUntilLandingField =
+        typeof(EdgeRunnerAgentV5).GetField(
+            "jumpConsumedUntilLanding",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo BaseWaitingForJumpReleaseField =
+        typeof(EdgeRunnerAgentV5).GetField(
+            "waitingForJumpRelease",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo BaseFlatGroundJumpPenaltyField =
+        typeof(EdgeRunnerAgentV5).GetField(
+            "flatGroundJumpPenalty",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo BaseUselessJumpPenaltyField =
+        typeof(EdgeRunnerAgentV5).GetField(
+            "uselessJumpPenalty",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo BaseGroundLayerField =
+        typeof(EdgeRunnerAgentV5).GetField(
+            "groundLayer",
+            BindingFlags.Instance | BindingFlags.NonPublic);
 
     [Header("SpeedRun ObstacleAware References")]
     [Tooltip("Assign the same Goal used by the inherited EdgeRunnerAgentV5 component data.")]
@@ -28,6 +60,24 @@ public class EdgeRunnerAgentV5SpeedRunObstacleAware : EdgeRunnerAgentV5
     [SerializeField] private float verticalOverlapTolerance = 0.05f;
     [SerializeField] private float passedAndroidMargin = 0.9f;
 
+    [Header("Contextual Android Jump Discipline")]
+    [SerializeField] private bool enforceContextualJumpDiscipline = true;
+    [SerializeField] private float androidJumpWindowMin = 0.6f;
+    [SerializeField] private float androidJumpWindowMax = 4f;
+    [SerializeField] private float androidJumpVerticalTolerance = 1.25f;
+
+    [Header("Contextual Elevated Landing Jump")]
+    [SerializeField] private bool allowElevatedLandingJump = true;
+    [SerializeField] private float elevatedGapProbeNear = 0.5f;
+    [SerializeField] private float elevatedGapProbeFar = 0.95f;
+    [SerializeField] private float elevatedGapProbeDepth = 1.15f;
+    [SerializeField] private float elevatedLandingWindowMin = 1.1f;
+    [SerializeField] private float elevatedLandingWindowMax = 4.8f;
+    [SerializeField] private float elevatedLandingScanStep = 0.2f;
+    [SerializeField] private float elevatedLandingMinHeight = 0.25f;
+    [SerializeField] private float elevatedLandingMaxHeight = 2.75f;
+    [SerializeField] private float elevatedLandingProbeHeadroom = 0.5f;
+
     [Header("Obstacle Rewards")]
     [SerializeField] private float obstacleCollisionPenalty = -6f;
     [SerializeField] private float passedAndroidReward = 0.5f;
@@ -35,16 +85,19 @@ public class EdgeRunnerAgentV5SpeedRunObstacleAware : EdgeRunnerAgentV5
     [Header("Debug")]
     [SerializeField] private bool debugObstacleAwareEvents = false;
 
-    private readonly HashSet<int> rewardedPassedAndroids = new HashSet<int>();
+    private readonly HashSet<EdgeRunnerEnemyMarker> rewardedPassedAndroids =
+        new HashSet<EdgeRunnerEnemyMarker>();
     private EdgeRunnerEnemyMarker[] obstacleMarkers = System.Array.Empty<EdgeRunnerEnemyMarker>();
     private Collider2D[] playerColliders = System.Array.Empty<Collider2D>();
     private float lastGoalDirection = 1f;
     private bool obstacleCollisionEndedEpisode;
+    private bool warnedMissingBaseJumpMaskField;
 
     public override void Initialize()
     {
         ValidateObstacleSettings();
         base.Initialize();
+        EnsureBaseJumpDisciplineEnabled();
         playerColliders = GetComponentsInChildren<Collider2D>(true);
         ResolveGoalReference();
         RefreshObstacleCache();
@@ -105,14 +158,316 @@ public class EdgeRunnerAgentV5SpeedRunObstacleAware : EdgeRunnerAgentV5
         sensor.AddObservation(passed ? 1f : 0f);
     }
 
+    public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
+    {
+        EnsureBaseJumpDisciplineEnabled();
+        base.WriteDiscreteActionMask(actionMask);
+
+        bool androidJumpUseful = TryGetAndroidJumpContext(out _);
+        bool elevatedLandingJumpUseful = TryGetElevatedLandingJumpContext(out _);
+        if (androidJumpUseful || elevatedLandingJumpUseful)
+        {
+            // The ML-Agents mask stores the latest enabled state, so this safely
+            // re-enables Jump after the base rejected a contextually useful jump.
+            actionMask.SetActionEnabled(JumpBranchIndex, JumpActionIndex, true);
+        }
+    }
+
     public override void OnActionReceived(ActionBuffers actions)
     {
-        base.OnActionReceived(actions);
+        // Skip this subclass's own contextual-jump pre-processing entirely while Manual is
+        // active — base.OnActionReceived() itself already blocks all movement/jump application
+        // in Manual (see EdgeRunnerAgentV5.OnActionReceived), so there is nothing useful left
+        // for this override to compute, and it avoids touching any contextual-jump state that
+        // a free-form human player would not keep consistent with what this logic expects.
+        if (FinalDemoController.IsManualControlActive)
+        {
+            base.OnActionReceived(actions);
+            return;
+        }
+
+        bool jumpSelected =
+            actions.DiscreteActions.Length > JumpBranchIndex &&
+            actions.DiscreteActions[JumpBranchIndex] == JumpActionIndex;
+        bool androidJumpContext = jumpSelected && TryGetAndroidJumpContext(out _);
+        bool elevatedLandingJumpContext =
+            jumpSelected && TryGetElevatedLandingJumpContext(out _);
+
+        if ((androidJumpContext || elevatedLandingJumpContext) &&
+            TrySuspendBaseFlatJumpPenalties(out BaseJumpPenaltyState state))
+        {
+            try
+            {
+                base.OnActionReceived(actions);
+            }
+            finally
+            {
+                RestoreBaseFlatJumpPenalties(state);
+            }
+        }
+        else
+        {
+            base.OnActionReceived(actions);
+        }
 
         if (!obstacleCollisionEndedEpisode)
         {
             RewardNewlyPassedAndroids(GetGoalDirection());
         }
+    }
+
+    private bool TryGetAndroidJumpContext(out EdgeRunnerEnemyMarker marker)
+    {
+        marker = null;
+
+        if (!enforceContextualJumpDiscipline || !CanSafelyInitiateContextualJump())
+        {
+            return false;
+        }
+
+        float goalDirection = GetGoalDirection();
+        EdgeRunnerEnemyMarker candidate = SelectRelevantAndroid(goalDirection);
+        if (candidate == null)
+        {
+            return false;
+        }
+
+        Vector2 delta = candidate.GetObservationPosition() - (Vector2)transform.position;
+        float forwardDistance = delta.x * goalDirection;
+        bool withinHorizontalWindow =
+            forwardDistance >= androidJumpWindowMin &&
+            forwardDistance <= androidJumpWindowMax;
+        bool verticallyCompatible =
+            HasDangerousVerticalOverlap(candidate) ||
+            Mathf.Abs(delta.y) <= androidJumpVerticalTolerance;
+
+        if (!withinHorizontalWindow || !verticallyCompatible)
+        {
+            return false;
+        }
+
+        marker = candidate;
+        return true;
+    }
+
+    private bool TryGetElevatedLandingJumpContext(out ElevatedLandingContext context)
+    {
+        context = default;
+
+        if (!allowElevatedLandingJump ||
+            !enforceContextualJumpDiscipline ||
+            !CanSafelyInitiateContextualJump() ||
+            !TryGetPlayerBounds(out Bounds playerBounds))
+        {
+            return false;
+        }
+
+        int groundMask = GetGroundLayerMask();
+        if (groundMask == 0)
+        {
+            return false;
+        }
+
+        float goalDirection = GetGoalDirection();
+        float referenceX = playerBounds.center.x;
+        float referenceGroundY = playerBounds.min.y;
+
+        // Require empty space at two nearby points. This delays the exception until
+        // the actual ledge and prevents a distant elevated platform from enabling
+        // repeated flat-ground jumps.
+        bool nearGap = !HasGroundNearCurrentHeight(
+            referenceX + goalDirection * elevatedGapProbeNear,
+            referenceGroundY,
+            groundMask);
+        bool farGap = !HasGroundNearCurrentHeight(
+            referenceX + goalDirection * elevatedGapProbeFar,
+            referenceGroundY,
+            groundMask);
+        if (!nearGap || !farGap)
+        {
+            return false;
+        }
+
+        float scanStart = Mathf.Max(
+            elevatedLandingWindowMin,
+            elevatedGapProbeFar + elevatedLandingScanStep);
+        for (float distance = scanStart;
+             distance <= elevatedLandingWindowMax + 0.001f;
+             distance += elevatedLandingScanStep)
+        {
+            float sampleX = referenceX + goalDirection * distance;
+            if (!TryGetFirstGroundSurfaceY(
+                    sampleX,
+                    referenceGroundY,
+                    groundMask,
+                    out float landingY))
+            {
+                continue;
+            }
+
+            float landingDeltaY = landingY - referenceGroundY;
+            if (landingDeltaY < elevatedLandingMinHeight ||
+                landingDeltaY > elevatedLandingMaxHeight)
+            {
+                continue;
+            }
+
+            context = new ElevatedLandingContext(distance, landingDeltaY);
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool HasGroundNearCurrentHeight(float sampleX, float referenceGroundY, int groundMask)
+    {
+        Vector2 origin = new Vector2(sampleX, referenceGroundY + 0.2f);
+        RaycastHit2D[] hits = Physics2D.RaycastAll(
+            origin,
+            Vector2.down,
+            elevatedGapProbeDepth,
+            groundMask);
+
+        for (int i = 0; i < hits.Length; i++)
+        {
+            Collider2D collider = hits[i].collider;
+            if (collider == null || collider.isTrigger || IsPlayerCollider(collider))
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool TryGetFirstGroundSurfaceY(
+        float sampleX,
+        float referenceGroundY,
+        int groundMask,
+        out float surfaceY)
+    {
+        surfaceY = 0f;
+        float originY =
+            referenceGroundY + elevatedLandingMaxHeight + elevatedLandingProbeHeadroom;
+        float castDistance =
+            elevatedLandingMaxHeight + elevatedLandingProbeHeadroom + elevatedGapProbeDepth;
+        RaycastHit2D[] hits = Physics2D.RaycastAll(
+            new Vector2(sampleX, originY),
+            Vector2.down,
+            castDistance,
+            groundMask);
+
+        bool found = false;
+        float nearestDistance = float.PositiveInfinity;
+        for (int i = 0; i < hits.Length; i++)
+        {
+            RaycastHit2D hit = hits[i];
+            Collider2D collider = hit.collider;
+            if (collider == null || collider.isTrigger || IsPlayerCollider(collider))
+            {
+                continue;
+            }
+
+            if (hit.distance < nearestDistance)
+            {
+                nearestDistance = hit.distance;
+                surfaceY = hit.point.y;
+                found = true;
+            }
+        }
+
+        return found;
+    }
+
+    private int GetGroundLayerMask()
+    {
+        if (BaseGroundLayerField?.GetValue(this) is LayerMask groundMask)
+        {
+            return groundMask.value;
+        }
+
+        return LayerMask.GetMask("Ground");
+    }
+
+    private bool IsPlayerCollider(Collider2D candidate)
+    {
+        for (int i = 0; i < playerColliders.Length; i++)
+        {
+            if (playerColliders[i] == candidate)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool CanSafelyInitiateContextualJump()
+    {
+        if (!IsCurrentlyGroundedForEvaluation())
+        {
+            return false;
+        }
+
+        bool allowJump = GetBaseBool(BaseAllowJumpField, false);
+        bool jumpConsumed = GetBaseBool(BaseJumpConsumedUntilLandingField, true);
+        bool waitingForRelease = GetBaseBool(BaseWaitingForJumpReleaseField, true);
+        return allowJump && !jumpConsumed && !waitingForRelease;
+    }
+
+    private void EnsureBaseJumpDisciplineEnabled()
+    {
+        if (!enforceContextualJumpDiscipline)
+        {
+            return;
+        }
+
+        if (BaseMaskUselessJumpsField == null)
+        {
+            if (!warnedMissingBaseJumpMaskField)
+            {
+                warnedMissingBaseJumpMaskField = true;
+                Debug.LogError(
+                    "SpeedRunObstacleAware could not enable the V5 base jump discipline: " +
+                    "private field 'maskUselessJumps' was not found.",
+                    this);
+            }
+
+            return;
+        }
+
+        BaseMaskUselessJumpsField.SetValue(this, true);
+    }
+
+    private bool GetBaseBool(FieldInfo field, bool fallback)
+    {
+        return field?.GetValue(this) is bool value
+            ? value
+            : fallback;
+    }
+
+    private bool TrySuspendBaseFlatJumpPenalties(out BaseJumpPenaltyState state)
+    {
+        state = default;
+
+        if (!(BaseFlatGroundJumpPenaltyField?.GetValue(this) is float flatPenalty) ||
+            !(BaseUselessJumpPenaltyField?.GetValue(this) is float uselessPenalty))
+        {
+            return false;
+        }
+
+        state = new BaseJumpPenaltyState(flatPenalty, uselessPenalty);
+        BaseFlatGroundJumpPenaltyField.SetValue(this, 0f);
+        BaseUselessJumpPenaltyField.SetValue(this, 0f);
+        return true;
+    }
+
+    private void RestoreBaseFlatJumpPenalties(BaseJumpPenaltyState state)
+    {
+        BaseFlatGroundJumpPenaltyField?.SetValue(this, state.flatGroundPenalty);
+        BaseUselessJumpPenaltyField?.SetValue(this, state.uselessPenalty);
     }
 
     public void SetObstacleAwareGoal(Transform goalTransform)
@@ -204,9 +559,7 @@ public class EdgeRunnerAgentV5SpeedRunObstacleAware : EdgeRunnerAgentV5
                 continue;
             }
 
-            int markerId = marker.GetInstanceID();
-
-            if (rewardedPassedAndroids.Contains(markerId))
+            if (rewardedPassedAndroids.Contains(marker))
             {
                 continue;
             }
@@ -219,7 +572,7 @@ public class EdgeRunnerAgentV5SpeedRunObstacleAware : EdgeRunnerAgentV5
                 continue;
             }
 
-            rewardedPassedAndroids.Add(markerId);
+            rewardedPassedAndroids.Add(marker);
             AddReward(passedAndroidReward);
 
             if (debugObstacleAwareEvents)
@@ -352,7 +705,47 @@ public class EdgeRunnerAgentV5SpeedRunObstacleAware : EdgeRunnerAgentV5
         horizontalDangerWindow = Mathf.Max(0f, horizontalDangerWindow);
         verticalOverlapTolerance = Mathf.Max(0f, verticalOverlapTolerance);
         passedAndroidMargin = Mathf.Max(0.05f, passedAndroidMargin);
+        androidJumpWindowMin = Mathf.Max(0.05f, androidJumpWindowMin);
+        androidJumpWindowMax = Mathf.Max(androidJumpWindowMin, androidJumpWindowMax);
+        androidJumpVerticalTolerance = Mathf.Max(0f, androidJumpVerticalTolerance);
+        elevatedGapProbeNear = Mathf.Max(0.05f, elevatedGapProbeNear);
+        elevatedGapProbeFar = Mathf.Max(elevatedGapProbeNear, elevatedGapProbeFar);
+        elevatedGapProbeDepth = Mathf.Max(0.1f, elevatedGapProbeDepth);
+        elevatedLandingWindowMin = Mathf.Max(elevatedGapProbeFar, elevatedLandingWindowMin);
+        elevatedLandingWindowMax = Mathf.Max(
+            elevatedLandingWindowMin,
+            elevatedLandingWindowMax);
+        elevatedLandingScanStep = Mathf.Clamp(elevatedLandingScanStep, 0.05f, 1f);
+        elevatedLandingMinHeight = Mathf.Max(0.05f, elevatedLandingMinHeight);
+        elevatedLandingMaxHeight = Mathf.Max(
+            elevatedLandingMinHeight,
+            elevatedLandingMaxHeight);
+        elevatedLandingProbeHeadroom = Mathf.Max(0.05f, elevatedLandingProbeHeadroom);
         obstacleCollisionPenalty = Mathf.Min(-0.01f, obstacleCollisionPenalty);
         passedAndroidReward = Mathf.Max(0f, passedAndroidReward);
+    }
+
+    private readonly struct ElevatedLandingContext
+    {
+        public readonly float distance;
+        public readonly float deltaY;
+
+        public ElevatedLandingContext(float distance, float deltaY)
+        {
+            this.distance = distance;
+            this.deltaY = deltaY;
+        }
+    }
+
+    private readonly struct BaseJumpPenaltyState
+    {
+        public readonly float flatGroundPenalty;
+        public readonly float uselessPenalty;
+
+        public BaseJumpPenaltyState(float flatGroundPenalty, float uselessPenalty)
+        {
+            this.flatGroundPenalty = flatGroundPenalty;
+            this.uselessPenalty = uselessPenalty;
+        }
     }
 }
